@@ -121,8 +121,18 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                   editedValue ?? { text: run.text, style: undefined }
                 }
                 onCommit={(value) => {
-                  if (value.text !== run.text || value.style) {
-                    onEdit(run.id, value);
+                  // Preserve any existing move offset (dx/dy) — the
+                  // EditField only owns text + style, so we layer back
+                  // the persisted offset from editedValue.
+                  const merged: EditValue = {
+                    ...value,
+                    dx: editedValue?.dx ?? 0,
+                    dy: editedValue?.dy ?? 0,
+                  };
+                  const hasOffset =
+                    (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
+                  if (value.text !== run.text || value.style || hasOffset) {
+                    onEdit(run.id, merged);
                   }
                   setEditingId(null);
                 }}
