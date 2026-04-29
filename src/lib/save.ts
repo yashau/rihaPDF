@@ -120,6 +120,10 @@ export async function applyEditsAndSave(
     const scale = rendered.scale;
 
     const indicesToRemove = new Set<number>();
+    /** For move-only edits: the indices of the Tj/TJ ops we need to
+     *  reposition + the new text-matrix to insert before them. */
+    const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> =
+      [];
     const editPlans: Array<{
       edit: Edit;
       run: TextRun;
@@ -142,14 +146,40 @@ export async function applyEditsAndSave(
       // drift from accumulated Td offsets and font-metric padding.
       const tolY = Math.max(2, runPdfHeight * 0.4);
       const tolX = Math.max(2, runPdfHeight * 0.3);
-      for (const show of shows) {
-        const ex = show.textMatrix[4];
-        const ey = show.textMatrix[5];
-        if (Math.abs(ey - runPdfY) > tolY) continue;
-        if (ex < runPdfX - tolX) continue;
-        if (ex > runPdfX + runPdfWidth + tolX) continue;
-        indicesToRemove.add(show.index);
+      const matched = shows.filter((s) => {
+        const ex = s.textMatrix[4];
+        const ey = s.textMatrix[5];
+        if (Math.abs(ey - runPdfY) > tolY) return false;
+        if (ex < runPdfX - tolX) return false;
+        if (ex > runPdfX + runPdfWidth + tolX) return false;
+        return true;
+      });
+
+      // Move-only path: text is unchanged AND there's no formatting
+      // override AND we have a non-zero offset. Keep the original glyphs
+      // so we get pixel-perfect rendering — just inject a new Tm before
+      // each matched Tj/TJ that translates by (dx_pdf, -dy_pdf) from its
+      // original text-matrix position.
+      const isMoveOnly =
+        edit.newText === run.text &&
+        !edit.style &&
+        ((edit.dx ?? 0) !== 0 || (edit.dy ?? 0) !== 0);
+      if (isMoveOnly && matched.length > 0) {
+        const moveX = (edit.dx ?? 0) / scale;
+        const moveY = -(edit.dy ?? 0) / scale;
+        for (const s of matched) {
+          moveOps.push({
+            tjIndex: s.index,
+            newTx: s.textMatrix[4] + moveX,
+            newTy: s.textMatrix[5] + moveY,
+          });
+        }
+        continue; // don't go through the rerender path
       }
+
+      // Otherwise: full edit (text changed, formatting overridden, or
+      // both). Remove the matched ops and rerender below.
+      for (const s of matched) indicesToRemove.add(s.index);
 
       editPlans.push({
         edit,
@@ -161,15 +191,50 @@ export async function applyEditsAndSave(
       });
     }
 
-    // Replace the page's content with the same ops minus the deleted
-    // text-shows. Tm/Td position-setters before the deleted Tj are kept
-    // (no-ops once the show is gone) — harmless and simpler than tracking
-    // dependencies.
-    const filteredOps = ops.filter((_, i) => !indicesToRemove.has(i));
+    // Build the new op list:
+    //  1. Drop ops we marked for removal (full edits).
+    //  2. For each move-only target, insert a fresh `Tm` op right before
+    //     the original Tj/TJ that translates the text matrix to the new
+    //     absolute position. The original glyphs follow unchanged so
+    //     rendering is pixel-perfect — no rerender via drawText needed.
+    const moveByTjIndex = new Map<
+      number,
+      { newTx: number; newTy: number }
+    >();
+    for (const m of moveOps) {
+      moveByTjIndex.set(m.tjIndex, { newTx: m.newTx, newTy: m.newTy });
+    }
+    const newOps: typeof ops = [];
+    for (let i = 0; i < ops.length; i++) {
+      if (indicesToRemove.has(i)) continue;
+      const move = moveByTjIndex.get(i);
+      if (move) {
+        newOps.push({
+          op: "Tm",
+          operands: [
+            { kind: "number", value: 1, raw: "1" },
+            { kind: "number", value: 0, raw: "0" },
+            { kind: "number", value: 0, raw: "0" },
+            { kind: "number", value: 1, raw: "1" },
+            {
+              kind: "number",
+              value: move.newTx,
+              raw: move.newTx.toFixed(3),
+            },
+            {
+              kind: "number",
+              value: move.newTy,
+              raw: move.newTy.toFixed(3),
+            },
+          ],
+        });
+      }
+      newOps.push(ops[i]);
+    }
     setPageContentBytes(
       doc.context,
       page.node,
-      serializeContentStream(filteredOps),
+      serializeContentStream(newOps),
     );
 
     // Append the replacement text via pdf-lib's drawText so its internal
