@@ -71,7 +71,8 @@ export async function extractPageFontShows(
           // suffix; sniff both.
           if (flagsObj && "asNumber" in flagsObj) {
             const flags = (flagsObj as { asNumber(): number }).asNumber();
-            if (flags & 0x40) italic = true;
+            if (flags & 0x40) italic = true; // Italic flag (bit 7)
+            if (flags & 0x40000) bold = true; // ForceBold flag (bit 19)
           }
           const weightObj = descriptor.lookup(PDFName.of("FontWeight"));
           if (weightObj && "asNumber" in weightObj) {
@@ -99,11 +100,15 @@ export async function extractPageFontShows(
       // s.fontName is the resource key the Tf operator referenced
       // (without leading slash); look it up in our map.
       const info = s.fontName ? fontInfoByResource.get(s.fontName) : null;
+      // Office often draws "bold" as Tr 2 (fill + stroke) rather than a
+      // separate Bold-variant font. Treat that as bold so we can replicate
+      // it on the rerender path.
+      const trBold = s.textRenderingMode === 2;
       return {
         x: s.textMatrix[4],
         y: s.textMatrix[5],
         baseFont: info?.baseFont ?? null,
-        bold: info?.bold ?? false,
+        bold: (info?.bold ?? false) || trBold,
         italic: info?.italic ?? false,
       };
     });

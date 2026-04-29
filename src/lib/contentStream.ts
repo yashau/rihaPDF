@@ -385,11 +385,16 @@ export type TextShowMatch = {
   fontSize: number;
   /** Current text matrix [a b c d e f] at the time of show. */
   textMatrix: [number, number, number, number, number, number];
+  /** Active Text Rendering Mode (Tr) when the show ran. 0 = fill (default),
+   *  1 = stroke, 2 = fill+stroke (Office uses this to simulate bold for
+   *  fonts without a Bold variant), 3 = invisible, 4-7 = clipping. */
+  textRenderingMode: number;
 };
 
 export function findTextShows(ops: ContentOp[]): TextShowMatch[] {
   let fontName: string | null = null;
   let fontSize = 0;
+  let textRenderingMode = 0;
   // Identity matrix.
   let tm: [number, number, number, number, number, number] = [
     1, 0, 0, 1, 0, 0,
@@ -406,6 +411,11 @@ export function findTextShows(ops: ContentOp[]): TextShowMatch[] {
         tm = [1, 0, 0, 1, 0, 0];
         tlm = [1, 0, 0, 1, 0, 0];
         break;
+      case "Tr": {
+        const arg = o.operands[0];
+        if (arg?.kind === "number") textRenderingMode = arg.value;
+        break;
+      }
       case "Tf": {
         const [name, size] = o.operands;
         if (name?.kind === "name") fontName = name.value;
@@ -456,6 +466,7 @@ export function findTextShows(ops: ContentOp[]): TextShowMatch[] {
           fontName,
           fontSize,
           textMatrix: [...tm],
+          textRenderingMode,
         });
         break;
     }
