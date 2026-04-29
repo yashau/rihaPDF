@@ -71,6 +71,8 @@ export default function App() {
             runId,
             newText: value.text,
             style: value.style,
+            dx: value.dx,
+            dy: value.dy,
           });
         }
       }

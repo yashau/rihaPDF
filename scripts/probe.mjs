@@ -19,7 +19,6 @@ fs.mkdirSync(screenshotsDir, { recursive: true });
 
 const PDF_PATH = path.resolve(
   root,
-  "..",
   "hn41badsfTXSpmf0opxlFBWgTLAJX5rWubbshJYC.pdf",
 );
 const URL = "http://localhost:5173/";
@@ -210,15 +209,48 @@ for (const { label, run } of candidates) {
   await page.waitForTimeout(200);
 }
 
-if (STEP === "save") {
+if (STEP === "move" || STEP === "save") {
+  // For STEP=move we exercise the drag-to-move flow on a single run
+  // before saving so we can verify the offset survives the save pipeline.
+  if (STEP === "move") {
+    const id = "p1-r2";
+    const target = page.locator(`[data-run-id="${id}"]`);
+    if ((await target.count()) > 0) {
+      await target.scrollIntoViewIfNeeded();
+      const before = await target.boundingBox();
+      const startX = before.x + before.width / 2;
+      const startY = before.y + before.height / 2;
+      const dx = 80;
+      const dy = 40;
+      console.log(`-> move: ${id} drag by (${dx}, ${dy})`);
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      // Move in steps so the dragmove handler fires multiple times.
+      for (let i = 1; i <= 6; i++) {
+        await page.mouse.move(startX + (dx * i) / 6, startY + (dy * i) / 6, {
+          steps: 1,
+        });
+        await page.waitForTimeout(20);
+      }
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      const after = await target.boundingBox();
+      console.log(
+        `   before=${Math.round(before.x)},${Math.round(before.y)}  after=${Math.round(after.x)},${Math.round(after.y)}  Δ=${Math.round(after.x - before.x)},${Math.round(after.y - before.y)}`,
+      );
+    }
+  }
+
   // Round-trip: edit several runs to exercise the save pipeline at
   // varying lengths / positions (RTL Thaana title, label with colon,
   // mid-paragraph long Thaana). Save, verify download.
-  const targets = [
-    { id: "p1-r2", text: "ތެސްޓު ބަދަލު" },
-    { id: "p1-r5", text: "ބަދަލުކޮށްފި:" },
-    { id: "p1-r10", text: "ބަދަލު މަޖިލިސް ތާނަ" },
-  ];
+  const targets = STEP === "move"
+    ? [{ id: "p1-r5", text: "ބަދަލު" }]
+    : [
+        { id: "p1-r2", text: "ތެސްޓު ބަދަލު" },
+        { id: "p1-r5", text: "ބަދަލުކޮށްފި:" },
+        { id: "p1-r10", text: "ބަދަލު މަޖިލިސް ތާނަ" },
+      ];
   for (const t of targets) {
     const target = page.locator(`[data-run-id="${t.id}"]`);
     if ((await target.count()) === 0) {

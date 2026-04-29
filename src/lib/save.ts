@@ -45,6 +45,10 @@ export type Edit = {
   runId: string;
   newText: string;
   style?: EditStyle;
+  /** Move offset in viewport pixels — translates the new draw position
+   *  by (dx / scale, -dy / scale) in PDF user space (y-flipped). */
+  dx?: number;
+  dy?: number;
 };
 
 export type PageOp =
@@ -180,16 +184,19 @@ export async function applyEditsAndSave(
 
       // Right-align RTL replacements at the original run's right edge so
       // the first logical character lands where it used to. Use pdf-lib's
-      // own width calculation since that's what it'll draw.
+      // own width calculation since that's what it'll draw. Then apply
+      // the user's drag-move offset on top.
       const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(edit.newText);
       const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
-      const baseX = isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX;
+      const moveX = (edit.dx ?? 0) / rendered.scale;
+      const moveY = -(edit.dy ?? 0) / rendered.scale;
+      const baseX =
+        (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
+      const drawY = runPdfY + moveY;
 
-      // Bold = render mode 2 (fill + stroke) with a thin stroke that
-      // visually thickens the glyphs.
       const drawOpts: Parameters<typeof page.drawText>[1] = {
         x: baseX,
-        y: runPdfY,
+        y: drawY,
         size: fontSizePt,
         font: pdfFont,
         color: rgb(0, 0, 0),
@@ -209,7 +216,7 @@ export async function applyEditsAndSave(
         });
       }
       if (style.underline) {
-        const underlineY = runPdfY - Math.max(1, fontSizePt * 0.08);
+        const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
         page.drawLine({
           start: { x: baseX, y: underlineY },
           end: { x: baseX + widthPt, y: underlineY },

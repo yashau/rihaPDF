@@ -7,7 +7,14 @@ import { FONTS } from "../lib/fonts";
 export type EditValue = {
   text: string;
   style?: EditStyle;
+  /** Move offset from the original run position, in viewport pixels.
+   *  Positive dx → right, positive dy → down. Saved by translating the
+   *  drawn text by (dx / scale, -dy / scale) in PDF user space. */
+  dx?: number;
+  dy?: number;
 };
+
+const DRAG_THRESHOLD_PX = 3;
 
 type Props = {
   page: RenderedPage;
@@ -19,6 +26,18 @@ type Props = {
 export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** While dragging a run, the live offset for the dragged run. We keep
+   *  it in local state during the drag so we don't churn the parent's
+   *  edits Map on every mousemove. */
+  const [drag, setDrag] = useState<
+    | { runId: string; startX: number; startY: number; dx: number; dy: number }
+    | null
+  >(null);
+  /** Set to the runId during a drag and cleared a tick after mouseup, used
+   *  to suppress the click-to-edit that would otherwise fire after a drag
+   *  (Playwright's synthesised events don't match the browser's native
+   *  click-suppression on movement, so we guard explicitly). */
+  const justDraggedRef = useRef<string | null>(null);
 
   useEffect(() => {
     const node = containerRef.current?.querySelector(
@@ -30,6 +49,53 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
     page.canvas.style.width = `${page.viewWidth}px`;
     page.canvas.style.height = `${page.viewHeight}px`;
   }, [page]);
+
+  /** Start a drag on a run. The handlers track movement on the window so
+   *  the drag continues even if the cursor leaves the original span. */
+  const startDrag = (
+    runId: string,
+    e: React.MouseEvent,
+    base: { dx: number; dy: number },
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    setDrag({ runId, startX, startY, dx: base.dx, dy: base.dy });
+
+    const onMove = (ev: MouseEvent) => {
+      const newDx = base.dx + (ev.clientX - startX);
+      const newDy = base.dy + (ev.clientY - startY);
+      setDrag((prev) =>
+        prev && prev.runId === runId
+          ? { ...prev, dx: newDx, dy: newDy }
+          : prev,
+      );
+    };
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const totalDx = base.dx + (ev.clientX - startX);
+      const totalDy = base.dy + (ev.clientY - startY);
+      const moved =
+        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
+        Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
+      setDrag(null);
+      if (!moved) return; // treat as click — caller's onClick handles it
+      // Suppress the click that the browser/playwright fires immediately
+      // after mouseup so we don't drop into the editor right after a drag.
+      justDraggedRef.current = runId;
+      setTimeout(() => {
+        if (justDraggedRef.current === runId) justDraggedRef.current = null;
+      }, 200);
+      const run = page.textRuns.find((r) => r.id === runId);
+      if (!run) return;
+      const existing = edits.get(runId) ?? { text: run.text };
+      onEdit(runId, { ...existing, dx: totalDx, dy: totalDy });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   return (
     <div
@@ -65,6 +131,12 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
             );
           }
           const edited = editedValue !== undefined;
+          // Live drag offset for THIS run (or the persisted offset if we're
+          // not currently dragging it).
+          const dx =
+            (drag?.runId === run.id ? drag.dx : editedValue?.dx) ?? 0;
+          const dy =
+            (drag?.runId === run.id ? drag.dy : editedValue?.dy) ?? 0;
           if (edited) {
             const padX = 4;
             const padY = Math.max(run.height * 0.25, 4);
@@ -75,25 +147,32 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                 data-run-id={run.id}
                 style={{
                   position: "absolute",
-                  left: run.bounds.left - padX,
-                  top: run.bounds.top - padY,
+                  left: run.bounds.left - padX + dx,
+                  top: run.bounds.top - padY + dy,
                   width: Math.max(run.bounds.width, 12) + padX * 2,
                   height: run.bounds.height + padY * 2,
                   backgroundColor: "white",
                   outline: "1px solid rgba(255, 200, 60, 0.7)",
                   pointerEvents: "auto",
-                  cursor: "text",
+                  cursor: drag?.runId === run.id ? "grabbing" : "grab",
                   display: "flex",
                   alignItems: "center",
                   overflow: "visible",
                 }}
                 title={editedValue.text}
+                onMouseDown={(e) =>
+                  startDrag(run.id, e, {
+                    dx: editedValue.dx ?? 0,
+                    dy: editedValue.dy ?? 0,
+                  })
+                }
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditingId(run.id);
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (drag || justDraggedRef.current === run.id) return;
                   setEditingId(run.id);
                 }}
               >
@@ -126,10 +205,10 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
               key={run.id}
               data-run-id={run.id}
               dir="auto"
-              className="thaana-stack absolute cursor-text select-text"
+              className="thaana-stack absolute select-text"
               style={{
-                left: run.bounds.left,
-                top: run.bounds.top,
+                left: run.bounds.left + dx,
+                top: run.bounds.top + dy,
                 width: Math.max(run.bounds.width, 12),
                 height: run.bounds.height,
                 fontSize: `${run.height}px`,
@@ -139,14 +218,19 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                 pointerEvents: "auto",
                 whiteSpace: "pre",
                 overflow: "visible",
+                cursor: drag?.runId === run.id ? "grabbing" : "grab",
               }}
               title={run.text}
+              onMouseDown={(e) =>
+                startDrag(run.id, e, { dx: 0, dy: 0 })
+              }
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 setEditingId(run.id);
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (drag || justDraggedRef.current === run.id) return;
                 setEditingId(run.id);
               }}
             >
