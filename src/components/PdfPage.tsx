@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
@@ -131,41 +131,128 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
             );
           }
           const edited = editedValue !== undefined;
+          const isDragging = drag?.runId === run.id;
+          const isEditingThis = editingId === run.id;
+          const isModified = edited || isDragging;
           // Live drag offset for THIS run (or the persisted offset if we're
           // not currently dragging it).
-          const dx =
-            (drag?.runId === run.id ? drag.dx : editedValue?.dx) ?? 0;
-          const dy =
-            (drag?.runId === run.id ? drag.dy : editedValue?.dy) ?? 0;
-          if (edited) {
-            const padX = 4;
-            const padY = Math.max(run.height * 0.25, 4);
-            const style = editedValue.style ?? {};
-            return (
-              <span
-                key={run.id}
-                data-run-id={run.id}
+          const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
+          const dy = (isDragging ? drag.dy : editedValue?.dy) ?? 0;
+
+          // Cover the original glyphs at their unmodified bounds so a drag
+          // or text replacement makes the source disappear immediately
+          // (otherwise the canvas underneath bleeds through and the user
+          // sees both old and new).
+          const padX = 4;
+          const padY = Math.max(run.height * 0.25, 4);
+          const cover =
+            isModified || isEditingThis ? (
+              <div
+                key={`${run.id}-cover`}
+                aria-hidden
                 style={{
                   position: "absolute",
-                  left: run.bounds.left - padX + dx,
-                  top: run.bounds.top - padY + dy,
+                  left: run.bounds.left - padX,
+                  top: run.bounds.top - padY,
                   width: Math.max(run.bounds.width, 12) + padX * 2,
                   height: run.bounds.height + padY * 2,
                   backgroundColor: "white",
-                  outline: "1px solid rgba(255, 200, 60, 0.7)",
-                  pointerEvents: "auto",
-                  cursor: drag?.runId === run.id ? "grabbing" : "grab",
-                  display: "flex",
-                  alignItems: "center",
-                  overflow: "visible",
+                  pointerEvents: "none",
                 }}
-                title={editedValue.text}
-                onMouseDown={(e) =>
-                  startDrag(run.id, e, {
-                    dx: editedValue.dx ?? 0,
-                    dy: editedValue.dy ?? 0,
-                  })
-                }
+              />
+            ) : null;
+
+          if (edited) {
+            const style = editedValue.style ?? {};
+            return (
+              <Fragment key={run.id}>
+                {cover}
+                <span
+                  data-run-id={run.id}
+                  style={{
+                    position: "absolute",
+                    left: run.bounds.left - padX + dx,
+                    top: run.bounds.top - padY + dy,
+                    width: Math.max(run.bounds.width, 12) + padX * 2,
+                    height: run.bounds.height + padY * 2,
+                    backgroundColor: "white",
+                    outline: "1px solid rgba(255, 200, 60, 0.7)",
+                    pointerEvents: "auto",
+                    cursor: isDragging ? "grabbing" : "grab",
+                    display: "flex",
+                    alignItems: "center",
+                    overflow: "visible",
+                  }}
+                  title={editedValue.text}
+                  onMouseDown={(e) =>
+                    startDrag(run.id, e, {
+                      dx: editedValue.dx ?? 0,
+                      dy: editedValue.dy ?? 0,
+                    })
+                  }
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(run.id);
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (drag || justDraggedRef.current === run.id) return;
+                    setEditingId(run.id);
+                  }}
+                >
+                  <span
+                    dir="auto"
+                    style={{
+                      fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
+                      fontSize: `${style.fontSize ?? run.height}px`,
+                      lineHeight: `${run.bounds.height}px`,
+                      fontWeight: (style.bold ?? run.bold) ? 700 : 400,
+                      fontStyle:
+                        (style.italic ?? run.italic) ? "italic" : "normal",
+                      textDecoration: style.underline ? "underline" : "none",
+                      color: "black",
+                      width: "100%",
+                      whiteSpace: "pre",
+                      paddingLeft: padX,
+                      paddingRight: padX,
+                    }}
+                  >
+                    {editedValue.text}
+                  </span>
+                </span>
+              </Fragment>
+            );
+          }
+          // Unedited (and possibly mid-drag): cover hides the original PDF
+          // glyphs while the user is dragging so the run appears to truly
+          // detach from its source position.
+          return (
+            <Fragment key={run.id}>
+              {cover}
+              <span
+                data-run-id={run.id}
+                dir="auto"
+                className="thaana-stack absolute select-text"
+                style={{
+                  left: run.bounds.left + dx,
+                  top: run.bounds.top + dy,
+                  width: Math.max(run.bounds.width, 12),
+                  height: run.bounds.height,
+                  fontSize: `${run.height}px`,
+                  lineHeight: `${run.bounds.height}px`,
+                  // While dragging, render the run visibly so the user
+                  // sees what they're moving (and the cover hides the
+                  // original underneath). At rest the span stays a
+                  // transparent click target.
+                  color: isModified ? "black" : "transparent",
+                  backgroundColor: "transparent",
+                  pointerEvents: "auto",
+                  whiteSpace: "pre",
+                  overflow: "visible",
+                  cursor: isDragging ? "grabbing" : "grab",
+                }}
+                title={run.text}
+                onMouseDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditingId(run.id);
@@ -176,64 +263,9 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                   setEditingId(run.id);
                 }}
               >
-                <span
-                  dir="auto"
-                  style={{
-                    fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
-                    fontSize: `${style.fontSize ?? run.height}px`,
-                    lineHeight: `${run.bounds.height}px`,
-                    fontWeight: (style.bold ?? run.bold) ? 700 : 400,
-                    fontStyle:
-                      (style.italic ?? run.italic) ? "italic" : "normal",
-                    textDecoration: style.underline ? "underline" : "none",
-                    color: "black",
-                    width: "100%",
-                    whiteSpace: "pre",
-                    paddingLeft: padX,
-                    paddingRight: padX,
-                  }}
-                >
-                  {editedValue.text}
-                </span>
+                {run.text}
               </span>
-            );
-          }
-          return (
-            <span
-              key={run.id}
-              data-run-id={run.id}
-              dir="auto"
-              className="thaana-stack absolute select-text"
-              style={{
-                left: run.bounds.left + dx,
-                top: run.bounds.top + dy,
-                width: Math.max(run.bounds.width, 12),
-                height: run.bounds.height,
-                fontSize: `${run.height}px`,
-                lineHeight: `${run.bounds.height}px`,
-                color: "transparent",
-                backgroundColor: "transparent",
-                pointerEvents: "auto",
-                whiteSpace: "pre",
-                overflow: "visible",
-                cursor: drag?.runId === run.id ? "grabbing" : "grab",
-              }}
-              title={run.text}
-              onMouseDown={(e) =>
-                startDrag(run.id, e, { dx: 0, dy: 0 })
-              }
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                setEditingId(run.id);
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (drag || justDraggedRef.current === run.id) return;
-                setEditingId(run.id);
-              }}
-            >
-              {run.text}
-            </span>
+            </Fragment>
           );
         })}
       </div>
