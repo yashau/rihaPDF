@@ -94,6 +94,11 @@ export type RenderedPage = {
 export async function renderPage(
   page: PdfPage,
   scale: number,
+  /** Per-page list of `Tj/TJ` text-shows we already extracted from the
+   *  source PDF via pdf-lib (in `extractPageFontShows`). buildTextRuns
+   *  uses this to attach a fontFamily / bold / italic to each run by
+   *  matching the run's PDF-user-space baseline against the show's. */
+  fontShows: import("./sourceFonts").FontShow[] = [],
 ): Promise<RenderedPage> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
@@ -129,51 +134,11 @@ export async function renderPage(
     };
   });
 
-  // Build a per-page lookup of font metadata from pdf.js's commonObjs.
-  // Each text item carries a fontName like "g_d0_f6"; commonObjs.get maps
-  // that to a font object exposing the actual BaseFont name + bold/italic
-  // flags from the PDF font descriptor.
-  const fontInfoByName = new Map<
-    string,
-    { baseName: string | null; bold: boolean; italic: boolean }
-  >();
-  for (const item of items) {
-    if (!item.fontName || fontInfoByName.has(item.fontName)) continue;
-    let info: { baseName: string | null; bold: boolean; italic: boolean } = {
-      baseName: null,
-      bold: false,
-      italic: false,
-    };
-    try {
-      const fontObj = (page.commonObjs as unknown as {
-        get(id: string): unknown;
-        has(id: string): boolean;
-      }).has(item.fontName)
-        ? (page.commonObjs as unknown as { get(id: string): unknown }).get(
-            item.fontName,
-          )
-        : null;
-      const f = fontObj as
-        | {
-            name?: string;
-            loadedName?: string;
-            black?: boolean;
-            bold?: boolean;
-            italic?: boolean;
-          }
-        | null;
-      if (f) {
-        info = {
-          baseName: f.name ?? f.loadedName ?? null,
-          bold: !!(f.bold || f.black),
-          italic: !!f.italic,
-        };
-      }
-    } catch {
-      /* ignore — fall back to default null/false */
-    }
-    fontInfoByName.set(item.fontName, info);
-  }
+  // pdf.js doesn't make the source BaseFont names available via the
+  // public TextContent API. The caller passes in `fontShows` extracted
+  // from the source PDF via pdf-lib; buildTextRuns will match each run's
+  // baseline (in PDF user space) to the closest show and use its font.
+  const _fontShows = fontShows;
 
   return {
     pageNumber: page.pageNumber,
@@ -184,7 +149,7 @@ export async function renderPage(
     viewWidth: viewport.width,
     viewHeight: viewport.height,
     textItems: items,
-    textRuns: buildTextRuns(items, page.pageNumber, fontInfoByName),
+    textRuns: buildTextRuns(items, page.pageNumber, _fontShows, scale, viewport.height),
   };
 }
 
@@ -253,10 +218,9 @@ function sortItemsLogical(items: TextItem[], rtl: boolean): TextItem[] {
 function buildTextRuns(
   items: TextItem[],
   pageNumber: number,
-  fontInfoByName: Map<
-    string,
-    { baseName: string | null; bold: boolean; italic: boolean }
-  >,
+  fontShows: import("./sourceFonts").FontShow[],
+  scale: number,
+  viewportHeight: number,
 ): TextRun[] {
   const visible = items.filter((it) => it.str.length > 0);
   if (visible.length === 0) return [];
@@ -307,12 +271,25 @@ function buildTextRuns(
     const top = baselineY - maxHeight - topPad;
     const bottom = baselineY + bottomPad;
 
-    // Pick the font from the first item — runs are mostly homogeneous
-    // since merging breaks on font changes (different items end up in
-    // different runs when their pdf.js fontName differs and gaps grow).
-    const firstFontName = ordered[0]?.fontName;
-    const fontInfo = firstFontName ? fontInfoByName.get(firstFontName) : null;
-    const fontFamily = resolveFamilyFromHint(fontInfo?.baseName);
+    // Convert the run's baseline (viewport-y, y-down) back to PDF user
+    // space (y-up) so we can match it against the source-extracted font
+    // shows.
+    const runPdfX = minLeft / scale;
+    const runPdfY = (viewportHeight - baselineY) / scale;
+    let bestShow: import("./sourceFonts").FontShow | null = null;
+    let bestDist = Infinity;
+    for (const s of fontShows) {
+      const dy = Math.abs(s.y - runPdfY);
+      if (dy > 4) continue; // different line — skip
+      const dx = Math.abs(s.x - runPdfX);
+      const dist = dx + dy * 10;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestShow = s;
+      }
+    }
+    const baseName = bestShow?.baseFont ?? null;
+    const fontFamily = resolveFamilyFromHint(baseName);
 
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
@@ -327,9 +304,9 @@ function buildTextRuns(
       height: maxHeight,
       baselineY,
       fontFamily,
-      fontBaseName: fontInfo?.baseName ?? null,
-      bold: fontInfo?.bold ?? false,
-      italic: fontInfo?.italic ?? false,
+      fontBaseName: baseName,
+      bold: bestShow?.bold ?? false,
+      italic: bestShow?.italic ?? false,
     });
     bucket = [];
   };

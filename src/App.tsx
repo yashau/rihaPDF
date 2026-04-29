@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { loadPdf, renderPage } from "./lib/pdf";
 import type { RenderedPage } from "./lib/pdf";
+import { extractPageFontShows } from "./lib/sourceFonts";
 import {
   applyEditsAndSave,
   downloadBlob,
@@ -30,11 +31,17 @@ export default function App() {
       const buf = await file.arrayBuffer();
       const forPdfJs = buf.slice(0);
       const forSave = buf.slice(0);
-      const doc = await loadPdf(forPdfJs);
+      const forFonts = buf.slice(0);
+      const [doc, fontShowsByPage] = await Promise.all([
+        loadPdf(forPdfJs),
+        extractPageFontShows(forFonts),
+      ]);
       const rendered: RenderedPage[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);
-        rendered.push(await renderPage(page, RENDER_SCALE));
+        rendered.push(
+          await renderPage(page, RENDER_SCALE, fontShowsByPage[i - 1] ?? []),
+        );
       }
       setFilename(file.name);
       setOriginalBytes(forSave);
