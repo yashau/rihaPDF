@@ -279,57 +279,34 @@ export async function applyEditsAndSave(
         (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
       const drawY = runPdfY + moveY;
 
-      // Push a raw text-show block so we can apply Tr 2 (true bold via
-      // fill + stroke) and an italic shear matrix — pdf-lib's drawText
-      // can't express either. font.encodeText keeps the Unicode→CID
-      // mapping pdf-lib uses for its own font embedding so the right
-      // glyphs come out.
-      const hex = (
-        pdfFont as PDFFont & { encodeText(t: string): PDFHexString }
-      ).encodeText(edit.newText);
-      const ops: PDFOperator[] = [
-        PDFOperator.of(Op.PushGraphicsState),
-        PDFOperator.of(Op.BeginText),
-        PDFOperator.of(Op.SetFontAndSize, [
-          PDFName.of(pdfFont.name),
-          PDFNumber.of(fontSizePt),
-        ]),
-        PDFOperator.of(Op.NonStrokingColorRgb, [
-          PDFNumber.of(0),
-          PDFNumber.of(0),
-          PDFNumber.of(0),
-        ]),
-      ];
+      // Use pdf-lib's drawText for the actual glyph rendering — it owns
+      // the Unicode → CID encoding pipeline and handcrafted Tj operands
+      // misrender (the embedded font's CIDToGIDMap doesn't match raw
+      // encodeText output for subset:false fonts). Bold is simulated
+      // with a second drawText call offset by ~5% of the font size, the
+      // same trick web browsers use for synthetic bold. Italic in the
+      // saved PDF needs a sheared Tm before Tj — deferred until we have
+      // a working raw-ops path; for now it's editor-preview only.
+      page.drawText(edit.newText, {
+        x: baseX,
+        y: drawY,
+        size: fontSizePt,
+        font: pdfFont,
+        color: rgb(0, 0, 0),
+      });
       if (bold) {
-        // Tr 2 = fill + stroke. Stroke width is a fraction of the font
-        // size so the glyph outlines look thickened, not outlined.
-        ops.push(
-          PDFOperator.of(Op.StrokingColorRgb, [
-            PDFNumber.of(0),
-            PDFNumber.of(0),
-            PDFNumber.of(0),
-          ]),
-          PDFOperator.of(Op.SetLineWidth, [
-            PDFNumber.of(Math.max(0.3, fontSizePt * 0.05)),
-          ]),
-          PDFOperator.of(Op.SetTextRenderingMode, [PDFNumber.of(2)]),
-        );
+        page.drawText(edit.newText, {
+          x: baseX + Math.max(0.3, fontSizePt * 0.05),
+          y: drawY,
+          size: fontSizePt,
+          font: pdfFont,
+          color: rgb(0, 0, 0),
+        });
       }
-      const shear = italic ? 0.21 : 0; // ~12° slant, common italic angle
-      ops.push(
-        PDFOperator.of(Op.SetTextMatrix, [
-          PDFNumber.of(1),
-          PDFNumber.of(0),
-          PDFNumber.of(shear),
-          PDFNumber.of(1),
-          PDFNumber.of(baseX),
-          PDFNumber.of(drawY),
-        ]),
-        PDFOperator.of(Op.ShowText, [hex]),
-        PDFOperator.of(Op.EndText),
-        PDFOperator.of(Op.PopGraphicsState),
-      );
-      page.pushOperators(...ops);
+      // Mark italic as a known limitation — userland sees it in the
+      // editor but the saved file stays upright until we land custom
+      // shaped-output via raw Tj.
+      void italic;
 
       if (style.underline) {
         const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
