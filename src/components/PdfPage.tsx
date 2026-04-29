@@ -179,13 +179,12 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                 <span
                   dir="auto"
                   style={{
-                    fontFamily: style.fontFamily
-                      ? `"${style.fontFamily}"`
-                      : undefined,
+                    fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
                     fontSize: `${style.fontSize ?? run.height}px`,
                     lineHeight: `${run.bounds.height}px`,
-                    fontWeight: style.bold ? 700 : 400,
-                    fontStyle: style.italic ? "italic" : "normal",
+                    fontWeight: (style.bold ?? run.bold) ? 700 : 400,
+                    fontStyle:
+                      (style.italic ?? run.italic) ? "italic" : "normal",
                     textDecoration: style.underline ? "underline" : "none",
                     color: "black",
                     width: "100%",
@@ -193,7 +192,6 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                     paddingLeft: padX,
                     paddingRight: padX,
                   }}
-                  className={style.fontFamily ? "" : "thaana-stack"}
                 >
                   {editedValue.text}
                 </span>
@@ -262,7 +260,12 @@ function EditField({
     Math.max(run.bounds.width + 24, 80),
   );
 
-  const fontFamilyCss = style.fontFamily ? `"${style.fontFamily}"` : undefined;
+  // Default everything to the run's source-detected formatting; the
+  // toolbar overrides take precedence when explicitly set.
+  const effectiveFamily = style.fontFamily ?? run.fontFamily;
+  const fontFamilyCss = `"${effectiveFamily}"`;
+  const effectiveBold = style.bold ?? run.bold;
+  const effectiveItalic = style.italic ?? run.italic;
   const fontSizePx = style.fontSize ?? run.height;
 
   const remeasure = () => {
@@ -293,12 +296,11 @@ function EditField({
           fontFamily: fontFamilyCss,
           fontSize: `${fontSizePx}px`,
           lineHeight: `${run.bounds.height}px`,
-          fontWeight: style.bold ? 700 : 400,
-          fontStyle: style.italic ? "italic" : "normal",
+          fontWeight: effectiveBold ? 700 : 400,
+          fontStyle: effectiveItalic ? "italic" : "normal",
           left: -9999,
           top: -9999,
         }}
-        className={style.fontFamily ? "" : "thaana-stack"}
       />
       {/* Floating toolbar above the input */}
       <div
@@ -327,7 +329,7 @@ function EditField({
       >
         <select
           aria-label="Font"
-          value={style.fontFamily ?? "Faruma"}
+          value={style.fontFamily ?? run.fontFamily}
           style={{
             padding: "4px 6px",
             border: "1px solid rgba(0,0,0,0.15)",
@@ -370,15 +372,19 @@ function EditField({
         />
         <ToggleButton
           label="B"
-          active={!!style.bold}
+          active={effectiveBold}
           weight="bold"
-          onClick={() => setStyle((s) => ({ ...s, bold: !s.bold }))}
+          onClick={() =>
+            setStyle((s) => ({ ...s, bold: !(s.bold ?? run.bold) }))
+          }
         />
         <ToggleButton
           label="I"
-          active={!!style.italic}
+          active={effectiveItalic}
           italic
-          onClick={() => setStyle((s) => ({ ...s, italic: !s.italic }))}
+          onClick={() =>
+            setStyle((s) => ({ ...s, italic: !(s.italic ?? run.italic) }))
+          }
         />
         <ToggleButton
           label="U"
@@ -401,7 +407,6 @@ function EditField({
         dir="auto"
         data-run-id={run.id}
         data-editor
-        className={style.fontFamily ? "" : "thaana-stack"}
         style={{
           position: "absolute",
           left: run.bounds.left - 2,
@@ -411,8 +416,8 @@ function EditField({
           fontFamily: fontFamilyCss,
           fontSize: `${fontSizePx}px`,
           lineHeight: `${run.bounds.height}px`,
-          fontWeight: style.bold ? 700 : 400,
-          fontStyle: style.italic ? "italic" : "normal",
+          fontWeight: effectiveBold ? 700 : 400,
+          fontStyle: effectiveItalic ? "italic" : "normal",
           textDecoration: style.underline ? "underline" : "none",
           padding: "0 4px",
           border: "none",

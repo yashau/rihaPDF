@@ -15,7 +15,7 @@
 
 import { PDFDocument, PDFFont, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import type { RenderedPage } from "./pdf";
+import type { RenderedPage, TextRun } from "./pdf";
 import {
   parseContentStream,
   serializeContentStream,
@@ -99,7 +99,11 @@ export async function applyEditsAndSave(
     // the resource names exist before we emit operators referencing them.
     const familiesUsed = Array.from(
       new Set(
-        pageEdits.map((e) => e.style?.fontFamily ?? DEFAULT_FONT_FAMILY),
+        pageEdits.map((e) => {
+          if (e.style?.fontFamily) return e.style.fontFamily;
+          const run = rendered.textRuns.find((r) => r.id === e.runId);
+          return run?.fontFamily ?? DEFAULT_FONT_FAMILY;
+        }),
       ),
     );
     for (const family of familiesUsed) {
@@ -118,6 +122,7 @@ export async function applyEditsAndSave(
     const indicesToRemove = new Set<number>();
     const editPlans: Array<{
       edit: Edit;
+      run: TextRun;
       runPdfX: number;
       runPdfY: number;
       runPdfWidth: number;
@@ -148,6 +153,7 @@ export async function applyEditsAndSave(
 
       editPlans.push({
         edit,
+        run,
         runPdfX,
         runPdfY,
         runPdfWidth,
@@ -176,11 +182,16 @@ export async function applyEditsAndSave(
     // ship those, so simple drawText still renders correctly visually
     // for most Dhivehi text.
     for (const plan of editPlans) {
-      const { edit, runPdfX, runPdfY, runPdfWidth, runPdfHeight } = plan;
+      const { edit, run, runPdfX, runPdfY, runPdfWidth, runPdfHeight } = plan;
       const style = edit.style ?? {};
-      const family = style.fontFamily ?? DEFAULT_FONT_FAMILY;
+      // Default the formatting to whatever the original run carried —
+      // the user can still override any of these via the toolbar but
+      // doing nothing should preserve the source's look.
+      const family = style.fontFamily ?? run.fontFamily ?? DEFAULT_FONT_FAMILY;
       const { pdfFont } = await getFont(family);
       const fontSizePt = style.fontSize ?? runPdfHeight;
+      const bold = style.bold ?? run.bold;
+      const italic = style.italic ?? run.italic;
 
       // Right-align RTL replacements at the original run's right edge so
       // the first logical character lands where it used to. Use pdf-lib's
@@ -201,19 +212,19 @@ export async function applyEditsAndSave(
         font: pdfFont,
         color: rgb(0, 0, 0),
       };
-      if (style.bold) {
-        drawOpts.lineHeight = fontSizePt;
-        // pdf-lib's TextRenderingMode is exposed via the LineHeight options
-        // in newer versions; older versions need raw operators. The safest
-        // simulation is to draw the text twice with a slight x offset.
-      }
       page.drawText(edit.newText, drawOpts);
-      if (style.bold) {
-        // Second pass offset by a fraction of a point thickens the stroke.
+      if (bold) {
+        // Most Dhivehi fonts don't ship a Bold variant, so we simulate
+        // by drawing the run twice offset by a fraction of a point.
         page.drawText(edit.newText, {
           ...drawOpts,
           x: baseX + Math.max(0.3, fontSizePt * 0.04),
         });
+      }
+      if (italic) {
+        // pdf-lib's drawText doesn't accept a shear matrix, so italic
+        // for now is editor-preview only. TODO: emit raw Tm with shear.
+        // No-op here keeps the saved text upright until that lands.
       }
       if (style.underline) {
         const underlineY = drawY - Math.max(1, fontSizePt * 0.08);

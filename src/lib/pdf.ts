@@ -1,5 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import { resolveFamilyFromHint } from "./fonts";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -64,6 +65,15 @@ export type TextRun = {
   height: number;
   /** Baseline y in viewport pixels. */
   baselineY: number;
+  /** Original font, resolved to one of our registered families (best
+   *  effort match against the source PDF's BaseFont name). */
+  fontFamily: string;
+  /** Original BaseFont string from the source PDF, e.g. "ABCDEF+Faruma".
+   *  Kept for diagnostics + future smarter resolution. */
+  fontBaseName: string | null;
+  /** Detected from the original font's flags / name suffix. */
+  bold: boolean;
+  italic: boolean;
 };
 
 export type RenderedPage = {
@@ -119,6 +129,52 @@ export async function renderPage(
     };
   });
 
+  // Build a per-page lookup of font metadata from pdf.js's commonObjs.
+  // Each text item carries a fontName like "g_d0_f6"; commonObjs.get maps
+  // that to a font object exposing the actual BaseFont name + bold/italic
+  // flags from the PDF font descriptor.
+  const fontInfoByName = new Map<
+    string,
+    { baseName: string | null; bold: boolean; italic: boolean }
+  >();
+  for (const item of items) {
+    if (!item.fontName || fontInfoByName.has(item.fontName)) continue;
+    let info: { baseName: string | null; bold: boolean; italic: boolean } = {
+      baseName: null,
+      bold: false,
+      italic: false,
+    };
+    try {
+      const fontObj = (page.commonObjs as unknown as {
+        get(id: string): unknown;
+        has(id: string): boolean;
+      }).has(item.fontName)
+        ? (page.commonObjs as unknown as { get(id: string): unknown }).get(
+            item.fontName,
+          )
+        : null;
+      const f = fontObj as
+        | {
+            name?: string;
+            loadedName?: string;
+            black?: boolean;
+            bold?: boolean;
+            italic?: boolean;
+          }
+        | null;
+      if (f) {
+        info = {
+          baseName: f.name ?? f.loadedName ?? null,
+          bold: !!(f.bold || f.black),
+          italic: !!f.italic,
+        };
+      }
+    } catch {
+      /* ignore — fall back to default null/false */
+    }
+    fontInfoByName.set(item.fontName, info);
+  }
+
   return {
     pageNumber: page.pageNumber,
     canvas,
@@ -128,7 +184,7 @@ export async function renderPage(
     viewWidth: viewport.width,
     viewHeight: viewport.height,
     textItems: items,
-    textRuns: buildTextRuns(items, page.pageNumber),
+    textRuns: buildTextRuns(items, page.pageNumber, fontInfoByName),
   };
 }
 
@@ -194,7 +250,14 @@ function sortItemsLogical(items: TextItem[], rtl: boolean): TextItem[] {
  * many PDFs (especially Office exports) emit combining marks out of stream
  * order, so we can't rely on pdf.js's natural item order.
  */
-function buildTextRuns(items: TextItem[], pageNumber: number): TextRun[] {
+function buildTextRuns(
+  items: TextItem[],
+  pageNumber: number,
+  fontInfoByName: Map<
+    string,
+    { baseName: string | null; bold: boolean; italic: boolean }
+  >,
+): TextRun[] {
   const visible = items.filter((it) => it.str.length > 0);
   if (visible.length === 0) return [];
 
@@ -244,6 +307,13 @@ function buildTextRuns(items: TextItem[], pageNumber: number): TextRun[] {
     const top = baselineY - maxHeight - topPad;
     const bottom = baselineY + bottomPad;
 
+    // Pick the font from the first item — runs are mostly homogeneous
+    // since merging breaks on font changes (different items end up in
+    // different runs when their pdf.js fontName differs and gaps grow).
+    const firstFontName = ordered[0]?.fontName;
+    const fontInfo = firstFontName ? fontInfoByName.get(firstFontName) : null;
+    const fontFamily = resolveFamilyFromHint(fontInfo?.baseName);
+
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
       sourceIndices,
@@ -256,6 +326,10 @@ function buildTextRuns(items: TextItem[], pageNumber: number): TextRun[] {
       },
       height: maxHeight,
       baselineY,
+      fontFamily,
+      fontBaseName: fontInfo?.baseName ?? null,
+      bold: fontInfo?.bold ?? false,
+      italic: fontInfo?.italic ?? false,
     });
     bucket = [];
   };
