@@ -13,7 +13,16 @@
 // embedded fonts are cached per family across the doc so only the actually-
 // used fonts ship in the saved PDF.
 
-import { PDFDocument, PDFFont, rgb } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFFont,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFOperator,
+  PDFOperatorNames as Op,
+  rgb,
+} from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { RenderedPage, TextRun } from "./pdf";
 import {
@@ -270,27 +279,58 @@ export async function applyEditsAndSave(
         (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
       const drawY = runPdfY + moveY;
 
-      const drawOpts: Parameters<typeof page.drawText>[1] = {
-        x: baseX,
-        y: drawY,
-        size: fontSizePt,
-        font: pdfFont,
-        color: rgb(0, 0, 0),
-      };
-      page.drawText(edit.newText, drawOpts);
+      // Push a raw text-show block so we can apply Tr 2 (true bold via
+      // fill + stroke) and an italic shear matrix — pdf-lib's drawText
+      // can't express either. font.encodeText keeps the Unicode→CID
+      // mapping pdf-lib uses for its own font embedding so the right
+      // glyphs come out.
+      const hex = (
+        pdfFont as PDFFont & { encodeText(t: string): PDFHexString }
+      ).encodeText(edit.newText);
+      const ops: PDFOperator[] = [
+        PDFOperator.of(Op.PushGraphicsState),
+        PDFOperator.of(Op.BeginText),
+        PDFOperator.of(Op.SetFontAndSize, [
+          PDFName.of(pdfFont.name),
+          PDFNumber.of(fontSizePt),
+        ]),
+        PDFOperator.of(Op.NonStrokingColorRgb, [
+          PDFNumber.of(0),
+          PDFNumber.of(0),
+          PDFNumber.of(0),
+        ]),
+      ];
       if (bold) {
-        // Most Dhivehi fonts don't ship a Bold variant, so we simulate
-        // by drawing the run twice offset by a fraction of a point.
-        page.drawText(edit.newText, {
-          ...drawOpts,
-          x: baseX + Math.max(0.3, fontSizePt * 0.04),
-        });
+        // Tr 2 = fill + stroke. Stroke width is a fraction of the font
+        // size so the glyph outlines look thickened, not outlined.
+        ops.push(
+          PDFOperator.of(Op.StrokingColorRgb, [
+            PDFNumber.of(0),
+            PDFNumber.of(0),
+            PDFNumber.of(0),
+          ]),
+          PDFOperator.of(Op.SetLineWidth, [
+            PDFNumber.of(Math.max(0.3, fontSizePt * 0.05)),
+          ]),
+          PDFOperator.of(Op.SetTextRenderingMode, [PDFNumber.of(2)]),
+        );
       }
-      if (italic) {
-        // pdf-lib's drawText doesn't accept a shear matrix, so italic
-        // for now is editor-preview only. TODO: emit raw Tm with shear.
-        // No-op here keeps the saved text upright until that lands.
-      }
+      const shear = italic ? 0.21 : 0; // ~12° slant, common italic angle
+      ops.push(
+        PDFOperator.of(Op.SetTextMatrix, [
+          PDFNumber.of(1),
+          PDFNumber.of(0),
+          PDFNumber.of(shear),
+          PDFNumber.of(1),
+          PDFNumber.of(baseX),
+          PDFNumber.of(drawY),
+        ]),
+        PDFOperator.of(Op.ShowText, [hex]),
+        PDFOperator.of(Op.EndText),
+        PDFOperator.of(Op.PopGraphicsState),
+      );
+      page.pushOperators(...ops);
+
       if (style.underline) {
         const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
         page.drawLine({

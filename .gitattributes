@@ -1,0 +1,23 @@
+# Normalize line endings to LF for every text file checked in. Git still
+# checks them out as LF on every platform; binary blobs (fonts, PDFs,
+# images, lockfiles, wasm) keep their bytes verbatim.
+
+* text=auto eol=lf
+
+# Explicit binaries — never touch.
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wasm binary
+*.zip binary
+
+# Lockfiles benefit from a stable LF too.
+pnpm-lock.yaml text eol=lf
+package-lock.json text eol=lf
