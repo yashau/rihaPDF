@@ -241,6 +241,8 @@ export function PdfPage({
                 {cover}
                 <span
                   data-run-id={run.id}
+                  data-font-family={style.fontFamily ?? run.fontFamily}
+                  data-base-font={run.fontBaseName ?? ""}
                   style={{
                     position: "absolute",
                     left: run.bounds.left - padX + dx,
@@ -303,6 +305,8 @@ export function PdfPage({
               {cover}
               <span
                 data-run-id={run.id}
+                data-font-family={run.fontFamily}
+                data-base-font={run.fontBaseName ?? ""}
                 dir="auto"
                 className="thaana-stack absolute select-text"
                 style={{

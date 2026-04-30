@@ -13,7 +13,7 @@
 // embedded fonts are cached per family across the doc so only the actually-
 // used fonts ship in the saved PDF.
 
-import { PDFDocument, PDFFont, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { RenderedPage, TextRun } from "./pdf";
 import {
@@ -22,7 +22,11 @@ import {
   findTextShows,
 } from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
-import { DEFAULT_FONT_FAMILY, loadFontBytes } from "./fonts";
+import {
+  DEFAULT_FONT_FAMILY,
+  FONTS,
+  loadFontBytes,
+} from "./fonts";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -92,21 +96,34 @@ export async function applyEditsAndSave(
     ...imageMovesByPage.keys(),
   ]);
 
-  // Per-family embedded font + raw bytes. Lazy: only families actually
-  // used in this save end up in the output.
-  const fontCache = new Map<
-    string,
-    { pdfFont: PDFFont; bytes: Uint8Array }
-  >();
+  // Per-family embedded font. Lazy: only families actually used in this
+  // save end up in the output. Latin StandardFonts (Helvetica, Times,
+  // Courier) skip the .ttf-embed path — pdf-lib references the standard
+  // 14 directly, no font program is added to the saved file.
+  const fontCache = new Map<string, { pdfFont: PDFFont }>();
+  const standardFontMap: Record<
+    NonNullable<(typeof FONTS)[number]["standardFont"]>,
+    StandardFonts
+  > = {
+    Helvetica: StandardFonts.Helvetica,
+    TimesRoman: StandardFonts.TimesRoman,
+    Courier: StandardFonts.Courier,
+  };
   const getFont = async (family: string) => {
     const cached = fontCache.get(family);
     if (cached) return cached;
-    const bytes = await loadFontBytes(family);
-    const pdfFont = await doc.embedFont(bytes, {
-      subset: false,
-      customName: `DhivehiEdit_${family.replace(/\W+/g, "_")}`,
-    });
-    const entry = { pdfFont, bytes };
+    const def = FONTS.find((f) => f.family === family);
+    let pdfFont: PDFFont;
+    if (def?.standardFont) {
+      pdfFont = await doc.embedFont(standardFontMap[def.standardFont]);
+    } else {
+      const bytes = await loadFontBytes(family);
+      pdfFont = await doc.embedFont(bytes, {
+        subset: false,
+        customName: `DhivehiEdit_${family.replace(/\W+/g, "_")}`,
+      });
+    }
+    const entry = { pdfFont };
     fontCache.set(family, entry);
     return entry;
   };

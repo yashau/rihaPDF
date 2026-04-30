@@ -580,7 +580,10 @@ function buildTextRuns(
       }
     }
     const baseName = bestShow?.baseFont ?? null;
-    const fontFamily = resolveFamilyFromHint(baseName);
+    // Pass the run's text so resolveFamilyFromHint can pick a script-
+    // appropriate default (Faruma for Thaana, Arial for Latin) when the
+    // BaseFont hint matches nothing in the registry.
+    const fontFamily = resolveFamilyFromHint(baseName, text);
 
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
