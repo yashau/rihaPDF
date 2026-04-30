@@ -144,13 +144,14 @@ export async function renderPage(
     };
   });
 
-  // Recover characters pdf.js's ToUnicode-based extraction missed
-  // (commonly the long Thaana fili in Office-exported docs). For each
-  // text item with empty / suspiciously short str we look for a content-
-  // stream show at the same baseline + x and decode its bytes via the
-  // matching font's reverse cmap.
+  // Replace pdf.js's str on each item with the authoritative text we get
+  // by decoding the matching content-stream Tj bytes through the font's
+  // (fixed) CID→Unicode map. This recovers chars that pdf.js's broken-
+  // ToUnicode-based extraction either mapped to U+0020 (the long-vowel
+  // fili case) or dropped entirely (orphan single-CID Tj's). See
+  // `applyShowDecodes` for the alignment / clearing logic.
   if (glyphMaps.size > 0 && fontShows.length > 0) {
-    recoverMissingChars(items, fontShows, glyphMaps, scale, viewport.height);
+    applyShowDecodes(items, fontShows, glyphMaps, scale, viewport.height, vt);
   }
 
   const _fontShows = fontShows;
@@ -169,95 +170,154 @@ export async function renderPage(
 }
 
 /**
- * For every text item that came back empty or with fewer chars than the
- * source likely intended, find the matching content-stream show and
- * decode its raw bytes using the font's reverse glyph cmap. The patched
- * str is what `buildTextRuns` then merges into the run's editable text.
+ * For each content-stream text-show with a known glyph map, decode the
+ * Tj operand bytes into Unicode and use that as the authoritative string
+ * for the matching pdf.js item — overwriting whatever pdf.js extracted
+ * via the (potentially broken) `/ToUnicode` CMap.
  *
- * Matching is by baseline x/y in PDF user space within a small tolerance
- * (the same tolerance buildTextRuns uses to attach a font). We only
- * patch items whose extracted str is empty — keeping pdf.js's BiDi /
- * ligature handling for everything else.
+ * Why not stick to pdf.js's text? Two failure modes the Office-exported
+ * PDFs we target hit constantly:
+ *
+ *   1. The `bfrange` for the long-vowel fili glyphs has the entry for
+ *      aabaafili (U+07A7) corrupted to U+0020 (space). pdf.js dutifully
+ *      extracts U+0020 wherever that CID appears.
+ *   2. pdf.js sometimes splits a single Tj into two TextItems (one for
+ *      the leading visual char, one for the rest of the BiDi-reordered
+ *      string), and inserts spurious U+0020 between BiDi-direction
+ *      transitions. Char-by-char patching on top is fragile.
+ *
+ * Our content-stream decode is unambiguous: bytes go in, codepoints come
+ * out. We reverse for RTL (PDF paints visual L→R; we want logical
+ * order), trim the CID 0x0003 padding glyphs Office uses as
+ * line-start/end markers, and assign the result to whichever pdf.js
+ * item lives at the show's position. Other items at the same position
+ * get cleared so they don't duplicate text in the merged run. Items
+ * whose font has no glyph map (no `/ToUnicode`, no usable binary cmap —
+ * typically the embedded subsets for Latin punctuation) are left alone.
  */
-function recoverMissingChars(
+function applyShowDecodes(
   items: TextItem[],
   fontShows: import("./sourceFonts").FontShow[],
   glyphMaps: Map<string, import("./glyphMap").GlyphMap>,
   scale: number,
   viewportHeight: number,
+  viewportTransform: number[],
 ): void {
-  // Bucket fontShows by quantised y for O(1) line lookup, then within
-  // each bucket walk by x.
-  const lineBuckets = new Map<number, import("./sourceFonts").FontShow[]>();
-  for (const s of fontShows) {
-    const yBucket = Math.round(s.y * 2) / 2; // 0.5pt resolution
-    let arr = lineBuckets.get(yBucket);
+  const itemBuckets = new Map<number, TextItem[]>();
+  for (const it of items) {
+    const yKey = Math.round((viewportHeight - it.transform[5]) / scale);
+    let arr = itemBuckets.get(yKey);
     if (!arr) {
       arr = [];
-      lineBuckets.set(yBucket, arr);
+      itemBuckets.set(yKey, arr);
     }
-    arr.push(s);
+    arr.push(it);
   }
-  for (const it of items) {
-    if (it.str.length > 0) continue;
-    const itemPdfX = it.transform[4] / scale;
-    const itemPdfY = (viewportHeight - it.transform[5]) / scale;
-    let best: import("./sourceFonts").FontShow | null = null;
-    let bestDist = Infinity;
-    for (let dy = 0; dy <= 4; dy += 0.5) {
-      for (const sign of [1, -1]) {
-        if (sign === -1 && dy === 0) continue;
-        const arr = lineBuckets.get(
-          Math.round((itemPdfY + sign * dy) * 2) / 2,
-        );
-        if (!arr) continue;
-        for (const s of arr) {
-          const dx = Math.abs(s.x - itemPdfX);
-          if (dx > 4) continue;
-          if (dx < bestDist) {
-            bestDist = dx;
-            best = s;
-          }
-        }
-        if (best) break;
-      }
-      if (best) break;
+  const nearbyItems = (yPdf: number, dyTol = 1): TextItem[] => {
+    const center = Math.round(yPdf);
+    const out: TextItem[] = [];
+    for (let dy = -dyTol; dy <= dyTol; dy++) {
+      const arr = itemBuckets.get(center + dy);
+      if (arr) out.push(...arr);
     }
-    if (!best || !best.fontResource) continue;
-    // pdf.js routinely emits zero-width empty items as positioning
-    // breadcrumbs at every Tm. Their best fontShow match is the line's
-    // main Tj which decodes to the full line — patching those would
-    // duplicate every Thaana line and reverse the duplicate. Only patch
-    // shows whose byte length corresponds to an orphan combining mark
-    // or short cluster (≤ 3 chars worth of CIDs).
-    const isIdentity = best.fontResource
-      ? glyphMaps.get(best.fontResource)?.encoding.startsWith("Identity")
-      : false;
-    const cidWidth = isIdentity ? 2 : 1;
-    if (best.bytes.length / cidWidth > 3) continue;
-    const map = glyphMaps.get(best.fontResource);
+    return out;
+  };
+
+  let synthIndex = items.length + 100_000;
+  for (const show of fontShows) {
+    if (!show.fontResource) continue;
+    const map = glyphMaps.get(show.fontResource);
     if (!map) continue;
-    const recovered = decodeBytesViaMap(best.bytes, map);
-    if (recovered) it.str = recovered;
+    let decoded = decodeViaMap(show.bytes, map);
+    if (decoded == null || decoded.length === 0) continue;
+    // Content stream paints visual L→R; for RTL the byte-0 char is the
+    // LAST-logical character. Reverse to align with pdf.js's logical
+    // order. Punctuation- or digit-only shows stay LTR.
+    const isRtl = /[֐-ࣿ\u{10800}-\u{10FFF}]/u.test(decoded);
+    if (isRtl) decoded = Array.from(decoded).reverse().join("");
+    // Office wraps every Tj with a CID 0x0003 padding glyph (its
+    // ToUnicode entry is `<0003> <0020>`). Trim leading/trailing
+    // whitespace introduced by these. Inter-word spaces survive.
+    decoded = decoded.replace(/^\s+|\s+$/g, "");
+    if (decoded.length === 0) continue;
+
+    const nearby = nearbyItems(show.y);
+    const matching: TextItem[] = [];
+    // Tolerance accounts for pdf.js reporting an item's x at the start
+    // of its first VISIBLE char, while the show's textMatrix x is at
+    // the start of the first CID (which may be a 0x0003 padding glyph).
+    const dxTol = 8;
+    for (const it of nearby) {
+      const ix = it.transform[4] / scale;
+      if (Math.abs(ix - show.x) <= dxTol) matching.push(it);
+    }
+
+    if (matching.length === 0) {
+      const composed = multiplyTransforms(viewportTransform, [
+        12, 0, 0, 12, show.x, show.y,
+      ]);
+      const surroundingHeight =
+        nearby.length > 0
+          ? nearby.reduce((sum, it) => sum + it.height, 0) / nearby.length
+          : Math.abs(composed[3]);
+      const synth: TextItem = {
+        index: synthIndex++,
+        str: decoded,
+        transform: composed,
+        width: 0,
+        height: surroundingHeight,
+        fontName: nearby[0]?.fontName ?? "",
+        hasEOL: false,
+      };
+      items.push(synth);
+      const yKey = Math.round(show.y);
+      let arr = itemBuckets.get(yKey);
+      if (!arr) {
+        arr = [];
+        itemBuckets.set(yKey, arr);
+      }
+      arr.push(synth);
+      continue;
+    }
+
+    // pdf.js sometimes splits a single Tj into multiple items (a leading
+    // visual char + the BiDi-reordered tail). Give the longest one the
+    // full decoded text and clear the rest so they don't duplicate.
+    let main = matching[0];
+    for (const it of matching) {
+      if (it.str.length > main.str.length) main = it;
+    }
+    main.str = decoded;
+    for (const it of matching) {
+      if (it !== main) it.str = "";
+    }
   }
 }
 
-function decodeBytesViaMap(
+/** Decode a content-stream Tj operand using the font's CID → Unicode
+ *  map. Returns null if any CID is missing from the map — the caller
+ *  should leave the corresponding pdf.js item alone rather than risk
+ *  overwriting it with a partially-decoded string (or a string of
+ *  silent placeholders). */
+function decodeViaMap(
   bytes: Uint8Array,
   map: import("./glyphMap").GlyphMap,
-): string {
+): string | null {
   const isIdentity = map.encoding.startsWith("Identity");
   let out = "";
   if (isIdentity) {
-    for (let i = 0; i + 1 < bytes.length; i += 2) {
+    if (bytes.length % 2 !== 0) return null;
+    for (let i = 0; i < bytes.length; i += 2) {
       const cid = (bytes[i] << 8) | bytes[i + 1];
       const cp = map.toUnicode.get(cid);
-      if (cp != null) out += String.fromCodePoint(cp);
+      if (cp == null) return null;
+      out += String.fromCodePoint(cp);
     }
   } else {
     for (let i = 0; i < bytes.length; i++) {
       const cp = map.toUnicode.get(bytes[i]);
-      if (cp != null) out += String.fromCodePoint(cp);
+      if (cp == null) return null;
+      out += String.fromCodePoint(cp);
     }
   }
   return out;
@@ -359,6 +419,7 @@ function buildTextRuns(
     let baselineY = 0;
     let text = "";
     const sourceIndices: number[] = [];
+    let prevItem: TextItem | null = null;
     for (const it of ordered) {
       const [, , , scaleY, tx, ty] = it.transform;
       const h = Math.abs(scaleY);
@@ -368,7 +429,20 @@ function buildTextRuns(
       maxRight = Math.max(maxRight, right);
       maxHeight = Math.max(maxHeight, h);
       baselineY = ty;
+      // Insert an inter-word space when the visual gap between this item
+      // and the previous one (in logical reading order) is larger than
+      // ~12% of the line height. Authoritative content-stream decodes
+      // (applyShowDecodes) strip the CID 0x0003 padding glyphs Office
+      // uses as Tj-leading whitespace markers, so without this the items
+      // get glued together when they really should be separate words.
+      if (prevItem && it.str.length > 0) {
+        const wordGap = horizontalGap(prevItem, it);
+        if (wordGap > h * 0.12 && !text.endsWith(" ") && !it.str.startsWith(" ")) {
+          text += " ";
+        }
+      }
       text += it.str;
+      if (it.str.length > 0) prevItem = it;
       sourceIndices.push(it.index);
     }
     text = cleanCombiningSpaces(text);
