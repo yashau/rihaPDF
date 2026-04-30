@@ -81,31 +81,101 @@ expose its parser publicly, so we read the raw bytes via
   (used by HarfBuzz) isn't applied. The full fix is to bypass pdf-lib's
   drawText and emit raw Tj operators with HarfBuzz-shaped glyph IDs;
   blocked on pdf-lib remapping glyph IDs even with `subset: false`.
-- **Some long-vowel fili (esp. aabaafili U+07A7) are missing in
-  extraction** for source PDFs whose ToUnicode CMap omits them. pdf.js
-  fills the gap with a phantom space; we strip those before fili.
 - **Italic carries to editor preview only** — saved PDF italic needs raw
   operator emission (Tm with shear matrix); deferred.
 
 ## Test scripts
 
 ```bash
-node scripts/probe.mjs load     # multi-spot extraction sanity check
-node scripts/probe.mjs edit     # click → editor → text match
-node scripts/probe.mjs save     # full save round-trip
-node scripts/diff.mjs           # visual diff: render / overlay / edit
-node scripts/verifySaved.mjs    # render the saved PDF + dump runs
-node scripts/dumpItems.mjs N    # raw pdf.js item dump for page N
+node scripts/probe.mjs load            # multi-spot extraction sanity check
+node scripts/probe.mjs edit            # click → editor → text match
+node scripts/probe.mjs save            # full save round-trip
+node scripts/diff.mjs                  # visual diff: render / overlay / edit
+node scripts/verifyMoveEdit.mjs        # move-only / edit-only / move+edit
+node scripts/verifySaved.mjs           # render the saved PDF + dump runs
+node scripts/probeOverlayCoverage.mjs  # whole-PDF overlay + click audit
+node scripts/filiCoverage.mjs          # count every long-fili type per page
+node scripts/dumpItems.mjs N           # raw pdf.js item dump for page N
+node scripts/dumpRuns.mjs              # all built TextRuns
+node scripts/dumpToUnicode.mjs         # raw + parsed /ToUnicode CMaps
+node scripts/dumpFontGlyphs.mjs        # font binary cmap + glyph names
 ```
 
 All scripts assume Vite dev server at localhost:5173.
 
-## Roadmap
+## TODO
 
-- True HarfBuzz-shaped output (via custom Type 0 / Identity-H font writer
-  that bypasses pdf-lib's glyph remapping)
-- Italic in saved PDFs (Tm shear)
-- Annotations (rect / highlight / freehand)
-- Page reorder UI
-- Better source-font detection so replacement runs match the surrounding
-  text's font automatically
+### Editing
+
+- [ ] **Multi-line paragraph editing.** A paragraph that wraps across
+      N visual lines is currently N separate runs — each clickable
+      independently. The user can edit each line but not the paragraph
+      as a single unit. Needs cross-line run merging keyed on indent +
+      line-spacing, plus a multi-line input in `EditField`.
+- [ ] **Better word/segment selection.** The editor opens with the run
+      pre-selected (already wired via `inputRef.current.select()`), but
+      a long line forces a full replace. Would be nice to land the
+      caret at the click position and let the user partial-edit.
+- [ ] **Marquee select / multi-move (Phase C).** Drag-rectangle to
+      select multiple runs, then move them as a group.
+
+### Save pipeline
+
+- [ ] **HarfBuzz-shaped output.** Replace pdf-lib's `drawText` for the
+      Thaana path with a custom Type 0 / Identity-H emitter that takes
+      pre-shaped glyph IDs from harfbuzzjs and writes raw Tj operators.
+      Unblocks correct GPOS mark positioning.
+- [ ] **Italic in saved PDFs.** Emit raw `Tm` with a shear matrix
+      `(1, 0, tan(θ), 1, x, y)` for italic runs.
+- [ ] **Underline + strikethrough as text decorations** carried in the
+      saved PDF (currently the underline path is a separate drawLine —
+      works, but breaks if the run gets re-edited).
+
+### Overlay / interaction
+
+- [ ] **Overlay-rect vs rendered-text-rect drift.** Web-font Faruma
+      lays out slightly wider than the embedded subset on the canvas,
+      so `range.getBoundingClientRect` reports text overflowing the
+      `[data-run-id]` box. Pointer-events still hit (the inner span
+      catches them), but `probeOverlayCoverage.mjs` flags 37 runs on
+      the test PDF. Options: cap inner-span overflow with a CSS
+      `clip-path`, or measure rendered text and grow the overlay to
+      match.
+- [ ] **Image / non-text glyph clusters in the coverage probe.** The
+      bismillah calligraphy at the top of page 1 and the Maldives
+      crest are detected as dark clusters and currently filtered by a
+      height heuristic. Replace with an actual `<image>` op inspector.
+
+### Save format / fonts
+
+- [ ] **Image move (Phase B).** Extract image positions, drag, save
+      with new `cm` operator.
+- [ ] **Page reorder UI** (drag thumbnails to reorder, drop to merge).
+- [ ] **Annotations** — rect, highlight, freehand.
+- [ ] **Smarter source-font matching.** Today the replacement run
+      picks one of the bundled families based on `BaseFont` keyword
+      hints; weight + width matching could be tighter.
+- [ ] **Drop A_Bismillah-style display fonts from the editor picker.**
+      They're purely ligature glyph fonts (no Unicode coverage) and
+      shouldn't be selectable for replacement text.
+
+### Source-PDF support
+
+- [x] ~~Long-vowel fili recovery (aabaafili U+07A7) for Office's
+      broken `bfrange [<07A6> <0020>]`.~~ Done — see
+      [glyphMap.ts](src/lib/glyphMap.ts) + show-driven decode in
+      [pdf.ts](src/lib/pdf.ts).
+- [ ] **PDFs without `/ToUnicode`.** Fall through to the font's
+      binary cmap (already wired) but those fonts often have a
+      stripped cmap too. Need a glyph-name → codepoint table covering
+      the common Maldivian Adobe glyph names beyond fili.
+- [ ] **Encrypted PDFs.** `pdf-lib` accepts `ignoreEncryption: true`
+      but loses encryption on save; revisit if we ever target them.
+
+### Long shots
+
+- [ ] **Form fields** (text + checkbox).
+- [ ] **Tables** detected and re-flowed (probably out of scope until
+      we have a real model of the document).
+- [ ] **Standalone desktop build** (Tauri / Electron wrapper) so the
+      app can target offline workflows.
