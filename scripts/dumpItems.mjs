@@ -13,7 +13,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const PDF_PATH = path.resolve(
   root,
-  "..",
   "hn41badsfTXSpmf0opxlFBWgTLAJX5rWubbshJYC.pdf",
 );
 const PAGE_NUM = Number(process.argv[2] ?? "1");

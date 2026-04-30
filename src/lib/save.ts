@@ -13,16 +13,7 @@
 // embedded fonts are cached per family across the doc so only the actually-
 // used fonts ship in the saved PDF.
 
-import {
-  PDFDocument,
-  PDFFont,
-  PDFHexString,
-  PDFName,
-  PDFNumber,
-  PDFOperator,
-  PDFOperatorNames as Op,
-  rgb,
-} from "pdf-lib";
+import { PDFDocument, PDFFont, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { RenderedPage, TextRun } from "./pdf";
 import {
@@ -294,18 +285,12 @@ export async function applyEditsAndSave(
         font: pdfFont,
         color: rgb(0, 0, 0),
       });
-      if (bold) {
-        page.drawText(edit.newText, {
-          x: baseX + Math.max(0.3, fontSizePt * 0.05),
-          y: drawY,
-          size: fontSizePt,
-          font: pdfFont,
-          color: rgb(0, 0, 0),
-        });
-      }
-      // Mark italic as a known limitation — userland sees it in the
-      // editor but the saved file stays upright until we land custom
-      // shaped-output via raw Tj.
+      // Bold/italic on rerender path are deferred until we land a raw-ops
+      // text-show that pdf-lib's CID remap doesn't break. The synthetic
+      // double-draw we tried before duplicated the text in extraction —
+      // worse than not having bold. Move-only edits still preserve source
+      // bold/italic because they keep the original Tj.
+      void bold;
       void italic;
 
       if (style.underline) {

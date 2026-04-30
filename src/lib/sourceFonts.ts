@@ -31,6 +31,15 @@ export type FontShow = {
   /** Best-effort flags from the FontDescriptor.Flags or the BaseFont name. */
   bold: boolean;
   italic: boolean;
+  /** PDF resource name (`F1`, `F2`, …) — keyed for cross-referencing
+   *  with the per-page glyph reverse cmap from glyphMap.ts. */
+  fontResource: string | null;
+  /** Raw operand bytes from the Tj/TJ operator. For Tj this is the
+   *  full literal/hex string. For TJ we collapse all string operands
+   *  into one buffer (the numeric kerning adjustments are dropped —
+   *  they don't change which glyphs are drawn). Decoded via the font's
+   *  reverse cmap when pdf.js fails to extract a character. */
+  bytes: Uint8Array;
 };
 
 /**
@@ -97,19 +106,40 @@ export async function extractPageFontShows(
     const ops = parseContentStream(bytes);
     const shows = findTextShows(ops);
     const fontShows: FontShow[] = shows.map((s) => {
-      // s.fontName is the resource key the Tf operator referenced
-      // (without leading slash); look it up in our map.
       const info = s.fontName ? fontInfoByResource.get(s.fontName) : null;
-      // Office often draws "bold" as Tr 2 (fill + stroke) rather than a
-      // separate Bold-variant font. Treat that as bold so we can replicate
-      // it on the rerender path.
       const trBold = s.textRenderingMode === 2;
+      // Pull the raw bytes out of the Tj/TJ operand. For Tj it's the
+      // single string token; for TJ it's an array of strings interleaved
+      // with kerning numbers — concatenate the string portions only.
+      const operandBytes: number[] = [];
+      const collect = (bytes: Uint8Array) => {
+        for (const b of bytes) operandBytes.push(b);
+      };
+      for (const operand of s.op.operands) {
+        if (
+          operand.kind === "literal-string" ||
+          operand.kind === "hex-string"
+        ) {
+          collect(operand.bytes);
+        } else if (operand.kind === "array") {
+          for (const item of operand.items) {
+            if (
+              item.kind === "literal-string" ||
+              item.kind === "hex-string"
+            ) {
+              collect(item.bytes);
+            }
+          }
+        }
+      }
       return {
         x: s.textMatrix[4],
         y: s.textMatrix[5],
         baseFont: info?.baseFont ?? null,
         bold: (info?.bold ?? false) || trBold,
         italic: info?.italic ?? false,
+        fontResource: s.fontName ?? null,
+        bytes: new Uint8Array(operandBytes),
       };
     });
     result.push(fontShows);

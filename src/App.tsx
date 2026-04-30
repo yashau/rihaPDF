@@ -3,6 +3,8 @@ import { Button } from "@heroui/react";
 import { loadPdf, renderPage } from "./lib/pdf";
 import type { RenderedPage } from "./lib/pdf";
 import { extractPageFontShows } from "./lib/sourceFonts";
+import { extractPageGlyphMaps } from "./lib/glyphMap";
+import { PDFDocument } from "pdf-lib";
 import {
   applyEditsAndSave,
   downloadBlob,
@@ -32,15 +34,23 @@ export default function App() {
       const forPdfJs = buf.slice(0);
       const forSave = buf.slice(0);
       const forFonts = buf.slice(0);
-      const [doc, fontShowsByPage] = await Promise.all([
+      const forGlyphMaps = buf.slice(0);
+      const [doc, fontShowsByPage, glyphsDoc] = await Promise.all([
         loadPdf(forPdfJs),
         extractPageFontShows(forFonts),
+        PDFDocument.load(forGlyphMaps, { ignoreEncryption: true }),
       ]);
       const rendered: RenderedPage[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);
+        const glyphMaps = extractPageGlyphMaps(glyphsDoc, i - 1);
         rendered.push(
-          await renderPage(page, RENDER_SCALE, fontShowsByPage[i - 1] ?? []),
+          await renderPage(
+            page,
+            RENDER_SCALE,
+            fontShowsByPage[i - 1] ?? [],
+            glyphMaps,
+          ),
         );
       }
       setFilename(file.name);

@@ -99,6 +99,10 @@ export async function renderPage(
    *  uses this to attach a fontFamily / bold / italic to each run by
    *  matching the run's PDF-user-space baseline against the show's. */
   fontShows: import("./sourceFonts").FontShow[] = [],
+  /** Per-font glyphId → Unicode reverse cmap, used to recover characters
+   *  the source PDF's broken ToUnicode CMap omitted (e.g. the long-vowel
+   *  Thaana fili). Keyed by PDF resource name (`F1`, `F2`, …). */
+  glyphMaps: Map<string, import("./glyphMap").GlyphMap> = new Map(),
 ): Promise<RenderedPage> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
@@ -107,7 +111,13 @@ export async function renderPage(
   const ctx = canvas.getContext("2d")!;
   await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
-  const content = await page.getTextContent();
+  // disableCombineTextItems keeps each Tj/TJ as its own item — pdf.js's
+  // default consolidation merges adjacent items and inserts U+0020 to
+  // bridge gaps, which hides the empty items that recover-missing-chars
+  // wants to patch (orphan Thaana fili at standalone positions).
+  const content = await page.getTextContent({
+    disableCombineTextItems: true,
+  } as Parameters<typeof page.getTextContent>[0]);
   // pdf.js gives us text item transforms in PDF user space. We compose with
   // viewport.transform so all downstream code (overlay positioning, run
   // bounding boxes, save coord conversion) works in viewport pixel space.
@@ -134,10 +144,15 @@ export async function renderPage(
     };
   });
 
-  // pdf.js doesn't make the source BaseFont names available via the
-  // public TextContent API. The caller passes in `fontShows` extracted
-  // from the source PDF via pdf-lib; buildTextRuns will match each run's
-  // baseline (in PDF user space) to the closest show and use its font.
+  // Recover characters pdf.js's ToUnicode-based extraction missed
+  // (commonly the long Thaana fili in Office-exported docs). For each
+  // text item with empty / suspiciously short str we look for a content-
+  // stream show at the same baseline + x and decode its bytes via the
+  // matching font's reverse cmap.
+  if (glyphMaps.size > 0 && fontShows.length > 0) {
+    recoverMissingChars(items, fontShows, glyphMaps, scale, viewport.height);
+  }
+
   const _fontShows = fontShows;
 
   return {
@@ -151,6 +166,101 @@ export async function renderPage(
     textItems: items,
     textRuns: buildTextRuns(items, page.pageNumber, _fontShows, scale, viewport.height),
   };
+}
+
+/**
+ * For every text item that came back empty or with fewer chars than the
+ * source likely intended, find the matching content-stream show and
+ * decode its raw bytes using the font's reverse glyph cmap. The patched
+ * str is what `buildTextRuns` then merges into the run's editable text.
+ *
+ * Matching is by baseline x/y in PDF user space within a small tolerance
+ * (the same tolerance buildTextRuns uses to attach a font). We only
+ * patch items whose extracted str is empty — keeping pdf.js's BiDi /
+ * ligature handling for everything else.
+ */
+function recoverMissingChars(
+  items: TextItem[],
+  fontShows: import("./sourceFonts").FontShow[],
+  glyphMaps: Map<string, import("./glyphMap").GlyphMap>,
+  scale: number,
+  viewportHeight: number,
+): void {
+  // Bucket fontShows by quantised y for O(1) line lookup, then within
+  // each bucket walk by x.
+  const lineBuckets = new Map<number, import("./sourceFonts").FontShow[]>();
+  for (const s of fontShows) {
+    const yBucket = Math.round(s.y * 2) / 2; // 0.5pt resolution
+    let arr = lineBuckets.get(yBucket);
+    if (!arr) {
+      arr = [];
+      lineBuckets.set(yBucket, arr);
+    }
+    arr.push(s);
+  }
+  for (const it of items) {
+    if (it.str.length > 0) continue;
+    const itemPdfX = it.transform[4] / scale;
+    const itemPdfY = (viewportHeight - it.transform[5]) / scale;
+    let best: import("./sourceFonts").FontShow | null = null;
+    let bestDist = Infinity;
+    for (let dy = 0; dy <= 4; dy += 0.5) {
+      for (const sign of [1, -1]) {
+        if (sign === -1 && dy === 0) continue;
+        const arr = lineBuckets.get(
+          Math.round((itemPdfY + sign * dy) * 2) / 2,
+        );
+        if (!arr) continue;
+        for (const s of arr) {
+          const dx = Math.abs(s.x - itemPdfX);
+          if (dx > 4) continue;
+          if (dx < bestDist) {
+            bestDist = dx;
+            best = s;
+          }
+        }
+        if (best) break;
+      }
+      if (best) break;
+    }
+    if (!best || !best.fontResource) continue;
+    // pdf.js routinely emits zero-width empty items as positioning
+    // breadcrumbs at every Tm. Their best fontShow match is the line's
+    // main Tj which decodes to the full line — patching those would
+    // duplicate every Thaana line and reverse the duplicate. Only patch
+    // shows whose byte length corresponds to an orphan combining mark
+    // or short cluster (≤ 3 chars worth of CIDs).
+    const isIdentity = best.fontResource
+      ? glyphMaps.get(best.fontResource)?.encoding.startsWith("Identity")
+      : false;
+    const cidWidth = isIdentity ? 2 : 1;
+    if (best.bytes.length / cidWidth > 3) continue;
+    const map = glyphMaps.get(best.fontResource);
+    if (!map) continue;
+    const recovered = decodeBytesViaMap(best.bytes, map);
+    if (recovered) it.str = recovered;
+  }
+}
+
+function decodeBytesViaMap(
+  bytes: Uint8Array,
+  map: import("./glyphMap").GlyphMap,
+): string {
+  const isIdentity = map.encoding.startsWith("Identity");
+  let out = "";
+  if (isIdentity) {
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      const cid = (bytes[i] << 8) | bytes[i + 1];
+      const cp = map.toUnicode.get(cid);
+      if (cp != null) out += String.fromCodePoint(cp);
+    }
+  } else {
+    for (let i = 0; i < bytes.length; i++) {
+      const cp = map.toUnicode.get(bytes[i]);
+      if (cp != null) out += String.fromCodePoint(cp);
+    }
+  }
+  return out;
 }
 
 // Strong-RTL Unicode ranges: Hebrew, Arabic, Thaana, Syriac, plus the
