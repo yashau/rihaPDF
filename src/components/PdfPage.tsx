@@ -297,6 +297,11 @@ function EditField({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [text, setText] = useState(initial.text);
+  // Editor opens at the run's CURRENT position (= original bounds + any
+  // committed move offset). Otherwise dragging-then-clicking opens the
+  // input at the original spot, which is jarring.
+  const dx = initial.dx ?? 0;
+  const dy = initial.dy ?? 0;
   const [style, setStyle] = useState<EditStyle>(initial.style ?? {});
   const [width, setWidth] = useState<number>(
     Math.max(run.bounds.width + 24, 80),
@@ -349,8 +354,8 @@ function EditField({
         data-edit-toolbar
         style={{
           position: "absolute",
-          left: run.bounds.left - 2,
-          top: run.bounds.top - 48,
+          left: run.bounds.left - 2 + dx,
+          top: run.bounds.top - 48 + dy,
           zIndex: 10,
           display: "flex",
           gap: 4,
@@ -451,8 +456,8 @@ function EditField({
         data-editor
         style={{
           position: "absolute",
-          left: run.bounds.left - 2,
-          top: run.bounds.top - 2,
+          left: run.bounds.left - 2 + dx,
+          top: run.bounds.top - 2 + dy,
           width,
           height: run.bounds.height + 4,
           fontFamily: fontFamilyCss,
