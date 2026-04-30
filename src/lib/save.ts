@@ -51,6 +51,16 @@ export type Edit = {
   dy?: number;
 };
 
+/** Drag offset for an image XObject placement. The save path looks up
+ *  the matching `cm` op via the ImageInstance's `cmOpIndex` and adds
+ *  (dx / scale, -dy / scale) to its translation operands [4] and [5]. */
+export type ImageMove = {
+  pageIndex: number;
+  imageId: string;
+  dx?: number;
+  dy?: number;
+};
+
 export type PageOp =
   | { kind: "remove"; pageIndex: number }
   | { kind: "insertBlank"; afterPageIndex: number };
@@ -60,6 +70,7 @@ export async function applyEditsAndSave(
   pages: RenderedPage[],
   edits: Edit[],
   pageOps: PageOp[],
+  imageMoves: ImageMove[] = [],
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalPdfBytes);
   doc.registerFontkit(fontkit);
@@ -69,6 +80,17 @@ export async function applyEditsAndSave(
     if (!editsByPage.has(e.pageIndex)) editsByPage.set(e.pageIndex, []);
     editsByPage.get(e.pageIndex)!.push(e);
   }
+  const imageMovesByPage = new Map<number, ImageMove[]>();
+  for (const m of imageMoves) {
+    if (!imageMovesByPage.has(m.pageIndex)) imageMovesByPage.set(m.pageIndex, []);
+    imageMovesByPage.get(m.pageIndex)!.push(m);
+  }
+  // Pages that need a content-stream rewrite even if there are no text
+  // edits — image-only moves still go through the stream surgery path.
+  const pagesToRewrite = new Set<number>([
+    ...editsByPage.keys(),
+    ...imageMovesByPage.keys(),
+  ]);
 
   // Per-family embedded font + raw bytes. Lazy: only families actually
   // used in this save end up in the output.
@@ -90,7 +112,9 @@ export async function applyEditsAndSave(
   };
 
   const docPages = doc.getPages();
-  for (const [pageIndex, pageEdits] of editsByPage) {
+  for (const pageIndex of pagesToRewrite) {
+    const pageEdits = editsByPage.get(pageIndex) ?? [];
+    const pageImageMoves = imageMovesByPage.get(pageIndex) ?? [];
     const page = docPages[pageIndex];
     const rendered = pages[pageIndex];
     if (!page || !rendered) continue;
@@ -204,6 +228,34 @@ export async function applyEditsAndSave(
     for (const m of moveOps) {
       moveByTjIndex.set(m.tjIndex, { newTx: m.newTx, newTy: m.newTy });
     }
+    // Apply image moves: for each moved image, find its `cm` op (the
+    // one we noted at extraction time) and add (dx_pdf, dy_pdf) to its
+    // translation operands [4] and [5]. This rewrites the matrix in
+    // place — keeps scale + rotation, only shifts position.
+    for (const move of pageImageMoves) {
+      const img = rendered.images.find((i) => i.id === move.imageId);
+      if (!img || img.cmOpIndex == null) continue;
+      const cmOp = ops[img.cmOpIndex];
+      if (!cmOp || cmOp.op !== "cm" || cmOp.operands.length !== 6) continue;
+      const tx4 = cmOp.operands[4];
+      const tx5 = cmOp.operands[5];
+      if (tx4.kind !== "number" || tx5.kind !== "number") continue;
+      const dxPdf = (move.dx ?? 0) / scale;
+      const dyPdf = -(move.dy ?? 0) / scale;
+      const newTx = tx4.value + dxPdf;
+      const newTy = tx5.value + dyPdf;
+      cmOp.operands[4] = {
+        kind: "number",
+        value: newTx,
+        raw: newTx.toFixed(3),
+      };
+      cmOp.operands[5] = {
+        kind: "number",
+        value: newTy,
+        raw: newTy.toFixed(3),
+      };
+    }
+
     const newOps: typeof ops = [];
     for (let i = 0; i < ops.length; i++) {
       if (indicesToRemove.has(i)) continue;

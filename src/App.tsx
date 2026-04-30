@@ -4,14 +4,16 @@ import { loadPdf, renderPage } from "./lib/pdf";
 import type { RenderedPage } from "./lib/pdf";
 import { extractPageFontShows } from "./lib/sourceFonts";
 import { extractPageGlyphMaps } from "./lib/glyphMap";
+import { extractPageImages } from "./lib/sourceImages";
 import { PDFDocument } from "pdf-lib";
 import {
   applyEditsAndSave,
   downloadBlob,
   type Edit,
+  type ImageMove,
   type PageOp,
 } from "./lib/save";
-import { PdfPage, type EditValue } from "./components/PdfPage";
+import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 
 const RENDER_SCALE = 1.5;
 
@@ -23,6 +25,11 @@ export default function App() {
   const [edits, setEdits] = useState<Map<number, Map<string, EditValue>>>(
     new Map(),
   );
+  /** Map<pageIndex, Map<imageId, ImageMoveValue>> — drag offsets per
+   *  image, identical shape to edits but for image XObject placements. */
+  const [imageMoves, setImageMoves] = useState<
+    Map<number, Map<string, ImageMoveValue>>
+  >(new Map());
   const [pageOps, setPageOps] = useState<PageOp[]>([]);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -35,10 +42,12 @@ export default function App() {
       const forSave = buf.slice(0);
       const forFonts = buf.slice(0);
       const forGlyphMaps = buf.slice(0);
-      const [doc, fontShowsByPage, glyphsDoc] = await Promise.all([
+      const forImages = buf.slice(0);
+      const [doc, fontShowsByPage, glyphsDoc, imagesByPage] = await Promise.all([
         loadPdf(forPdfJs),
         extractPageFontShows(forFonts),
         PDFDocument.load(forGlyphMaps, { ignoreEncryption: true }),
+        extractPageImages(forImages),
       ]);
       const rendered: RenderedPage[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
@@ -50,6 +59,7 @@ export default function App() {
             RENDER_SCALE,
             fontShowsByPage[i - 1] ?? [],
             glyphMaps,
+            imagesByPage[i - 1] ?? [],
           ),
         );
       }
@@ -57,6 +67,7 @@ export default function App() {
       setOriginalBytes(forSave);
       setPages(rendered);
       setEdits(new Map());
+      setImageMoves(new Map());
       setPageOps([]);
     } finally {
       setBusy(false);
@@ -69,6 +80,19 @@ export default function App() {
         const next = new Map(prev);
         const pageMap = new Map(next.get(pageIndex) ?? new Map());
         pageMap.set(runId, value);
+        next.set(pageIndex, pageMap);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const onImageMove = useCallback(
+    (pageIndex: number, imageId: string, value: ImageMoveValue) => {
+      setImageMoves((prev) => {
+        const next = new Map(prev);
+        const pageMap = new Map(next.get(pageIndex) ?? new Map());
+        pageMap.set(imageId, value);
         next.set(pageIndex, pageMap);
         return next;
       });
@@ -93,20 +117,37 @@ export default function App() {
           });
         }
       }
+      const flatImageMoves: ImageMove[] = [];
+      for (const [pageIndex, imgs] of imageMoves) {
+        for (const [imageId, value] of imgs) {
+          if ((value.dx ?? 0) === 0 && (value.dy ?? 0) === 0) continue;
+          flatImageMoves.push({
+            pageIndex,
+            imageId,
+            dx: value.dx,
+            dy: value.dy,
+          });
+        }
+      }
       const out = await applyEditsAndSave(
         originalBytes,
         pages,
         flatEdits,
         pageOps,
+        flatImageMoves,
       );
       const baseName = filename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
     } finally {
       setBusy(false);
     }
-  }, [originalBytes, filename, edits, pageOps, pages]);
+  }, [originalBytes, filename, edits, imageMoves, pageOps, pages]);
 
   const totalEdits = Array.from(edits.values()).reduce(
+    (sum, m) => sum + m.size,
+    0,
+  );
+  const totalImageMoves = Array.from(imageMoves.values()).reduce(
     (sum, m) => sum + m.size,
     0,
   );
@@ -136,11 +177,16 @@ export default function App() {
         <Button
           variant="secondary"
           isDisabled={
-            !originalBytes || busy || totalEdits + pageOps.length === 0
+            !originalBytes ||
+            busy ||
+            totalEdits + totalImageMoves + pageOps.length === 0
           }
           onPress={onSave}
         >
           Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
+          {totalImageMoves
+            ? `, ${totalImageMoves} image move${totalImageMoves === 1 ? "" : "s"}`
+            : ""}
           {pageOps.length ? `, ${pageOps.length} page op` : ""})
         </Button>
         <span className="text-sm text-zinc-500 ml-auto">
@@ -160,8 +206,10 @@ export default function App() {
                 page={page}
                 pageIndex={idx}
                 edits={edits.get(idx) ?? new Map()}
-                onEdit={(runId, value) =>
-                  onEdit(idx, runId, value)
+                imageMoves={imageMoves.get(idx) ?? new Map()}
+                onEdit={(runId, value) => onEdit(idx, runId, value)}
+                onImageMove={(imageId, value) =>
+                  onImageMove(idx, imageId, value)
                 }
                 onPageOp={(op) => setPageOps((prev) => [...prev, op])}
               />
@@ -177,13 +225,17 @@ function PageWithToolbar({
   page,
   pageIndex,
   edits,
+  imageMoves,
   onEdit,
+  onImageMove,
   onPageOp,
 }: {
   page: RenderedPage;
   pageIndex: number;
   edits: Map<string, EditValue>;
+  imageMoves: Map<string, ImageMoveValue>;
   onEdit: (runId: string, value: EditValue) => void;
+  onImageMove: (imageId: string, value: ImageMoveValue) => void;
   onPageOp: (op: PageOp) => void;
 }) {
   return (
@@ -211,7 +263,9 @@ function PageWithToolbar({
         page={page}
         pageIndex={pageIndex}
         edits={edits}
+        imageMoves={imageMoves}
         onEdit={onEdit}
+        onImageMove={onImageMove}
       />
     </div>
   );

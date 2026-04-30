@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
@@ -14,16 +14,33 @@ export type EditValue = {
   dy?: number;
 };
 
+/** Move offset for one image instance, in viewport pixels (same axis
+ *  convention as EditValue). Saved by adding (dx/scale, -dy/scale) to
+ *  the matching cm op's translation operands. */
+export type ImageMoveValue = {
+  dx?: number;
+  dy?: number;
+};
+
 const DRAG_THRESHOLD_PX = 3;
 
 type Props = {
   page: RenderedPage;
   pageIndex: number;
   edits: Map<string, EditValue>;
+  imageMoves: Map<string, ImageMoveValue>;
   onEdit: (runId: string, value: EditValue) => void;
+  onImageMove: (imageId: string, value: ImageMoveValue) => void;
 };
 
-export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
+export function PdfPage({
+  page,
+  pageIndex,
+  edits,
+  imageMoves,
+  onEdit,
+  onImageMove,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   /** While dragging a run, the live offset for the dragged run. We keep
@@ -31,6 +48,12 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
    *  edits Map on every mousemove. */
   const [drag, setDrag] = useState<
     | { runId: string; startX: number; startY: number; dx: number; dy: number }
+    | null
+  >(null);
+  /** Same idea for images. Separate state because image drags don't
+   *  have the click-suppression / edit handoff that text runs do. */
+  const [imageDrag, setImageDrag] = useState<
+    | { imageId: string; startX: number; startY: number; dx: number; dy: number }
     | null
   >(null);
   /** Set to the runId during a drag and cleared a tick after mouseup, used
@@ -92,6 +115,43 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
       if (!run) return;
       const existing = edits.get(runId) ?? { text: run.text };
       onEdit(runId, { ...existing, dx: totalDx, dy: totalDy });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  /** Start a drag on an image overlay. Mirrors startDrag for runs but
+   *  commits to the parent's onImageMove rather than onEdit. */
+  const startImageDrag = (
+    imageId: string,
+    e: React.MouseEvent,
+    base: { dx: number; dy: number },
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    setImageDrag({ imageId, startX, startY, dx: base.dx, dy: base.dy });
+    const onMove = (ev: MouseEvent) => {
+      const newDx = base.dx + (ev.clientX - startX);
+      const newDy = base.dy + (ev.clientY - startY);
+      setImageDrag((prev) =>
+        prev && prev.imageId === imageId
+          ? { ...prev, dx: newDx, dy: newDy }
+          : prev,
+      );
+    };
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const totalDx = base.dx + (ev.clientX - startX);
+      const totalDy = base.dy + (ev.clientY - startY);
+      const moved =
+        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
+        Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
+      setImageDrag(null);
+      if (!moved) return;
+      onImageMove(imageId, { dx: totalDx, dy: totalDy });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -280,9 +340,169 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
             </Fragment>
           );
         })}
+        {page.images.map((img) => (
+          <ImageOverlay
+            key={img.id}
+            img={img}
+            page={page}
+            persisted={imageMoves.get(img.id)}
+            isDragging={imageDrag?.imageId === img.id}
+            liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
+            liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
+            onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
+          />
+        ))}
       </div>
     </div>
   );
+}
+
+/** Drag-movable image overlay. Two visual layers when moved:
+ *
+ *   - cover  : a white box at the image's ORIGINAL position so the
+ *              source pixels on the rendered canvas are masked.
+ *   - sprite : the image's pixels (cropped from the page canvas one
+ *              time and cached as a data URL) painted at the moved
+ *              position via `background-image`.
+ *
+ * At rest (dx == 0 && dy == 0) we don't render the cover or sprite —
+ * the original canvas pixels are visible directly and the overlay is
+ * a transparent click target. */
+function ImageOverlay({
+  img,
+  page,
+  persisted,
+  isDragging,
+  liveDx,
+  liveDy,
+  onMouseDown,
+}: {
+  img: import("../lib/sourceImages").ImageInstance;
+  page: RenderedPage;
+  persisted: ImageMoveValue | undefined;
+  isDragging: boolean;
+  liveDx: number | null;
+  liveDy: number | null;
+  onMouseDown: (
+    e: React.MouseEvent,
+    base: { dx: number; dy: number },
+  ) => void;
+}) {
+  // PDF user-space → viewport: x scales directly; y flips around the
+  // page bottom. CTM origin (pdfX, pdfY) is the bottom-left corner in
+  // PDF y-up so the viewport top is page.viewHeight - (pdfY + pdfH) × s.
+  const left = img.pdfX * page.scale;
+  const top = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
+  const w = img.pdfWidth * page.scale;
+  const h = img.pdfHeight * page.scale;
+  const dx = (liveDx ?? persisted?.dx) ?? 0;
+  const dy = (liveDy ?? persisted?.dy) ?? 0;
+  const isMoved = dx !== 0 || dy !== 0;
+  const movable = img.cmOpIndex != null;
+
+  // Crop the image's pixels from the page canvas exactly once so we can
+  // paint them at the moved position. Done lazily (only when first
+  // moved) so we don't burn CPU on documents the user never edits.
+  const sprite = useMemo(() => {
+    if (!isMoved) return null;
+    return cropCanvasToDataUrl(page.canvas, left, top, w, h);
+  }, [isMoved, page.canvas, left, top, w, h]);
+
+  return (
+    <Fragment>
+      {isMoved ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left,
+            top,
+            width: w,
+            height: h,
+            backgroundColor: "white",
+            pointerEvents: "none",
+          }}
+        />
+      ) : null}
+      <div
+        data-image-id={img.id}
+        style={{
+          position: "absolute",
+          left: left + dx,
+          top: top + dy,
+          width: w,
+          height: h,
+          outline: movable
+            ? isDragging
+              ? "1px dashed rgba(60, 130, 255, 0.85)"
+              : isMoved
+                ? "1px solid rgba(60, 130, 255, 0.45)"
+                : "1px dashed rgba(60, 130, 255, 0)"
+            : "1px dashed rgba(160, 160, 160, 0.55)",
+          backgroundImage: sprite ? `url(${sprite})` : undefined,
+          backgroundSize: "100% 100%",
+          backgroundRepeat: "no-repeat",
+          cursor: movable
+            ? isDragging
+              ? "grabbing"
+              : "grab"
+            : "not-allowed",
+          pointerEvents: "auto",
+        }}
+        title={
+          movable
+            ? `Image ${img.resourceName} (drag to move)`
+            : `Image ${img.resourceName} (un-movable)`
+        }
+        onMouseDown={(e) => {
+          if (!movable) return;
+          onMouseDown(e, { dx, dy });
+        }}
+      />
+    </Fragment>
+  );
+}
+
+/** Crop a region of a HTMLCanvasElement and return it as a PNG data URL.
+ *  Used by ImageOverlay to paint the source-image pixels at the moved
+ *  position. The returned URL is suitable as a CSS `background-image`. */
+function cropCanvasToDataUrl(
+  src: HTMLCanvasElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): string | null {
+  if (w <= 0 || h <= 0) return null;
+  // Account for high-DPI rendering: pdf.js sets canvas.width / height in
+  // device pixels (often = css pixels × scale), while the (left, top, w,
+  // h) we received are in CSS pixels. Re-scale so we crop the right
+  // region of the underlying bitmap.
+  const sx = src.width / parseFloat(src.style.width || `${src.width}`);
+  const sy = src.height / parseFloat(src.style.height || `${src.height}`);
+  const dst = document.createElement("canvas");
+  dst.width = Math.max(1, Math.round(w * sx));
+  dst.height = Math.max(1, Math.round(h * sy));
+  const ctx = dst.getContext("2d");
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(
+      src,
+      x * sx,
+      y * sy,
+      w * sx,
+      h * sy,
+      0,
+      0,
+      dst.width,
+      dst.height,
+    );
+    return dst.toDataURL("image/png");
+  } catch {
+    // Cross-origin canvases would taint here, but pdf.js renders into
+    // our own canvas so this should never trip in practice.
+    return null;
+  }
 }
 
 function EditField({

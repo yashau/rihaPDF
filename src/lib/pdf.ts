@@ -89,6 +89,8 @@ export type RenderedPage = {
   viewHeight: number;
   textItems: TextItem[];
   textRuns: TextRun[];
+  /** Image / Form XObject placements on this page. Drag-movable. */
+  images: import("./sourceImages").ImageInstance[];
 };
 
 export async function renderPage(
@@ -103,6 +105,9 @@ export async function renderPage(
    *  the source PDF's broken ToUnicode CMap omitted (e.g. the long-vowel
    *  Thaana fili). Keyed by PDF resource name (`F1`, `F2`, …). */
   glyphMaps: Map<string, import("./glyphMap").GlyphMap> = new Map(),
+  /** Image / Form XObject placements pre-extracted by `extractPageImages`.
+   *  Indexed per page in source order; we don't recompute them here. */
+  images: import("./sourceImages").ImageInstance[] = [],
 ): Promise<RenderedPage> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
@@ -166,6 +171,7 @@ export async function renderPage(
     viewHeight: viewport.height,
     textItems: items,
     textRuns: buildTextRuns(items, page.pageNumber, _fontShows, scale, viewport.height),
+    images,
   };
 }
 
