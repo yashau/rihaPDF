@@ -265,6 +265,7 @@ export function PdfPage({
               <EditField
                 key={run.id}
                 run={run}
+                pageScale={page.scale}
                 initial={
                   editedValue ?? { text: run.text, style: undefined }
                 }
@@ -577,8 +578,10 @@ function cropCanvasToDataUrl(
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
- *  Backspace on empty content deletes. Saved by appending a Tj op
- *  to the page content stream — see save.ts insertion path. */
+ *  Backspace on empty content deletes. Editing pops a formatting
+ *  toolbar (font / size / B / I / U) above the input, identical to
+ *  the EditField used for source-run edits. Saved by appending a
+ *  drawText to the page content stream — see save.ts insertion path. */
 function InsertedTextOverlay({
   ins,
   page,
@@ -597,17 +600,28 @@ function InsertedTextOverlay({
   onClose: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Style state is in the parent (TextInsertion.style + .fontSize),
+  // mirrored here in convenience locals so the render stays readable.
+  const style = ins.style ?? {};
+  // Pick a sensible default per script if no explicit family was set
+  // — Faruma when the typed text contains Thaana, otherwise Arial.
+  const isRtlText = /[֐-׿؀-ۿހ-޿]/u.test(ins.text);
+  const family =
+    style.fontFamily ?? (isRtlText ? "Faruma" : "Arial");
+  const bold = !!style.bold;
+  const italic = !!style.italic;
+  const underline = !!style.underline;
+  const fontSizePt = ins.fontSize;
+  const fontSizePx = fontSizePt * page.scale;
   // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
   // viewport top of the box is baseline - fontSize, scaled. Match the
   // EditField rendering: render text in a box of height = fontSize × 1.4
   // so descenders fit.
-  const lineHeight = ins.fontSize * 1.4;
+  const lineHeight = fontSizePt * 1.4;
   const left = ins.pdfX * page.scale;
-  const top = (page.viewHeight - ins.pdfY * page.scale) - ins.fontSize * page.scale;
+  const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
   const width = Math.max(ins.pdfWidth * page.scale, 60);
   const height = lineHeight * page.scale;
-  const family = ins.style?.fontFamily ?? "Arial";
-  const fontSizePx = ins.fontSize * page.scale;
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
 
   useEffect(() => {
@@ -616,6 +630,26 @@ function InsertedTextOverlay({
       inputRef.current?.select();
     }
   }, [isEditing]);
+
+  const updateStyle = (patch: {
+    fontFamily?: string;
+    fontSize?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+  }) => {
+    // fontSize lives outside `style` (it's a top-level field on the
+    // insertion since it's also used to derive the box height); split
+    // the patch accordingly.
+    const nextStyle: typeof style = { ...style };
+    if (patch.fontFamily !== undefined) nextStyle.fontFamily = patch.fontFamily;
+    if (patch.bold !== undefined) nextStyle.bold = patch.bold;
+    if (patch.italic !== undefined) nextStyle.italic = patch.italic;
+    if (patch.underline !== undefined) nextStyle.underline = patch.underline;
+    const insPatch: Partial<TextInsertion> = { style: nextStyle };
+    if (patch.fontSize !== undefined) insPatch.fontSize = patch.fontSize;
+    onChange(insPatch);
+  };
 
   const startDrag = (e: React.MouseEvent) => {
     if (isEditing) return;
@@ -648,6 +682,27 @@ function InsertedTextOverlay({
   };
 
   return (
+    <>
+      {isEditing ? (
+        <EditTextToolbar
+          left={left - 2}
+          top={top - 48}
+          fontFamily={family}
+          fontSize={fontSizePt}
+          bold={bold}
+          italic={italic}
+          underline={underline}
+          onChange={(patch) => {
+            // Toolbar already reports fontSize in PDF points — store
+            // it directly on the insertion, no scale conversion.
+            updateStyle(patch);
+          }}
+          onCancel={() => {
+            if (ins.text === "") onDelete();
+            onClose();
+          }}
+        />
+      ) : null}
     <div
       data-text-insert-id={ins.id}
       style={{
@@ -690,6 +745,9 @@ function InsertedTextOverlay({
             fontFamily: `"${family}"`,
             fontSize: `${fontSizePx}px`,
             lineHeight: `${height}px`,
+            fontWeight: bold ? 700 : 400,
+            fontStyle: italic ? "italic" : "normal",
+            textDecoration: underline ? "underline" : "none",
             background: "transparent",
           }}
           onChange={(e) => onChange({ text: e.target.value })}
@@ -706,7 +764,8 @@ function InsertedTextOverlay({
               onClose();
             }
           }}
-          onBlur={() => {
+          onBlur={(e) => {
+            if (isFocusMovingToToolbar(e.relatedTarget)) return;
             if (ins.text === "") onDelete();
             onClose();
           }}
@@ -720,6 +779,9 @@ function InsertedTextOverlay({
             fontFamily: `"${family}"`,
             fontSize: `${fontSizePx}px`,
             lineHeight: `${height}px`,
+            fontWeight: bold ? 700 : 400,
+            fontStyle: italic ? "italic" : "normal",
+            textDecoration: underline ? "underline" : "none",
             paddingLeft: 4,
             paddingRight: 4,
             color: "black",
@@ -732,6 +794,7 @@ function InsertedTextOverlay({
         </span>
       )}
     </div>
+    </>
   );
 }
 
@@ -824,11 +887,16 @@ function InsertedImageOverlay({
 
 function EditField({
   run,
+  pageScale,
   initial,
   onCommit,
   onCancel,
 }: {
   run: TextRun;
+  /** Viewport pixels per PDF point — used to convert between the
+   *  toolbar's user-facing PDF-point size and the CSS pixel size for
+   *  rendering. */
+  pageScale: number;
   initial: EditValue;
   onCommit: (value: EditValue) => void;
   onCancel: () => void;
@@ -852,7 +920,12 @@ function EditField({
   const fontFamilyCss = `"${effectiveFamily}"`;
   const effectiveBold = style.bold ?? run.bold;
   const effectiveItalic = style.italic ?? run.italic;
-  const fontSizePx = style.fontSize ?? run.height;
+  // style.fontSize is stored in PDF points (the same unit as the saved
+  // PDF). Default to the run's measured height, which buildTextRuns
+  // returns in viewport pixels — divide by scale to convert.
+  const defaultFontSizePt = run.height / pageScale;
+  const fontSizePt = style.fontSize ?? defaultFontSizePt;
+  const fontSizePx = fontSizePt * pageScale;
 
   const remeasure = () => {
     const node = measureRef.current;
@@ -888,105 +961,28 @@ function EditField({
           top: -9999,
         }}
       />
-      {/* Floating toolbar above the input */}
-      <div
-        data-edit-toolbar
-        style={{
-          position: "absolute",
-          left: run.bounds.left - 2 + dx,
-          top: run.bounds.top - 48 + dy,
-          zIndex: 10,
-          display: "flex",
-          gap: 4,
-          padding: 4,
-          background: "white",
-          border: "1px solid rgba(0,0,0,0.15)",
-          borderRadius: 6,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-          alignItems: "center",
-          pointerEvents: "auto",
-          whiteSpace: "nowrap",
-        }}
-        onMouseDown={(e) => {
-          // Prevent the input from blurring (which commits the edit) when
-          // the user clicks a toolbar button.
-          e.preventDefault();
-        }}
-      >
-        <select
-          aria-label="Font"
-          value={style.fontFamily ?? run.fontFamily}
-          style={{
-            padding: "4px 6px",
-            border: "1px solid rgba(0,0,0,0.15)",
-            borderRadius: 4,
-            fontSize: 12,
-            background: "white",
-            minWidth: 140,
-          }}
-          onChange={(e) =>
-            setStyle((s) => ({ ...s, fontFamily: e.target.value }))
-          }
-        >
-          {FONTS.map((f) => (
-            <option key={f.family} value={f.family}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <input
-          aria-label="Font size"
-          type="number"
-          min={6}
-          max={144}
-          step={1}
-          value={Math.round(fontSizePx)}
-          style={{
-            width: 56,
-            padding: "4px 6px",
-            border: "1px solid rgba(0,0,0,0.15)",
-            borderRadius: 4,
-            fontSize: 12,
-          }}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            setStyle((s) => ({
-              ...s,
-              fontSize: Number.isFinite(v) ? v : undefined,
-            }));
-          }}
-        />
-        <ToggleButton
-          label="B"
-          active={effectiveBold}
-          weight="bold"
-          onClick={() =>
-            setStyle((s) => ({ ...s, bold: !(s.bold ?? run.bold) }))
-          }
-        />
-        <ToggleButton
-          label="I"
-          active={effectiveItalic}
-          italic
-          onClick={() =>
-            setStyle((s) => ({ ...s, italic: !(s.italic ?? run.italic) }))
-          }
-        />
-        <ToggleButton
-          label="U"
-          active={!!style.underline}
-          underline
-          onClick={() => setStyle((s) => ({ ...s, underline: !s.underline }))}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          onPress={() => onCancel()}
-          aria-label="Cancel edit"
-        >
-          ✕
-        </Button>
-      </div>
+      <EditTextToolbar
+        left={run.bounds.left - 2 + dx}
+        top={run.bounds.top - 48 + dy}
+        fontFamily={effectiveFamily}
+        fontSize={fontSizePt}
+        bold={effectiveBold}
+        italic={effectiveItalic}
+        underline={!!style.underline}
+        onChange={(patch) =>
+          setStyle((s) => {
+            const next: EditStyle = { ...s };
+            if (patch.fontFamily !== undefined) next.fontFamily = patch.fontFamily;
+            // Toolbar's value is in PDF points — store as-is.
+            if (patch.fontSize !== undefined) next.fontSize = patch.fontSize;
+            if (patch.bold !== undefined) next.bold = patch.bold;
+            if (patch.italic !== undefined) next.italic = patch.italic;
+            if (patch.underline !== undefined) next.underline = patch.underline;
+            return next;
+          })
+        }
+        onCancel={onCancel}
+      />
       <input
         ref={inputRef}
         value={text}
@@ -1023,7 +1019,13 @@ function EditField({
           if (e.key === "Enter") commit();
           else if (e.key === "Escape") onCancel();
         }}
-        onBlur={commit}
+        onBlur={(e) => {
+          // Don't commit when focus is just moving into the floating
+          // toolbar (font picker / size / B-I-U). The user is mid-edit;
+          // commit would close the editor and undo their change.
+          if (isFocusMovingToToolbar(e.relatedTarget)) return;
+          commit();
+        }}
       />
     </>
   );
@@ -1036,6 +1038,148 @@ function hasStyle(s: EditStyle): boolean {
     s.bold ||
     s.italic ||
     s.underline
+  );
+}
+
+/** True when a `blur` event is moving focus into the formatting
+ *  toolbar (so the editor should stay open). Caller passes the blur
+ *  event's `relatedTarget`. */
+function isFocusMovingToToolbar(
+  next: EventTarget | null,
+): boolean {
+  return (
+    next instanceof HTMLElement &&
+    !!next.closest("[data-edit-toolbar]")
+  );
+}
+
+/** Shared formatting toolbar — font picker, size, B / I / U toggles, X.
+ *  Used by both the existing-run EditField and the InsertedTextOverlay
+ *  so a brand-new text box has the exact same controls as an inline
+ *  edit on a source-PDF run. */
+function EditTextToolbar({
+  left,
+  top,
+  fontFamily,
+  fontSize,
+  bold,
+  italic,
+  underline,
+  onChange,
+  onCancel,
+}: {
+  /** Viewport-pixel position of the toolbar's top-left corner. */
+  left: number;
+  top: number;
+  fontFamily: string;
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  onChange: (patch: {
+    fontFamily?: string;
+    fontSize?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+  }) => void;
+  onCancel?: () => void;
+}) {
+  return (
+    <div
+      data-edit-toolbar
+      style={{
+        position: "absolute",
+        left,
+        top,
+        zIndex: 30,
+        display: "flex",
+        gap: 4,
+        padding: 4,
+        background: "white",
+        border: "1px solid rgba(0,0,0,0.15)",
+        borderRadius: 6,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+        alignItems: "center",
+        pointerEvents: "auto",
+        whiteSpace: "nowrap",
+      }}
+      // We do NOT preventDefault on mouseDown here — the native <select>
+      // dropdown won't open if its focus change is suppressed. Instead
+      // each input's onBlur checks `relatedTarget`: if the new focus
+      // target lives inside `[data-edit-toolbar]`, the editor stays
+      // open. See `isFocusMovingToToolbar` below.
+      onMouseDown={(e) => {
+        e.stopPropagation();
+      }}
+    >
+      <select
+        aria-label="Font"
+        value={fontFamily}
+        style={{
+          padding: "4px 6px",
+          border: "1px solid rgba(0,0,0,0.15)",
+          borderRadius: 4,
+          fontSize: 12,
+          background: "white",
+          minWidth: 140,
+        }}
+        onChange={(e) => onChange({ fontFamily: e.target.value })}
+      >
+        {FONTS.map((f) => (
+          <option key={f.family} value={f.family}>
+            {f.label}
+          </option>
+        ))}
+      </select>
+      <input
+        aria-label="Font size"
+        type="number"
+        min={6}
+        max={144}
+        step={1}
+        value={Math.round(fontSize)}
+        style={{
+          width: 56,
+          padding: "4px 6px",
+          border: "1px solid rgba(0,0,0,0.15)",
+          borderRadius: 4,
+          fontSize: 12,
+        }}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          if (Number.isFinite(v)) onChange({ fontSize: v });
+        }}
+      />
+      <ToggleButton
+        label="B"
+        active={bold}
+        weight="bold"
+        onClick={() => onChange({ bold: !bold })}
+      />
+      <ToggleButton
+        label="I"
+        active={italic}
+        italic
+        onClick={() => onChange({ italic: !italic })}
+      />
+      <ToggleButton
+        label="U"
+        active={underline}
+        underline
+        onClick={() => onChange({ underline: !underline })}
+      />
+      {onCancel ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onPress={() => onCancel()}
+          aria-label="Cancel edit"
+        >
+          ✕
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

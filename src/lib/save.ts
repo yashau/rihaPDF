@@ -124,26 +124,51 @@ export async function applyEditsAndSave(
     ...imageMovesByPage.keys(),
   ]);
 
-  // Per-family embedded font. Lazy: only families actually used in this
-  // save end up in the output. Latin StandardFonts (Helvetica, Times,
-  // Courier) skip the .ttf-embed path — pdf-lib references the standard
-  // 14 directly, no font program is added to the saved file.
+  // Per-(family, bold, italic) embedded font. Lazy: only the families
+  // and weight/style combinations actually used end up in the saved
+  // file. For Latin StandardFonts we pick the matching standard-14
+  // variant (Helvetica-Bold, Times-BoldItalic, ...). For Thaana fonts
+  // we ignore bold/italic — those families don't ship paired bold or
+  // italic variants in our registry, so we just use the regular bytes.
   const fontCache = new Map<string, { pdfFont: PDFFont }>();
-  const standardFontMap: Record<
+  const standardFontVariants: Record<
     NonNullable<(typeof FONTS)[number]["standardFont"]>,
-    StandardFonts
+    Record<"regular" | "bold" | "italic" | "boldItalic", StandardFonts>
   > = {
-    Helvetica: StandardFonts.Helvetica,
-    TimesRoman: StandardFonts.TimesRoman,
-    Courier: StandardFonts.Courier,
+    Helvetica: {
+      regular: StandardFonts.Helvetica,
+      bold: StandardFonts.HelveticaBold,
+      italic: StandardFonts.HelveticaOblique,
+      boldItalic: StandardFonts.HelveticaBoldOblique,
+    },
+    TimesRoman: {
+      regular: StandardFonts.TimesRoman,
+      bold: StandardFonts.TimesRomanBold,
+      italic: StandardFonts.TimesRomanItalic,
+      boldItalic: StandardFonts.TimesRomanBoldItalic,
+    },
+    Courier: {
+      regular: StandardFonts.Courier,
+      bold: StandardFonts.CourierBold,
+      italic: StandardFonts.CourierOblique,
+      boldItalic: StandardFonts.CourierBoldOblique,
+    },
   };
-  const getFont = async (family: string) => {
-    const cached = fontCache.get(family);
+  const variantKey = (bold: boolean, italic: boolean) =>
+    bold && italic ? "boldItalic" : bold ? "bold" : italic ? "italic" : "regular";
+  const getFont = async (
+    family: string,
+    bold: boolean = false,
+    italic: boolean = false,
+  ) => {
+    const cacheKey = `${family}|${bold ? "b" : ""}${italic ? "i" : ""}`;
+    const cached = fontCache.get(cacheKey);
     if (cached) return cached;
     const def = FONTS.find((f) => f.family === family);
     let pdfFont: PDFFont;
     if (def?.standardFont) {
-      pdfFont = await doc.embedFont(standardFontMap[def.standardFont]);
+      const variant = standardFontVariants[def.standardFont][variantKey(bold, italic)];
+      pdfFont = await doc.embedFont(variant);
     } else {
       const bytes = await loadFontBytes(family);
       pdfFont = await doc.embedFont(bytes, {
@@ -152,7 +177,7 @@ export async function applyEditsAndSave(
       });
     }
     const entry = { pdfFont };
-    fontCache.set(family, entry);
+    fontCache.set(cacheKey, entry);
     return entry;
   };
 
@@ -414,7 +439,9 @@ export async function applyEditsAndSave(
       ins.style?.fontFamily ??
       // default per-script: Thaana → Faruma, otherwise Arial
       (/[֐-׿؀-ۿހ-޿]/u.test(ins.text) ? DEFAULT_FONT_FAMILY : "Arial");
-    const { pdfFont } = await getFont(family);
+    const bold = !!ins.style?.bold;
+    const italic = !!ins.style?.italic;
+    const { pdfFont } = await getFont(family, bold, italic);
     const fontSizePt = ins.fontSize;
     // For RTL, anchor the draw at the right edge by subtracting
     // pdf-lib's measured width from the click position so the first
