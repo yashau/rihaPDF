@@ -40,10 +40,15 @@ export type ImageInstance = {
   subtype: "Image" | "Form" | "Unknown";
   /** Index of the `Do` op in the parsed content-stream ops array. */
   doOpIndex: number;
-  /** Index of the *single* `cm` op inside the q…Q block whose translation
-   *  we'll rewrite on save. Null if we couldn't find a clean cm to own
-   *  this image's transform — UI should still show the image but mark it
-   *  un-movable. */
+  /** Index of the `q` op that opens this image's drawing block. Save
+   *  inserts a translate `cm` right after this index to move the
+   *  image — that becomes the OUTERMOST transform in the chain so the
+   *  user-space delta isn't scaled by a subsequent scale cm. Null if
+   *  the Do isn't inside a balanced q…Q (rare; UI marks un-movable). */
+  qOpIndex: number | null;
+  /** Index of the *first* `cm` op (containing translation) inside this
+   *  image's q…Q block. Kept for diagnostics; the save path now
+   *  prefers inserting a fresh cm via `qOpIndex`. */
   cmOpIndex: number | null;
   /** Full CTM at the moment of `Do`. Used to compute bounds + to derive
    *  the move-translation vector for non-axis-aligned images later. */
@@ -164,12 +169,10 @@ function findImagesInOps(
     number,
   ][] = [];
   let ctm: [number, number, number, number, number, number] = [...IDENTITY];
-  // Track the most recent cm op index AND the q-block depth at which it
-  // was applied. We only treat a cm as "owning" a Do if both sit inside
-  // the same q...Q block — otherwise rewriting it would also shift other
-  // content after Q.
-  let lastCmIndex: number | null = null;
-  let lastCmDepth = -1;
+  // For each open q-block, the index of the q op AND the index of
+  // the first cm seen inside it. Save uses qIdx to insert a fresh
+  // outermost translate cm; the firstCmIdx is mostly a diagnostic.
+  const blockStack: { qIdx: number; firstCmIdx: number | null }[] = [];
   let depth = 0;
   let imageCounter = 0;
   for (let i = 0; i < ops.length; i++) {
@@ -177,16 +180,13 @@ function findImagesInOps(
     switch (o.op) {
       case "q":
         stack.push([...ctm]);
+        blockStack.push({ qIdx: i, firstCmIdx: null });
         depth++;
         break;
       case "Q": {
         const popped = stack.pop();
         if (popped) ctm = popped;
-        if (lastCmDepth === depth) {
-          // The cm we were tracking dies with this q-block.
-          lastCmIndex = null;
-          lastCmDepth = -1;
-        }
+        blockStack.pop();
         depth--;
         break;
       }
@@ -199,8 +199,8 @@ function findImagesInOps(
             (x) => (x as { value: number }).value,
           ) as [number, number, number, number, number, number];
           ctm = mulCm(m, ctm);
-          lastCmIndex = i;
-          lastCmDepth = depth;
+          const top = blockStack[blockStack.length - 1];
+          if (top && top.firstCmIdx == null) top.firstCmIdx = i;
         }
         break;
       }
@@ -213,12 +213,14 @@ function findImagesInOps(
         // Skip Forms with all-zero scale (sometimes used as invisible
         // markers).
         if (Math.abs(ctm[0]) < 1e-6 && Math.abs(ctm[3]) < 1e-6) break;
+        const block = blockStack[blockStack.length - 1] ?? null;
         out.push({
           id: `p${pageNumber}-i${imageCounter++}`,
           resourceName: resName,
           subtype,
           doOpIndex: i,
-          cmOpIndex: lastCmIndex,
+          qOpIndex: block?.qIdx ?? null,
+          cmOpIndex: block?.firstCmIdx ?? null,
           ctm: [...ctm],
           pdfX: ctm[4],
           pdfY: ctm[5],

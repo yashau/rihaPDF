@@ -485,7 +485,7 @@ function ImageOverlay({
   const dx = (liveDx ?? persisted?.dx) ?? 0;
   const dy = (liveDy ?? persisted?.dy) ?? 0;
   const isMoved = dx !== 0 || dy !== 0;
-  const movable = img.cmOpIndex != null;
+  const movable = img.qOpIndex != null;
 
   // Crop the image's pixels from the ORIGINAL page canvas (not the
   // preview, which has the image stripped) so we can paint them at the

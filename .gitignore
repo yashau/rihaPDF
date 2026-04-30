@@ -24,9 +24,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# Test fixtures + probe artifacts (large, sometimes sensitive)
+# Test fixtures + probe artifacts (large, sometimes sensitive).
+# Whitelist the committed fixtures under test/fixtures/.
 *.pdf
+!test/fixtures/*.pdf
 scripts/screenshots/
+test/e2e/screenshots/
 
 # Stash dir from font import — slugified copies live in public/fonts/dhivehi/
 Proper_Thaana_Fonts/

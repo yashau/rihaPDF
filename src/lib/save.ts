@@ -298,32 +298,31 @@ export async function applyEditsAndSave(
     for (const m of moveOps) {
       moveByTjIndex.set(m.tjIndex, { newTx: m.newTx, newTy: m.newTy });
     }
-    // Apply image moves: for each moved image, find its `cm` op (the
-    // one we noted at extraction time) and add (dx_pdf, dy_pdf) to its
-    // translation operands [4] and [5]. This rewrites the matrix in
-    // place — keeps scale + rotation, only shifts position.
+    // For each moved image, queue a translate `cm` to inject right
+    // after the image's opening `q`. That makes the move the
+    // OUTERMOST transform in the chain — composing as
+    // (existing image cms) × T_translate, which produces a clean
+    // (origin + dx, origin + dy) under PDF's row-vector convention.
+    // Modifying an existing cm in place fails when there are
+    // multiple cm ops in the block (pdf-lib emits 4: translate /
+    // identity / scale / identity) because pre-multiplying onto the
+    // last identity gets mixed by the preceding scale.
+    const insertAfterQ = new Map<
+      number,
+      { dxPdf: number; dyPdf: number }
+    >();
     for (const move of pageImageMoves) {
       const img = rendered.images.find((i) => i.id === move.imageId);
-      if (!img || img.cmOpIndex == null) continue;
-      const cmOp = ops[img.cmOpIndex];
-      if (!cmOp || cmOp.op !== "cm" || cmOp.operands.length !== 6) continue;
-      const tx4 = cmOp.operands[4];
-      const tx5 = cmOp.operands[5];
-      if (tx4.kind !== "number" || tx5.kind !== "number") continue;
+      if (!img || img.qOpIndex == null) continue;
       const dxPdf = (move.dx ?? 0) / scale;
       const dyPdf = -(move.dy ?? 0) / scale;
-      const newTx = tx4.value + dxPdf;
-      const newTy = tx5.value + dyPdf;
-      cmOp.operands[4] = {
-        kind: "number",
-        value: newTx,
-        raw: newTx.toFixed(3),
-      };
-      cmOp.operands[5] = {
-        kind: "number",
-        value: newTy,
-        raw: newTy.toFixed(3),
-      };
+      // If two moves target the same q (shouldn't happen — each
+      // image has its own q-block) sum them.
+      const prev = insertAfterQ.get(img.qOpIndex);
+      insertAfterQ.set(img.qOpIndex, {
+        dxPdf: (prev?.dxPdf ?? 0) + dxPdf,
+        dyPdf: (prev?.dyPdf ?? 0) + dyPdf,
+      });
     }
 
     const newOps: typeof ops = [];
@@ -352,6 +351,31 @@ export async function applyEditsAndSave(
         });
       }
       newOps.push(ops[i]);
+      // After we push a `q` op that an image-move targets, inject the
+      // translate cm so it becomes the outermost transform in the
+      // image's chain.
+      const imgMove = insertAfterQ.get(i);
+      if (imgMove && ops[i].op === "q") {
+        newOps.push({
+          op: "cm",
+          operands: [
+            { kind: "number", value: 1, raw: "1" },
+            { kind: "number", value: 0, raw: "0" },
+            { kind: "number", value: 0, raw: "0" },
+            { kind: "number", value: 1, raw: "1" },
+            {
+              kind: "number",
+              value: imgMove.dxPdf,
+              raw: imgMove.dxPdf.toFixed(3),
+            },
+            {
+              kind: "number",
+              value: imgMove.dyPdf,
+              raw: imgMove.dyPdf.toFixed(3),
+            },
+          ],
+        });
+      }
     }
     setPageContentBytes(
       doc.context,

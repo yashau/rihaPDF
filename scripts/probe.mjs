@@ -19,7 +19,7 @@ fs.mkdirSync(screenshotsDir, { recursive: true });
 
 const PDF_PATH = path.resolve(
   root,
-  "hn41badsfTXSpmf0opxlFBWgTLAJX5rWubbshJYC.pdf",
+  "test/fixtures/maldivian.pdf",
 );
 const URL = "http://localhost:5173/";
 const STEP = process.argv[2] ?? "load";

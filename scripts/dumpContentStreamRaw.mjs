@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const PDF = path.resolve(
   root,
-  "hn41badsfTXSpmf0opxlFBWgTLAJX5rWubbshJYC.pdf",
+  "test/fixtures/maldivian.pdf",
 );
 const PAGE = Number(process.argv[2] ?? "1");
 setTimeout(() => process.exit(2), 60_000).unref?.();

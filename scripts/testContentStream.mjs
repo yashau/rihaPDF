@@ -17,7 +17,7 @@ const root = path.resolve(__dirname, "..");
 const PDF_PATH = path.resolve(
   root,
   "..",
-  "hn41badsfTXSpmf0opxlFBWgTLAJX5rWubbshJYC.pdf",
+  "test/fixtures/maldivian.pdf",
 );
 
 setTimeout(() => process.exit(2), 90_000).unref?.();
