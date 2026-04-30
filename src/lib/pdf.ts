@@ -203,95 +203,172 @@ function applyShowDecodes(
   viewportHeight: number,
   viewportTransform: number[],
 ): void {
-  const itemBuckets = new Map<number, TextItem[]>();
-  for (const it of items) {
-    const yKey = Math.round((viewportHeight - it.transform[5]) / scale);
-    let arr = itemBuckets.get(yKey);
-    if (!arr) {
-      arr = [];
-      itemBuckets.set(yKey, arr);
-    }
-    arr.push(it);
-  }
-  const nearbyItems = (yPdf: number, dyTol = 1): TextItem[] => {
-    const center = Math.round(yPdf);
-    const out: TextItem[] = [];
-    for (let dy = -dyTol; dy <= dyTol; dy++) {
-      const arr = itemBuckets.get(center + dy);
-      if (arr) out.push(...arr);
-    }
-    return out;
+  // Pre-compute decoded text per show. Skip shows whose font has no
+  // glyph map, whose bytes contain unmapped CIDs, or whose decoded
+  // content is empty after trimming Office's CID 0x0003 padding.
+  type DecodedShow = {
+    show: import("./sourceFonts").FontShow;
+    text: string;
   };
-
-  let synthIndex = items.length + 100_000;
+  const decodedShows: DecodedShow[] = [];
   for (const show of fontShows) {
     if (!show.fontResource) continue;
     const map = glyphMaps.get(show.fontResource);
     if (!map) continue;
     let decoded = decodeViaMap(show.bytes, map);
     if (decoded == null || decoded.length === 0) continue;
-    // Content stream paints visual L→R; for RTL the byte-0 char is the
-    // LAST-logical character. Reverse to align with pdf.js's logical
-    // order. Punctuation- or digit-only shows stay LTR.
     const isRtl = /[֐-ࣿ\u{10800}-\u{10FFF}]/u.test(decoded);
-    if (isRtl) decoded = Array.from(decoded).reverse().join("");
-    // Office wraps every Tj with a CID 0x0003 padding glyph (its
-    // ToUnicode entry is `<0003> <0020>`). Trim leading/trailing
-    // whitespace introduced by these. Inter-word spaces survive.
+    // Only override RTL shows. pdf.js extracts Latin / digit text
+    // correctly via the same `/ToUnicode` CMap that breaks for fili —
+    // claiming those items risks clearing a "29"/"2026" that pdf.js
+    // already had right, in favour of a neighbouring show.
+    if (!isRtl) continue;
+    decoded = Array.from(decoded).reverse().join("");
     decoded = decoded.replace(/^\s+|\s+$/g, "");
     if (decoded.length === 0) continue;
+    decodedShows.push({ show, text: decoded });
+  }
 
-    const nearby = nearbyItems(show.y);
-    const matching: TextItem[] = [];
-    // Tolerance accounts for pdf.js reporting an item's x at the start
-    // of its first VISIBLE char, while the show's textMatrix x is at
-    // the start of the first CID (which may be a 0x0003 padding glyph).
-    const dxTol = 8;
-    for (const it of nearby) {
-      const ix = it.transform[4] / scale;
-      if (Math.abs(ix - show.x) <= dxTol) matching.push(it);
+  // Bucket DecodedShow's by quantised PDF-y so closest-show lookup is
+  // line-local (different lines never compete).
+  const showsByY = new Map<number, DecodedShow[]>();
+  for (const ds of decodedShows) {
+    const yKey = Math.round(ds.show.y);
+    let arr = showsByY.get(yKey);
+    if (!arr) {
+      arr = [];
+      showsByY.set(yKey, arr);
     }
+    arr.push(ds);
+  }
 
-    if (matching.length === 0) {
+  // Each item picks the closest show whose script matches its own.
+  // pdf.js splits a single Tj into N TextItems at varying x positions
+  // when the visual order differs from logical reading order — owning
+  // each split item by NEAREST same-script show is what catches them
+  // all without spuriously claiming a digit/Latin item that happens to
+  // sit between two Thaana shows on the same line.
+  const itemToShow = new Map<TextItem, DecodedShow>();
+  for (const it of items) {
+    const yPdf = (viewportHeight - it.transform[5]) / scale;
+    const xPdf = it.transform[4] / scale;
+    const yKey = Math.round(yPdf);
+    const itemScript = scriptOf(it.str);
+    let best: DecodedShow | null = null;
+    let bestDist = Infinity;
+    for (let dy = -1; dy <= 1; dy++) {
+      const arr = showsByY.get(yKey + dy);
+      if (!arr) continue;
+      for (const ds of arr) {
+        // Skip if scripts differ. An empty/whitespace-only pdf.js str
+        // can claim ANY show (these are often the leading-visual-char
+        // split items that pdf.js emits with a single combining mark).
+        const showScript = scriptOf(ds.text);
+        if (
+          itemScript !== "unknown" &&
+          showScript !== "unknown" &&
+          itemScript !== showScript
+        ) {
+          continue;
+        }
+        const dx = Math.abs(ds.show.x - xPdf);
+        if (dx < bestDist) {
+          bestDist = dx;
+          best = ds;
+        }
+      }
+    }
+    if (best) itemToShow.set(it, best);
+  }
+
+  // Group items by their assigned show. Then for each show, give the
+  // longest item the decoded text and clear the rest. Shows with no
+  // claimed items get a synthesised TextItem at their (x, y).
+  const showToItems = new Map<DecodedShow, TextItem[]>();
+  for (const [it, ds] of itemToShow) {
+    let arr = showToItems.get(ds);
+    if (!arr) {
+      arr = [];
+      showToItems.set(ds, arr);
+    }
+    arr.push(it);
+  }
+
+  let synthIndex = items.length + 100_000;
+  for (const ds of decodedShows) {
+    const claimed = showToItems.get(ds);
+    if (!claimed || claimed.length === 0) {
+      // Orphan show — synthesise an item.
       const composed = multiplyTransforms(viewportTransform, [
-        12, 0, 0, 12, show.x, show.y,
+        12, 0, 0, 12, ds.show.x, ds.show.y,
       ]);
+      // Borrow average height from any item on the same line so the
+      // run-merger picks it up.
+      const yKey = Math.round(ds.show.y);
+      const sameLine: TextItem[] = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const ds2 of showsByY.get(yKey + dy) ?? []) {
+          for (const it of showToItems.get(ds2) ?? []) sameLine.push(it);
+        }
+      }
       const surroundingHeight =
-        nearby.length > 0
-          ? nearby.reduce((sum, it) => sum + it.height, 0) / nearby.length
+        sameLine.length > 0
+          ? sameLine.reduce((sum, it) => sum + it.height, 0) / sameLine.length
           : Math.abs(composed[3]);
-      const synth: TextItem = {
+      items.push({
         index: synthIndex++,
-        str: decoded,
+        str: ds.text,
         transform: composed,
         width: 0,
         height: surroundingHeight,
-        fontName: nearby[0]?.fontName ?? "",
+        fontName: sameLine[0]?.fontName ?? "",
         hasEOL: false,
-      };
-      items.push(synth);
-      const yKey = Math.round(show.y);
-      let arr = itemBuckets.get(yKey);
-      if (!arr) {
-        arr = [];
-        itemBuckets.set(yKey, arr);
-      }
-      arr.push(synth);
+      });
       continue;
     }
-
-    // pdf.js sometimes splits a single Tj into multiple items (a leading
-    // visual char + the BiDi-reordered tail). Give the longest one the
-    // full decoded text and clear the rest so they don't duplicate.
-    let main = matching[0];
-    for (const it of matching) {
+    // Pick the longest item — pdf.js puts the full BiDi-reordered string
+    // in one of its split items and a single leading char in others.
+    let main = claimed[0];
+    for (const it of claimed) {
       if (it.str.length > main.str.length) main = it;
     }
-    main.str = decoded;
-    for (const it of matching) {
+    main.str = ds.text;
+    for (const it of claimed) {
       if (it !== main) it.str = "";
     }
   }
+}
+
+/** Coarse script classification used to keep `applyShowDecodes` from
+ *  claiming an item with a different script than the show. We only
+ *  distinguish the cases we care about: Thaana / Arabic vs everything
+ *  else (Latin / digits / punctuation). Empty or whitespace-only strings
+ *  return "unknown" so they can be claimed by any show — those are the
+ *  leading-visual-char split items pdf.js emits with a single combining
+ *  mark and no real script signal. */
+function scriptOf(text: string): "rtl" | "ltr" | "unknown" {
+  let hasRtl = false;
+  let hasLtr = false;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (
+      (cp >= 0x0590 && cp <= 0x08ff) || // Hebrew, Arabic, Syriac, Thaana, Arabic Supplement
+      (cp >= 0xfb1d && cp <= 0xfdff) || // Arabic Presentation Forms-A
+      (cp >= 0xfe70 && cp <= 0xfeff) || // Arabic Presentation Forms-B
+      (cp >= 0x10800 && cp <= 0x10fff) // older RTL scripts
+    ) {
+      hasRtl = true;
+    } else if (
+      (cp >= 0x0030 && cp <= 0x0039) || // ASCII digits
+      (cp >= 0x0041 && cp <= 0x005a) || // ASCII upper
+      (cp >= 0x0061 && cp <= 0x007a) // ASCII lower
+    ) {
+      hasLtr = true;
+    }
+  }
+  if (hasRtl) return "rtl";
+  if (hasLtr) return "ltr";
+  return "unknown";
 }
 
 /** Decode a content-stream Tj operand using the font's CID → Unicode
