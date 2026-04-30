@@ -118,6 +118,18 @@ export default function App() {
       setFilename(file.name);
       setOriginalBytes(forSave);
       setPages(rendered);
+      // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
+      // probe can inspect what the strip pipeline thinks each run owns
+      // without re-running the whole extractor in the browser.
+      (
+        window as unknown as {
+          __runOpIndices?: Map<string, number[]>;
+        }
+      ).__runOpIndices = new Map(
+        rendered.flatMap((p) =>
+          p.textRuns.map((r) => [r.id, r.contentStreamOpIndices]),
+        ),
+      );
       setEdits(new Map());
       setImageMoves(new Map());
       setPageOps([]);

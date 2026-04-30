@@ -12,7 +12,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import type { RenderedPage, TextRun } from "./pdf";
+import type { RenderedPage } from "./pdf";
 import {
   parseContentStream,
   serializeContentStream,
@@ -54,15 +54,50 @@ export async function buildPreviewBytes(
     const pageHeight = page.getHeight();
     const scale = rendered.scale;
 
-    // For each edited/dragged run, find the Tj/TJ ops whose text-matrix
-    // translation lands inside the run's PDF-user-space bounding box.
-    // Same heuristic as save.ts (kept in sync — the matching tolerance
-    // is what reliably catches Office-style per-line Tm setups).
+    // Each TextRun carries the content-stream Tj/TJ op indices its
+    // glyphs come from (propagated from FontShow → TextItem →
+    // TextRun in pdf.ts). Start there.
     for (const runId of spec.runIds) {
       const run = rendered.textRuns.find((r) => r.id === runId);
       if (!run) continue;
-      const idxs = matchTjIndicesForRun(shows, run, pageHeight, scale);
-      for (const i of idxs) indicesToRemove.add(i);
+      for (const i of run.contentStreamOpIndices) indicesToRemove.add(i);
+    }
+    // Then pick up any extra shows that visually fall inside one of
+    // the targeted runs' bounding box on the same line. This catches
+    // small adjacent Tj's (digits, punctuation, parens) that pdf.js
+    // extracted into a different bucket so applyShowDecodes never
+    // claimed them — without this, dragging an "6.1 …" line leaves
+    // the "6.1" / "( ) /" islands rendered on the canvas.
+    // Same-line whole-line strip. For each targeted run, also strip
+    // ANY Tj whose textMatrix sits on its baseline — regardless of
+    // horizontal distance. This covers section-heading digits ("6 ·"
+    // at the far right of a heading bar) and any other small Tj
+    // pdf.js bucketed into a different run but that visually lives
+    // on the same line as the moved text.
+    //
+    // It would be too aggressive for pages with multiple distinct
+    // runs sharing one y baseline, but each line in our extractor
+    // already collapses into a single run via the merge threshold,
+    // so in practice no other run shares the y of a strip target.
+    const allTargetYs = new Set<number>();
+    for (const runId of spec.runIds) {
+      const run = rendered.textRuns.find((r) => r.id === runId);
+      if (!run) continue;
+      const runPdfY = pageHeight - run.baselineY / scale;
+      allTargetYs.add(Math.round(runPdfY));
+    }
+    for (const s of shows) {
+      if (indicesToRemove.has(s.index)) continue;
+      const ey = Math.round(s.textMatrix[5]);
+      // Allow 1pt slack each way for kerning / Office's optical-
+      // alignment baseline jitter.
+      if (
+        allTargetYs.has(ey) ||
+        allTargetYs.has(ey - 1) ||
+        allTargetYs.has(ey + 1)
+      ) {
+        indicesToRemove.add(s.index);
+      }
     }
 
     // Each image has its Do op index pre-resolved at extraction; just
@@ -84,34 +119,6 @@ export async function buildPreviewBytes(
     );
   }
   return doc.save();
-}
-
-/** Find the indices in the parsed `ops` array that correspond to the
- *  Tj/TJ operators painting `run`. Matches by the text-matrix
- *  translation vs the run's PDF-user-space bounding box (same logic
- *  used by save.ts when removing the originals). */
-function matchTjIndicesForRun(
-  shows: ReturnType<typeof findTextShows>,
-  run: TextRun,
-  pageHeight: number,
-  scale: number,
-): number[] {
-  const runPdfX = run.bounds.left / scale;
-  const runPdfY = pageHeight - run.baselineY / scale;
-  const runPdfWidth = run.bounds.width / scale;
-  const runPdfHeight = run.height / scale;
-  const tolY = Math.max(2, runPdfHeight * 0.4);
-  const tolX = Math.max(2, runPdfHeight * 0.3);
-  const out: number[] = [];
-  for (const s of shows) {
-    const ex = s.textMatrix[4];
-    const ey = s.textMatrix[5];
-    if (Math.abs(ey - runPdfY) > tolY) continue;
-    if (ex < runPdfX - tolX) continue;
-    if (ex > runPdfX + runPdfWidth + tolX) continue;
-    out.push(s.index);
-  }
-  return out;
 }
 
 /** Render a single page from `pdfBytes` to a canvas at the given scale.

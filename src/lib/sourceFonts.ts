@@ -40,6 +40,11 @@ export type FontShow = {
    *  they don't change which glyphs are drawn). Decoded via the font's
    *  reverse cmap when pdf.js fails to extract a character. */
   bytes: Uint8Array;
+  /** Index of the Tj/TJ op in the parsed content-stream ops array.
+   *  Used by preview.ts + save.ts to know exactly which ops to strip
+   *  when the user edits or drags a run that this show contributed
+   *  to — far more reliable than the old position-matching. */
+  opIndex: number;
 };
 
 /**
@@ -140,6 +145,7 @@ export async function extractPageFontShows(
         italic: info?.italic ?? false,
         fontResource: s.fontName ?? null,
         bytes: new Uint8Array(operandBytes),
+        opIndex: s.index,
       };
     });
     result.push(fontShows);

@@ -403,10 +403,45 @@ export function findTextShows(ops: ContentOp[]): TextShowMatch[] {
     1, 0, 0, 1, 0, 0,
   ];
 
+  // Text state lives inside the graphics state, so q/Q DOES push and
+  // pop it (PDF §8.4.1 + §9.3.1 — `Tr`, `Tf`, `Tfs` are listed under
+  // graphics state). Office output relies on this: it sets `Tr 2`
+  // (fill+stroke fake-bold) inside a q…Q for an actually-bold Tj and
+  // never emits an explicit `Tr 0` reset, expecting Q to undo the
+  // mode. Without a stack here we'd carry Tr=2 across the whole page
+  // and mis-flag every later show as bold.
+  const stateStack: {
+    tm: typeof tm;
+    tlm: typeof tlm;
+    fontName: string | null;
+    fontSize: number;
+    textRenderingMode: number;
+  }[] = [];
+
   const result: TextShowMatch[] = [];
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];
     switch (o.op) {
+      case "q":
+        stateStack.push({
+          tm: [...tm],
+          tlm: [...tlm],
+          fontName,
+          fontSize,
+          textRenderingMode,
+        });
+        break;
+      case "Q": {
+        const popped = stateStack.pop();
+        if (popped) {
+          tm = popped.tm;
+          tlm = popped.tlm;
+          fontName = popped.fontName;
+          fontSize = popped.fontSize;
+          textRenderingMode = popped.textRenderingMode;
+        }
+        break;
+      }
       case "BT":
         tm = [1, 0, 0, 1, 0, 0];
         tlm = [1, 0, 0, 1, 0, 0];

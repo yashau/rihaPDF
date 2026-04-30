@@ -44,6 +44,10 @@ export type TextItem = {
   fontName: string;
   /** True for trailing whitespace-only items pdf.js inserts between runs. */
   hasEOL: boolean;
+  /** Content-stream Tj/TJ op indices that THIS item carries glyphs from.
+   *  Filled in by `applyShowDecodes` so save / preview-strip can map
+   *  an item back to the exact ops it owns without position guessing. */
+  contentStreamOpIndices?: number[];
 };
 
 /**
@@ -57,6 +61,10 @@ export type TextRun = {
   id: string;
   /** Indices into the source TextItem[] this run was built from. */
   sourceIndices: number[];
+  /** Indices of the content-stream Tj/TJ ops painting this run.
+   *  Used by save.ts (to delete) + preview.ts (to strip on drag).
+   *  Authoritative — replaces fragile position-based matching. */
+  contentStreamOpIndices: number[];
   /** Concatenated logical-order text. */
   text: string;
   /** Viewport-pixel bounding box (left, top, width, height). */
@@ -235,6 +243,13 @@ function applyShowDecodes(
     decodedShows.push({ show, text: decoded });
   }
 
+  // Stamp the content-stream op index on every pdf.js item closest
+  // (by line + x) to a SHOW we know about — even shows we didn't
+  // claim/decode (LTR digits, Latin words). Save / preview-strip
+  // need an authoritative item→Tj-op mapping for every run on the
+  // page, not just the RTL-overridden ones.
+  stampContentStreamOpsOnItems(items, fontShows, scale, viewportHeight);
+
   // Bucket DecodedShow's by quantised PDF-y so closest-show lookup is
   // line-local (different lines never compete).
   const showsByY = new Map<number, DecodedShow[]>();
@@ -329,6 +344,7 @@ function applyShowDecodes(
         height: surroundingHeight,
         fontName: sameLine[0]?.fontName ?? "",
         hasEOL: false,
+        contentStreamOpIndices: [ds.show.opIndex],
       });
       continue;
     }
@@ -363,9 +379,71 @@ function applyShowDecodes(
       main.width = Math.max(claimedRight - claimedLeft, main.width);
     }
     main.str = ds.text;
+    // Stamp the show's content-stream op index onto `main` (the
+    // surviving item) so save / preview-strip can locate the exact
+    // Tj/TJ to remove without position guessing. We also stamp every
+    // OTHER claimed item so even if a downstream rebuild merges
+    // differently, the op index lives somewhere reachable.
+    main.contentStreamOpIndices = [
+      ...(main.contentStreamOpIndices ?? []),
+      ds.show.opIndex,
+    ];
     for (const it of claimed) {
-      if (it !== main) it.str = "";
+      if (it !== main) {
+        it.str = "";
+        it.contentStreamOpIndices = [
+          ...(it.contentStreamOpIndices ?? []),
+          ds.show.opIndex,
+        ];
+      }
     }
+  }
+}
+
+/** Pair every content-stream Tj/TJ show with the closest pdf.js item
+ *  (same line, smallest |Δx|) and stamp the show's op index onto that
+ *  item's `contentStreamOpIndices`. This covers the LTR side that
+ *  applyShowDecodes intentionally skips (digits, Latin punctuation),
+ *  so save / preview-strip can find every Tj a run paints, not just
+ *  the RTL ones.
+ *
+ *  We don't touch item.str — pdf.js already extracts LTR text
+ *  correctly via the same `/ToUnicode` CMap that breaks for fili.
+ */
+function stampContentStreamOpsOnItems(
+  items: TextItem[],
+  fontShows: import("./sourceFonts").FontShow[],
+  scale: number,
+  viewportHeight: number,
+): void {
+  if (items.length === 0 || fontShows.length === 0) return;
+  // Pre-compute item PDF coords once. We use a (Δx + 50·Δy) cost
+  // metric instead of strict y-bucket equality — Word emits digit Tj
+  // baselines at slightly different y than surrounding Thaana for
+  // optical alignment, so a hard y-bucket would orphan those shows.
+  const itemPdf = items.map((it) => ({
+    it,
+    x: it.transform[4] / scale,
+    y: (viewportHeight - it.transform[5]) / scale,
+  }));
+  for (const show of fontShows) {
+    let best: TextItem | null = null;
+    let bestCost = Infinity;
+    for (const ip of itemPdf) {
+      const dy = Math.abs(ip.y - show.y);
+      // Same-line-ish: vertical distance shouldn't exceed half a line.
+      if (dy > 6) continue;
+      const dx = Math.abs(ip.x - show.x);
+      const cost = dx + dy * 50;
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = ip.it;
+      }
+    }
+    if (!best) continue;
+    const list = best.contentStreamOpIndices ?? [];
+    if (!list.includes(show.opIndex)) list.push(show.opIndex);
+    best.contentStreamOpIndices = list;
   }
 }
 
@@ -388,11 +466,14 @@ function scriptOf(text: string): "rtl" | "ltr" | "unknown" {
       (cp >= 0x10800 && cp <= 0x10fff) // older RTL scripts
     ) {
       hasRtl = true;
-    } else if (
-      (cp >= 0x0030 && cp <= 0x0039) || // ASCII digits
-      (cp >= 0x0041 && cp <= 0x005a) || // ASCII upper
-      (cp >= 0x0061 && cp <= 0x007a) // ASCII lower
-    ) {
+    } else if (cp >= 0x0021 && cp <= 0x007e) {
+      // Any ASCII printable — letters, digits, parens, slash, comma,
+      // period — counts as LTR-flow content here. Without this, lone
+      // "(" / ")" / "/" items would be classified "unknown" and get
+      // sucked into a neighbouring RTL show's claim list, where the
+      // claim block clears their str (str = "") because they're not
+      // the chosen `main` item. End result: parens vanish from the
+      // run text the user edits.
       hasLtr = true;
     }
   }
@@ -526,6 +607,10 @@ function buildTextRuns(
     let baselineY = 0;
     let text = "";
     const sourceIndices: number[] = [];
+    const opIndexSet = new Set<number>();
+    // Also gather op indices from CLEARED items in the same bucket
+    // (str === "") that didn't make it into `ordered` because of the
+    // earlier visible-filter — they still own Tj's we want to strip.
     let prevItem: TextItem | null = null;
     for (const it of ordered) {
       const [, , , scaleY, tx, ty] = it.transform;
@@ -551,6 +636,7 @@ function buildTextRuns(
       text += it.str;
       if (it.str.length > 0) prevItem = it;
       sourceIndices.push(it.index);
+      for (const op of it.contentStreamOpIndices ?? []) opIndexSet.add(op);
     }
     text = cleanCombiningSpaces(text);
 
@@ -588,6 +674,7 @@ function buildTextRuns(
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
       sourceIndices,
+      contentStreamOpIndices: Array.from(opIndexSet).sort((a, b) => a - b),
       text,
       bounds: {
         left: minLeft,
@@ -620,7 +707,13 @@ function buildTextRuns(
       continue;
     }
     const gap = horizontalGap(prev, item);
-    const mergeThreshold = Math.max(item.height, prev.height) * 0.5;
+    // Merge across modest gaps so small adjacent Tj's — parens,
+    // slashes, digits emitted at slightly offset baselines by Word —
+    // end up in the SAME run as the body text they decorate. The
+    // sameLine check above already enforces vertical proximity, so
+    // we can be generous on the horizontal axis without crossing
+    // line boundaries.
+    const mergeThreshold = Math.max(item.height, prev.height) * 1.5;
     if (gap < mergeThreshold) {
       bucket.push(item);
     } else {

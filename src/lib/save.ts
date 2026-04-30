@@ -235,19 +235,26 @@ export async function applyEditsAndSave(
       const runPdfWidth = run.bounds.width / scale;
       const runPdfHeight = run.height / scale;
 
-      // Match Tj/TJ ops where the text matrix's translation falls roughly
-      // inside the run's bounding box. Tolerance covers floating-point
-      // drift from accumulated Td offsets and font-metric padding.
-      const tolY = Math.max(2, runPdfHeight * 0.4);
-      const tolX = Math.max(2, runPdfHeight * 0.3);
-      const matched = shows.filter((s) => {
-        const ex = s.textMatrix[4];
-        const ey = s.textMatrix[5];
-        if (Math.abs(ey - runPdfY) > tolY) return false;
-        if (ex < runPdfX - tolX) return false;
-        if (ex > runPdfX + runPdfWidth + tolX) return false;
-        return true;
-      });
+      // Use the authoritative op-index list propagated from FontShow
+      // through TextItem to TextRun (see pdf.ts:applyShowDecodes).
+      // Falls back to position-matching only if the run has no
+      // recorded op indices (shouldn't happen for source-extracted
+      // runs but the fallback keeps old PDFs working).
+      let matched = shows.filter((s) =>
+        run.contentStreamOpIndices.includes(s.index),
+      );
+      if (matched.length === 0) {
+        const tolY = Math.max(2, runPdfHeight * 0.4);
+        const tolX = Math.max(2, runPdfHeight * 0.3);
+        matched = shows.filter((s) => {
+          const ex = s.textMatrix[4];
+          const ey = s.textMatrix[5];
+          if (Math.abs(ey - runPdfY) > tolY) return false;
+          if (ex < runPdfX - tolX) return false;
+          if (ex > runPdfX + runPdfWidth + tolX) return false;
+          return true;
+        });
+      }
 
       // Move-only path: text is unchanged AND there's no formatting
       // override AND we have a non-zero offset. Keep the original glyphs
@@ -399,10 +406,18 @@ export async function applyEditsAndSave(
       // the user can still override any of these via the toolbar but
       // doing nothing should preserve the source's look.
       const family = style.fontFamily ?? run.fontFamily ?? DEFAULT_FONT_FAMILY;
-      const { pdfFont } = await getFont(family);
       const fontSizePt = style.fontSize ?? runPdfHeight;
+      // `??` (not `||`) so an explicit `style.bold = false` overrides
+      // a `run.bold = true` source detection — that's the
+      // toggle-off-an-already-bold-run flow.
       const bold = style.bold ?? run.bold;
       const italic = style.italic ?? run.italic;
+      // For Latin StandardFonts (Helvetica / Times / Courier) getFont
+      // can pick the bold/italic variant. Thaana fonts in the registry
+      // don't ship paired variants so getFont silently falls back to
+      // the regular bytes — bold/italic on Dhivehi runs remains
+      // editor-preview only for now (documented limitation).
+      const { pdfFont } = await getFont(family, bold, italic);
 
       // Right-align RTL replacements at the original run's right edge so
       // the first logical character lands where it used to. Use pdf-lib's
@@ -431,13 +446,10 @@ export async function applyEditsAndSave(
         font: pdfFont,
         color: rgb(0, 0, 0),
       });
-      // Bold/italic on rerender path are deferred until we land a raw-ops
-      // text-show that pdf-lib's CID remap doesn't break. The synthetic
-      // double-draw we tried before duplicated the text in extraction —
-      // worse than not having bold. Move-only edits still preserve source
-      // bold/italic because they keep the original Tj.
-      void bold;
-      void italic;
+      // bold/italic are now baked into the font choice via getFont
+      // above (Latin StandardFonts only). For Thaana we keep using the
+      // regular variant — synthetic double-draw broke text extraction
+      // and the registry doesn't ship paired variants.
 
       if (style.underline) {
         const underlineY = drawY - Math.max(1, fontSizePt * 0.08);

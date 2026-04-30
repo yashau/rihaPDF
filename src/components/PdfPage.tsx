@@ -1034,13 +1034,19 @@ function EditField({
   );
 }
 
+/** True when the user has explicitly set ANY of the toolbar's style
+ *  fields. We deliberately use `!== undefined` rather than truthiness
+ *  so that `bold: false` / `italic: false` / `underline: false`
+ *  count as a change — that's the toggle-off-an-already-bold-run
+ *  case where the override would otherwise get stripped on commit
+ *  and the original run.bold would silently come back. */
 function hasStyle(s: EditStyle): boolean {
-  return !!(
-    s.fontFamily ||
-    s.fontSize ||
-    s.bold ||
-    s.italic ||
-    s.underline
+  return (
+    s.fontFamily !== undefined ||
+    s.fontSize !== undefined ||
+    s.bold !== undefined ||
+    s.italic !== undefined ||
+    s.underline !== undefined
   );
 }
 
