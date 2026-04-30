@@ -332,6 +332,30 @@ function applyShowDecodes(
     for (const it of claimed) {
       if (it.str.length > main.str.length) main = it;
     }
+    // The other claimed items will be cleared (str = "") and dropped by
+    // buildTextRuns' visible filter, so their widths would otherwise be
+    // lost from the run's bounds. Roll up the full visual span — leftmost
+    // item.left → rightmost (item.left + item.width) — into `main` so the
+    // overlay ends up exactly the size of the rendered glyphs. Without
+    // this, a justified-paragraph Tj that pdf.js split into many narrow
+    // items collapses to a single ~one-word-wide overlay even though the
+    // decoded text covers the whole line.
+    let claimedLeft = Infinity;
+    let claimedRight = -Infinity;
+    for (const it of claimed) {
+      const left = it.transform[4];
+      const right = left + (it.width || 0);
+      if (left < claimedLeft) claimedLeft = left;
+      if (right > claimedRight) claimedRight = right;
+    }
+    if (Number.isFinite(claimedLeft) && Number.isFinite(claimedRight)) {
+      // transform is shared/by-reference; clone before mutating tx so we
+      // don't accidentally shift other items (TextItem.transform arrays
+      // come straight from pdf.js).
+      main.transform = main.transform.slice();
+      main.transform[4] = claimedLeft;
+      main.width = Math.max(claimedRight - claimedLeft, main.width);
+    }
     main.str = ds.text;
     for (const it of claimed) {
       if (it !== main) it.str = "";
