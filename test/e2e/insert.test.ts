@@ -72,6 +72,23 @@ describe("inserting net-new content", () => {
     );
     await h.page.waitForTimeout(300);
 
+    // The inserted-image overlay should be carrying a real data: URL
+    // for its background — not just a placeholder rectangle. Catch
+    // regressions like the URL.revokeObjectURL race we hit when the
+    // overlay was wiring up an Object URL.
+    const overlayBg = await h.page
+      .locator("[data-image-insert-id]")
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundImage);
+    expect(overlayBg, "inserted-image overlay must paint a backgroundImage").toMatch(
+      /url\(.*data:image\/(png|jpeg);base64,/,
+    );
+    await h.page
+      .locator('[data-page-index="0"]')
+      .screenshot({
+        path: path.join(SCREENSHOTS, "insert-overlay.png"),
+      });
+
     // Save + reload.
     const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
     await h.page.locator("button").filter({ hasText: /^Save/ }).click();

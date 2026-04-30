@@ -814,16 +814,19 @@ function InsertedImageOverlay({
   onDelete: () => void;
 }) {
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
-  // Once-only data URL for the chosen image so the browser caches it.
+  // Encode the chosen image as a base64 data URL once. We deliberately
+  // avoid `URL.createObjectURL` here — its companion revoke needs to
+  // run on a true unmount, but React 19 StrictMode does a synthetic
+  // mount→unmount→mount in dev that fires the revoke before the
+  // browser ever paints the background-image, leaving an empty
+  // placeholder. data: URLs have no lifecycle to manage.
   const dataUrl = useMemo(() => {
-    const blob = new Blob([ins.bytes as BlobPart], {
-      type: `image/${ins.format}`,
-    });
-    return URL.createObjectURL(blob);
+    let s = "";
+    for (let i = 0; i < ins.bytes.length; i++) {
+      s += String.fromCharCode(ins.bytes[i]);
+    }
+    return `data:image/${ins.format};base64,${btoa(s)}`;
   }, [ins.bytes, ins.format]);
-  useEffect(() => {
-    return () => URL.revokeObjectURL(dataUrl);
-  }, [dataUrl]);
 
   const left = ins.pdfX * page.scale;
   const top = page.viewHeight - (ins.pdfY + ins.pdfHeight) * page.scale;
