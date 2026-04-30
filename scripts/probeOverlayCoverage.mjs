@@ -172,13 +172,31 @@ for (let pi = 0; pi < numPages; pi++) {
     });
   }, { pts: clusters.map((c) => ({ cx: c.cx, cy: c.cy })), pageIndex: pi });
 
+  // Filter out false-positive clusters before scoring coverage:
+  //   - Bitmaps embedded as ink in the PDF (the bismillah calligraphy
+  //     and the Maldives crest at the top of page 1) come through as
+  //     huge dark clusters but aren't extracted as text by pdf.js, so
+  //     we shouldn't expect overlays for them. Skip clusters bigger
+  //     than ~3× normal text height.
+  //   - Tiny anti-aliasing speckles smaller than a single glyph (less
+  //     than 6×6 css px). These are not meaningful text.
+  const lineHeightPx = 25;
+  const trimmed = clusters.filter((c) => {
+    if (c.h > lineHeightPx * 2.2) return false;
+    if (c.w < 6 || c.h < 6) return false;
+    return true;
+  });
+  const trimmedCoverage = coverage.filter((_, i) => {
+    const c = clusters[i];
+    return c.h <= lineHeightPx * 2.2 && c.w >= 6 && c.h >= 6;
+  });
   let covered = 0;
   const uncoveredClusters = [];
-  for (let i = 0; i < clusters.length; i++) {
-    if (coverage[i]) covered++;
-    else uncoveredClusters.push(clusters[i]);
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmedCoverage[i]) covered++;
+    else uncoveredClusters.push(trimmed[i]);
   }
-  totalGlyphClusters += clusters.length;
+  totalGlyphClusters += trimmed.length;
   totalCoveredClusters += covered;
 
   // Step C: per-run overlay vs rendered-text alignment.
