@@ -30,7 +30,7 @@ page.setDefaultTimeout(8_000);
 
 await page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
 // Make sure the app's pdf.js worker is registered.
-await page.locator('input[type="file"]').setInputFiles(PDF_PATH);
+await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(PDF_PATH);
 await page.waitForSelector("[data-page-index]", { timeout: 20_000 });
 await page.waitForTimeout(800);
 

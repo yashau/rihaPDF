@@ -64,7 +64,7 @@ page.on("pageerror", (e) => console.log("[err]", e.message));
 
 console.log("\n=== SETUP: load original ===");
 await page.goto(URL, { waitUntil: "networkidle" });
-await page.locator('input[type="file"]').setInputFiles(PDF_PATH);
+await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(PDF_PATH);
 await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
 await page.waitForTimeout(2_000);
 
@@ -92,7 +92,7 @@ async function runScenario({
 }) {
   console.log(`\n=== ${name} ===`);
   // Reset to a fresh load each time so previous edits don't bleed.
-  await page.locator('input[type="file"]').setInputFiles(PDF_PATH);
+  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(PDF_PATH);
   await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
   await page.waitForTimeout(2_000);
 
@@ -130,7 +130,7 @@ async function runScenario({
   await dl.saveAs(out);
 
   // Reload saved PDF and capture runs.
-  await page.locator('input[type="file"]').setInputFiles(out);
+  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(out);
   await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
   await page.waitForTimeout(2_000);
   const savedRuns = await captureRuns(page);

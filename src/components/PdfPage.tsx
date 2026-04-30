@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
+import type {
+  ImageInsertion,
+  TextInsertion,
+} from "../lib/insertions";
+import type { ToolMode } from "../App";
 import { FONTS } from "../lib/fonts";
 
 export type EditValue = {
@@ -29,18 +34,29 @@ type Props = {
   pageIndex: number;
   edits: Map<string, EditValue>;
   imageMoves: Map<string, ImageMoveValue>;
+  insertedTexts: TextInsertion[];
+  insertedImages: ImageInsertion[];
   /** Live-preview canvas — when present, paint this in place of
    *  page.canvas. The preview has the currently-edited runs and moved
    *  images stripped from its content stream so HTML overlays don't
    *  need a white cover to hide the originals. */
   previewCanvas: HTMLCanvasElement | null;
+  /** Active tool mode — when "addText" / "addImage", clicking on
+   *  empty canvas creates a new insertion via onCanvasClick. */
+  tool: ToolMode;
+  /** Currently-open editor id on this page (lifted to App so a fresh
+   *  insertion can immediately open its editor without a round-trip
+   *  through PdfPage's own state). null = nothing is being edited. */
+  editingId: string | null;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
-  /** Notified whenever the user opens or dismisses the EditField on
-   *  this page. App.tsx feeds the active runId into the preview-strip
-   *  pipeline so the original glyphs disappear the moment the editor
-   *  opens, not only on commit. */
-  onEditingChange?: (runId: string | null) => void;
+  onEditingChange: (runId: string | null) => void;
+  /** Click on the page canvas with `tool` set to a placement mode. */
+  onCanvasClick: (pdfX: number, pdfY: number) => void;
+  onTextInsertChange: (id: string, patch: Partial<TextInsertion>) => void;
+  onTextInsertDelete: (id: string) => void;
+  onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
+  onImageInsertDelete: (id: string) => void;
 };
 
 export function PdfPage({
@@ -48,16 +64,23 @@ export function PdfPage({
   pageIndex,
   edits,
   imageMoves,
+  insertedTexts,
+  insertedImages,
   previewCanvas,
+  tool,
+  editingId,
   onEdit,
   onImageMove,
   onEditingChange,
+  onCanvasClick,
+  onTextInsertChange,
+  onTextInsertDelete,
+  onImageInsertChange,
+  onImageInsertDelete,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [editingId, setEditingIdState] = useState<string | null>(null);
   const setEditingId = (next: string | null) => {
-    setEditingIdState(next);
-    onEditingChange?.(next);
+    onEditingChange(next);
   };
   /** While dragging a run, the live offset for the dragged run. We keep
    *  it in local state during the drag so we don't churn the parent's
@@ -187,6 +210,32 @@ export function PdfPage({
       data-page-index={pageIndex}
     >
       <div data-canvas-slot />
+      {tool !== "select" ? (
+        // Placement-mode capture layer: sits above all other overlays
+        // so a click goes to onCanvasClick regardless of what's
+        // underneath. The user is in "drop a new thing here" mode;
+        // existing items shouldn't react to the click.
+        <div
+          className="absolute inset-0"
+          style={{
+            cursor: "crosshair",
+            zIndex: 50,
+            pointerEvents: "auto",
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            const host = containerRef.current;
+            if (!host) return;
+            const r = host.getBoundingClientRect();
+            const xView = e.clientX - r.x;
+            const yView = e.clientY - r.y;
+            // Convert viewport (y-down) → PDF user space (y-up).
+            const pdfX = xView / page.scale;
+            const pdfY = (page.viewHeight - yView) / page.scale;
+            onCanvasClick(pdfX, pdfY);
+          }}
+        />
+      ) : null}
       <div className="absolute inset-0">
         {/* Per-run + per-image overlays handle their own pointer-events.
             We don't switch the parent off while editing — the EditField's
@@ -361,6 +410,34 @@ export function PdfPage({
             onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
           />
         ))}
+        {/* Inserted (net-new) text boxes. These render the same way as
+            edited runs do — drag to move, click to edit — but the save
+            path treats them as fresh content rather than a rewrite. */}
+        {insertedTexts.map((ins) => (
+          <InsertedTextOverlay
+            key={ins.id}
+            ins={ins}
+            page={page}
+            isEditing={editingId === ins.id}
+            onChange={(patch) => onTextInsertChange(ins.id, patch)}
+            onDelete={() => {
+              if (editingId === ins.id) setEditingId(null);
+              onTextInsertDelete(ins.id);
+            }}
+            onOpen={() => setEditingId(ins.id)}
+            onClose={() => setEditingId(null)}
+          />
+        ))}
+        {/* Inserted images — drag to move, double-click to delete. */}
+        {insertedImages.map((ins) => (
+          <InsertedImageOverlay
+            key={ins.id}
+            ins={ins}
+            page={page}
+            onChange={(patch) => onImageInsertChange(ins.id, patch)}
+            onDelete={() => onImageInsertDelete(ins.id)}
+          />
+        ))}
       </div>
     </div>
   );
@@ -496,6 +573,253 @@ function cropCanvasToDataUrl(
     // our own canvas so this should never trip in practice.
     return null;
   }
+}
+
+/** Net-new text the user typed at a fresh position on the page (not
+ *  associated with any source run). Click-to-edit, drag-to-move,
+ *  Backspace on empty content deletes. Saved by appending a Tj op
+ *  to the page content stream — see save.ts insertion path. */
+function InsertedTextOverlay({
+  ins,
+  page,
+  isEditing,
+  onChange,
+  onDelete,
+  onOpen,
+  onClose,
+}: {
+  ins: TextInsertion;
+  page: RenderedPage;
+  isEditing: boolean;
+  onChange: (patch: Partial<TextInsertion>) => void;
+  onDelete: () => void;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
+  // viewport top of the box is baseline - fontSize, scaled. Match the
+  // EditField rendering: render text in a box of height = fontSize × 1.4
+  // so descenders fit.
+  const lineHeight = ins.fontSize * 1.4;
+  const left = ins.pdfX * page.scale;
+  const top = (page.viewHeight - ins.pdfY * page.scale) - ins.fontSize * page.scale;
+  const width = Math.max(ins.pdfWidth * page.scale, 60);
+  const height = lineHeight * page.scale;
+  const family = ins.style?.fontFamily ?? "Arial";
+  const fontSizePx = ins.fontSize * page.scale;
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const startDrag = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: ins.pdfX,
+      baseY: ins.pdfY,
+    };
+    const onMove = (ev: MouseEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dxView = ev.clientX - d.startX;
+      const dyView = ev.clientY - d.startY;
+      onChange({
+        pdfX: d.baseX + dxView / page.scale,
+        // viewport y-down → PDF y-up: subtract.
+        pdfY: d.baseY - dyView / page.scale,
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      data-text-insert-id={ins.id}
+      style={{
+        position: "absolute",
+        left,
+        top,
+        width,
+        height,
+        outline: isEditing
+          ? "1px solid rgba(40, 130, 255, 0.85)"
+          : "1px dashed rgba(40, 130, 255, 0.5)",
+        background: isEditing ? "rgba(255, 255, 255, 0.9)" : "transparent",
+        cursor: isEditing ? "text" : "grab",
+        pointerEvents: "auto",
+        display: "flex",
+        alignItems: "center",
+        zIndex: 20,
+      }}
+      onMouseDown={startDrag}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isEditing) onOpen();
+      }}
+    >
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          dir="auto"
+          value={ins.text}
+          style={{
+            width: "100%",
+            border: "none",
+            outline: "none",
+            padding: "0 4px",
+            fontFamily: `"${family}"`,
+            fontSize: `${fontSizePx}px`,
+            lineHeight: `${height}px`,
+            background: "transparent",
+          }}
+          onChange={(e) => onChange({ text: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onClose();
+            } else if (e.key === "Escape") {
+              if (ins.text === "") onDelete();
+              onClose();
+            } else if (e.key === "Backspace" && ins.text === "") {
+              e.preventDefault();
+              onDelete();
+              onClose();
+            }
+          }}
+          onBlur={() => {
+            if (ins.text === "") onDelete();
+            onClose();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          dir="auto"
+          style={{
+            fontFamily: `"${family}"`,
+            fontSize: `${fontSizePx}px`,
+            lineHeight: `${height}px`,
+            paddingLeft: 4,
+            paddingRight: 4,
+            color: "black",
+            whiteSpace: "pre",
+            width: "100%",
+          }}
+          title={ins.text || "(empty — click to type)"}
+        >
+          {ins.text || " "}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Net-new image the user dropped onto the page. Drag to move; double-
+ *  click to delete. The bytes ride along in state until save embeds
+ *  them. We render a CSS background-image from a data URL so the
+ *  preview matches what the saved PDF will show. */
+function InsertedImageOverlay({
+  ins,
+  page,
+  onChange,
+  onDelete,
+}: {
+  ins: ImageInsertion;
+  page: RenderedPage;
+  onChange: (patch: Partial<ImageInsertion>) => void;
+  onDelete: () => void;
+}) {
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  // Once-only data URL for the chosen image so the browser caches it.
+  const dataUrl = useMemo(() => {
+    const blob = new Blob([ins.bytes as BlobPart], {
+      type: `image/${ins.format}`,
+    });
+    return URL.createObjectURL(blob);
+  }, [ins.bytes, ins.format]);
+  useEffect(() => {
+    return () => URL.revokeObjectURL(dataUrl);
+  }, [dataUrl]);
+
+  const left = ins.pdfX * page.scale;
+  const top = page.viewHeight - (ins.pdfY + ins.pdfHeight) * page.scale;
+  const w = ins.pdfWidth * page.scale;
+  const h = ins.pdfHeight * page.scale;
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: ins.pdfX,
+      baseY: ins.pdfY,
+    };
+    const onMove = (ev: MouseEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dxView = ev.clientX - d.startX;
+      const dyView = ev.clientY - d.startY;
+      onChange({
+        pdfX: d.baseX + dxView / page.scale,
+        pdfY: d.baseY - dyView / page.scale,
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      data-image-insert-id={ins.id}
+      style={{
+        position: "absolute",
+        left,
+        top,
+        width: w,
+        height: h,
+        backgroundImage: `url(${dataUrl})`,
+        backgroundSize: "100% 100%",
+        backgroundRepeat: "no-repeat",
+        outline: "1px dashed rgba(40, 130, 255, 0.6)",
+        cursor: "grab",
+        pointerEvents: "auto",
+        zIndex: 20,
+      }}
+      title={`Inserted image (double-click to delete)`}
+      onMouseDown={startDrag}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDelete();
+      }}
+    />
+  );
 }
 
 function EditField({

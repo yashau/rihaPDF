@@ -65,6 +65,32 @@ export type ImageMove = {
   dy?: number;
 };
 
+/** Net-new text the user typed at a fresh position on the page. Saved
+ *  by appending a draw call to the page's content stream — no
+ *  modification of existing ops. */
+export type TextInsert = {
+  pageIndex: number;
+  /** PDF user-space baseline x. */
+  pdfX: number;
+  /** PDF user-space baseline y (y-up). */
+  pdfY: number;
+  fontSize: number;
+  text: string;
+  style?: EditStyle;
+};
+
+/** Net-new image dropped onto the page. */
+export type ImageInsert = {
+  pageIndex: number;
+  /** Bottom-left in PDF user space (y-up). */
+  pdfX: number;
+  pdfY: number;
+  pdfWidth: number;
+  pdfHeight: number;
+  bytes: Uint8Array;
+  format: "png" | "jpeg";
+};
+
 export type PageOp =
   | { kind: "remove"; pageIndex: number }
   | { kind: "insertBlank"; afterPageIndex: number };
@@ -75,6 +101,8 @@ export async function applyEditsAndSave(
   edits: Edit[],
   pageOps: PageOp[],
   imageMoves: ImageMove[] = [],
+  textInserts: TextInsert[] = [],
+  imageInserts: ImageInsert[] = [],
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalPdfBytes);
   doc.registerFontkit(fontkit);
@@ -372,6 +400,70 @@ export async function applyEditsAndSave(
         });
       }
     }
+  }
+
+  // Net-new insertions (text the user typed at fresh positions, images
+  // dropped from disk). These don't touch existing content streams —
+  // pdf-lib's page.drawText / drawImage helpers append to the page's
+  // existing Contents.
+  for (const ins of textInserts) {
+    const page = docPages[ins.pageIndex];
+    if (!page) continue;
+    if (!ins.text || ins.text.trim().length === 0) continue;
+    const family =
+      ins.style?.fontFamily ??
+      // default per-script: Thaana → Faruma, otherwise Arial
+      (/[֐-׿؀-ۿހ-޿]/u.test(ins.text) ? DEFAULT_FONT_FAMILY : "Arial");
+    const { pdfFont } = await getFont(family);
+    const fontSizePt = ins.fontSize;
+    // For RTL, anchor the draw at the right edge by subtracting
+    // pdf-lib's measured width from the click position so the first
+    // logical character ends up roughly where the user clicked.
+    const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(ins.text);
+    const widthPt = pdfFont.widthOfTextAtSize(ins.text, fontSizePt);
+    const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
+    page.drawText(ins.text, {
+      x: baseX,
+      y: ins.pdfY,
+      size: fontSizePt,
+      font: pdfFont,
+      color: rgb(0, 0, 0),
+    });
+    if (ins.style?.underline) {
+      const underlineY = ins.pdfY - Math.max(1, fontSizePt * 0.08);
+      page.drawLine({
+        start: { x: baseX, y: underlineY },
+        end: { x: baseX + widthPt, y: underlineY },
+        thickness: Math.max(0.5, fontSizePt * 0.05),
+        color: rgb(0, 0, 0),
+      });
+    }
+  }
+
+  // Embed each unique image once, then draw at its placement. Different
+  // insertions sharing the same byte buffer reuse the embedded XObject
+  // so the saved file stays small.
+  const embeddedImageCache = new Map<
+    Uint8Array,
+    Awaited<ReturnType<typeof doc.embedPng>>
+  >();
+  for (const ins of imageInserts) {
+    const page = docPages[ins.pageIndex];
+    if (!page) continue;
+    let embedded = embeddedImageCache.get(ins.bytes);
+    if (!embedded) {
+      embedded =
+        ins.format === "png"
+          ? await doc.embedPng(ins.bytes)
+          : await doc.embedJpg(ins.bytes);
+      embeddedImageCache.set(ins.bytes, embedded);
+    }
+    page.drawImage(embedded, {
+      x: ins.pdfX,
+      y: ins.pdfY,
+      width: ins.pdfWidth,
+      height: ins.pdfHeight,
+    });
   }
 
   // Page operations applied last; sort removals high-to-low so they don't

@@ -33,7 +33,7 @@ for (const rel of PDFS) {
     continue;
   }
   console.log(`\n=== ${path.basename(abs)} ===`);
-  await page.locator('input[type="file"]').setInputFiles(abs);
+  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(abs);
   await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
   await page.waitForTimeout(2_500);
 

@@ -34,7 +34,7 @@ const ctx = await browser.newContext({ viewport: { width: 1400, height: 1400 } }
 const page = await ctx.newPage();
 page.on("pageerror", (e) => console.log("[err]", e.message));
 await page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
-await page.locator('input[type="file"]').setInputFiles(PDF);
+await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(PDF);
 await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
 await page.waitForTimeout(3_500);
 
