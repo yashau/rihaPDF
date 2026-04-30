@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
@@ -29,8 +29,18 @@ type Props = {
   pageIndex: number;
   edits: Map<string, EditValue>;
   imageMoves: Map<string, ImageMoveValue>;
+  /** Live-preview canvas — when present, paint this in place of
+   *  page.canvas. The preview has the currently-edited runs and moved
+   *  images stripped from its content stream so HTML overlays don't
+   *  need a white cover to hide the originals. */
+  previewCanvas: HTMLCanvasElement | null;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
+  /** Notified whenever the user opens or dismisses the EditField on
+   *  this page. App.tsx feeds the active runId into the preview-strip
+   *  pipeline so the original glyphs disappear the moment the editor
+   *  opens, not only on commit. */
+  onEditingChange?: (runId: string | null) => void;
 };
 
 export function PdfPage({
@@ -38,11 +48,17 @@ export function PdfPage({
   pageIndex,
   edits,
   imageMoves,
+  previewCanvas,
   onEdit,
   onImageMove,
+  onEditingChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingIdState] = useState<string | null>(null);
+  const setEditingId = (next: string | null) => {
+    setEditingIdState(next);
+    onEditingChange?.(next);
+  };
   /** While dragging a run, the live offset for the dragged run. We keep
    *  it in local state during the drag so we don't churn the parent's
    *  edits Map on every mousemove. */
@@ -67,11 +83,17 @@ export function PdfPage({
       "[data-canvas-slot]",
     ) as HTMLElement | null;
     if (!node) return;
-    node.replaceChildren(page.canvas);
-    page.canvas.style.display = "block";
-    page.canvas.style.width = `${page.viewWidth}px`;
-    page.canvas.style.height = `${page.viewHeight}px`;
-  }, [page]);
+    // Paint the preview canvas (= original content stream minus the
+    // items the user is currently editing/moving) when one is
+    // available; otherwise fall back to the original render. Either
+    // way we size to the same viewport so the HTML overlay positions
+    // line up.
+    const liveCanvas = previewCanvas ?? page.canvas;
+    node.replaceChildren(liveCanvas);
+    liveCanvas.style.display = "block";
+    liveCanvas.style.width = `${page.viewWidth}px`;
+    liveCanvas.style.height = `${page.viewHeight}px`;
+  }, [page, previewCanvas]);
 
   /** Start a drag on a run. The handlers track movement on the window so
    *  the drag continues even if the cursor leaves the original span. */
@@ -165,10 +187,11 @@ export function PdfPage({
       data-page-index={pageIndex}
     >
       <div data-canvas-slot />
-      <div
-        className="absolute inset-0"
-        style={{ pointerEvents: editingId === null ? "auto" : "none" }}
-      >
+      <div className="absolute inset-0">
+        {/* Per-run + per-image overlays handle their own pointer-events.
+            We don't switch the parent off while editing — the EditField's
+            onBlur commits the current edit when the user clicks another
+            run, so they can hop between edits without first dismissing. */}
         {page.textRuns.map((run) => {
           const isEditing = editingId === run.id;
           const editedValue = edits.get(run.id);
@@ -180,155 +203,76 @@ export function PdfPage({
           const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
           const dy = (isDragging ? drag.dy : editedValue?.dy) ?? 0;
 
-          // Cover the original glyphs at their unmodified bounds so a drag,
-          // text replacement, OR an open editor makes the source disappear
-          // immediately. Without this, the canvas glyphs bleed through and
-          // the user sees both the old text and the editor / replacement.
-          const padX = 4;
-          const padY = Math.max(run.height * 0.25, 4);
-          const cover =
-            isModified || isEditing ? (
-              <div
-                key={`${run.id}-cover`}
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  left: run.bounds.left - padX,
-                  top: run.bounds.top - padY,
-                  width: Math.max(run.bounds.width, 12) + padX * 2,
-                  height: run.bounds.height + padY * 2,
-                  backgroundColor: "white",
-                  pointerEvents: "none",
-                }}
-              />
-            ) : null;
+          // No more white-rectangle cover — the live preview pipeline in
+          // App.tsx rebuilds the page canvas with these runs/images
+          // STRIPPED out of the content stream, so the original glyphs
+          // are actually gone from the render. The HTML overlay below
+          // just paints the new content where the user wants it.
+          const padX = 2;
+          const padY = 2;
 
           if (isEditing) {
             return (
-              <Fragment key={run.id}>
-                {cover}
-                <EditField
-                  run={run}
-                  initial={
-                    editedValue ?? { text: run.text, style: undefined }
+              <EditField
+                key={run.id}
+                run={run}
+                initial={
+                  editedValue ?? { text: run.text, style: undefined }
+                }
+                onCommit={(value) => {
+                  // Preserve any existing move offset (dx/dy) — the
+                  // EditField only owns text + style, so we layer back
+                  // the persisted offset from editedValue.
+                  const merged: EditValue = {
+                    ...value,
+                    dx: editedValue?.dx ?? 0,
+                    dy: editedValue?.dy ?? 0,
+                  };
+                  const hasOffset =
+                    (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
+                  if (value.text !== run.text || value.style || hasOffset) {
+                    onEdit(run.id, merged);
                   }
-                  onCommit={(value) => {
-                    // Preserve any existing move offset (dx/dy) — the
-                    // EditField only owns text + style, so we layer back
-                    // the persisted offset from editedValue.
-                    const merged: EditValue = {
-                      ...value,
-                      dx: editedValue?.dx ?? 0,
-                      dy: editedValue?.dy ?? 0,
-                    };
-                    const hasOffset =
-                      (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
-                    if (value.text !== run.text || value.style || hasOffset) {
-                      onEdit(run.id, merged);
-                    }
-                    setEditingId(null);
-                  }}
-                  onCancel={() => setEditingId(null)}
-                />
-              </Fragment>
+                  setEditingId(null);
+                }}
+                onCancel={() => setEditingId(null)}
+              />
             );
           }
 
           if (edited) {
             const style = editedValue.style ?? {};
+            // Edited / dragged run: paint the new text where the user
+            // wants it, no white cover under or behind. The original
+            // glyphs are already gone from the preview canvas.
             return (
-              <Fragment key={run.id}>
-                {cover}
-                <span
-                  data-run-id={run.id}
-                  data-font-family={style.fontFamily ?? run.fontFamily}
-                  data-base-font={run.fontBaseName ?? ""}
-                  style={{
-                    position: "absolute",
-                    left: run.bounds.left - padX + dx,
-                    top: run.bounds.top - padY + dy,
-                    width: Math.max(run.bounds.width, 12) + padX * 2,
-                    height: run.bounds.height + padY * 2,
-                    backgroundColor: "white",
-                    outline: "1px solid rgba(255, 200, 60, 0.7)",
-                    pointerEvents: "auto",
-                    cursor: isDragging ? "grabbing" : "grab",
-                    display: "flex",
-                    alignItems: "center",
-                    overflow: "visible",
-                  }}
-                  title={editedValue.text}
-                  onMouseDown={(e) =>
-                    startDrag(run.id, e, {
-                      dx: editedValue.dx ?? 0,
-                      dy: editedValue.dy ?? 0,
-                    })
-                  }
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setEditingId(run.id);
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (drag || justDraggedRef.current === run.id) return;
-                    setEditingId(run.id);
-                  }}
-                >
-                  <span
-                    dir="auto"
-                    style={{
-                      fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
-                      fontSize: `${style.fontSize ?? run.height}px`,
-                      lineHeight: `${run.bounds.height}px`,
-                      fontWeight: (style.bold ?? run.bold) ? 700 : 400,
-                      fontStyle:
-                        (style.italic ?? run.italic) ? "italic" : "normal",
-                      textDecoration: style.underline ? "underline" : "none",
-                      color: "black",
-                      width: "100%",
-                      whiteSpace: "pre",
-                      paddingLeft: padX,
-                      paddingRight: padX,
-                    }}
-                  >
-                    {editedValue.text}
-                  </span>
-                </span>
-              </Fragment>
-            );
-          }
-          // Unedited (and possibly mid-drag): cover hides the original PDF
-          // glyphs while the user is dragging so the run appears to truly
-          // detach from its source position.
-          return (
-            <Fragment key={run.id}>
-              {cover}
               <span
+                key={run.id}
                 data-run-id={run.id}
-                data-font-family={run.fontFamily}
+                data-font-family={style.fontFamily ?? run.fontFamily}
                 data-base-font={run.fontBaseName ?? ""}
-                dir="auto"
-                className="thaana-stack absolute select-text"
                 style={{
-                  left: run.bounds.left + dx,
-                  top: run.bounds.top + dy,
-                  width: Math.max(run.bounds.width, 12),
-                  height: run.bounds.height,
-                  fontSize: `${run.height}px`,
-                  lineHeight: `${run.bounds.height}px`,
-                  // While dragging, render the run visibly so the user
-                  // sees what they're moving (and the cover hides the
-                  // original underneath). At rest the span stays a
-                  // transparent click target.
-                  color: isModified ? "black" : "transparent",
-                  backgroundColor: "transparent",
+                  position: "absolute",
+                  left: run.bounds.left - padX + dx,
+                  top: run.bounds.top - padY + dy,
+                  width: Math.max(run.bounds.width, 12) + padX * 2,
+                  height: run.bounds.height + padY * 2,
+                  outline: isDragging
+                    ? "1px dashed rgba(255, 180, 30, 0.9)"
+                    : "1px solid rgba(255, 200, 60, 0.5)",
                   pointerEvents: "auto",
-                  whiteSpace: "pre",
-                  overflow: "visible",
                   cursor: isDragging ? "grabbing" : "grab",
+                  display: "flex",
+                  alignItems: "center",
+                  overflow: "visible",
                 }}
-                title={run.text}
-                onMouseDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
+                title={editedValue.text}
+                onMouseDown={(e) =>
+                  startDrag(run.id, e, {
+                    dx: editedValue.dx ?? 0,
+                    dy: editedValue.dy ?? 0,
+                  })
+                }
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditingId(run.id);
@@ -339,9 +283,70 @@ export function PdfPage({
                   setEditingId(run.id);
                 }}
               >
-                {run.text}
+                <span
+                  dir="auto"
+                  style={{
+                    fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
+                    fontSize: `${style.fontSize ?? run.height}px`,
+                    lineHeight: `${run.bounds.height}px`,
+                    fontWeight: (style.bold ?? run.bold) ? 700 : 400,
+                    fontStyle:
+                      (style.italic ?? run.italic) ? "italic" : "normal",
+                    textDecoration: style.underline ? "underline" : "none",
+                    color: "black",
+                    width: "100%",
+                    whiteSpace: "pre",
+                    paddingLeft: padX,
+                    paddingRight: padX,
+                  }}
+                >
+                  {editedValue.text}
+                </span>
               </span>
-            </Fragment>
+            );
+          }
+          // Unedited and not currently dragging: a transparent click
+          // target sits on top of the canvas glyphs. While the user IS
+          // dragging it (live state) we render the text visibly so they
+          // can see what's moving — the preview canvas has already
+          // stripped the original from its source spot, so there's no
+          // double-rendering.
+          return (
+            <span
+              key={run.id}
+              data-run-id={run.id}
+              data-font-family={run.fontFamily}
+              data-base-font={run.fontBaseName ?? ""}
+              dir="auto"
+              className="thaana-stack absolute select-text"
+              style={{
+                left: run.bounds.left + dx,
+                top: run.bounds.top + dy,
+                width: Math.max(run.bounds.width, 12),
+                height: run.bounds.height,
+                fontSize: `${run.height}px`,
+                lineHeight: `${run.bounds.height}px`,
+                color: isModified ? "black" : "transparent",
+                backgroundColor: "transparent",
+                pointerEvents: "auto",
+                whiteSpace: "pre",
+                overflow: "visible",
+                cursor: isDragging ? "grabbing" : "grab",
+              }}
+              title={run.text}
+              onMouseDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditingId(run.id);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (drag || justDraggedRef.current === run.id) return;
+                setEditingId(run.id);
+              }}
+            >
+              {run.text}
+            </span>
           );
         })}
         {page.images.map((img) => (
@@ -404,66 +409,50 @@ function ImageOverlay({
   const isMoved = dx !== 0 || dy !== 0;
   const movable = img.cmOpIndex != null;
 
-  // Crop the image's pixels from the page canvas exactly once so we can
-  // paint them at the moved position. Done lazily (only when first
-  // moved) so we don't burn CPU on documents the user never edits.
+  // Crop the image's pixels from the ORIGINAL page canvas (not the
+  // preview, which has the image stripped) so we can paint them at the
+  // moved position. Done lazily — only when first moved.
   const sprite = useMemo(() => {
     if (!isMoved) return null;
     return cropCanvasToDataUrl(page.canvas, left, top, w, h);
   }, [isMoved, page.canvas, left, top, w, h]);
 
   return (
-    <Fragment>
-      {isMoved ? (
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            left,
-            top,
-            width: w,
-            height: h,
-            backgroundColor: "white",
-            pointerEvents: "none",
-          }}
-        />
-      ) : null}
-      <div
-        data-image-id={img.id}
-        style={{
-          position: "absolute",
-          left: left + dx,
-          top: top + dy,
-          width: w,
-          height: h,
-          outline: movable
-            ? isDragging
-              ? "1px dashed rgba(60, 130, 255, 0.85)"
-              : isMoved
-                ? "1px solid rgba(60, 130, 255, 0.45)"
-                : "1px dashed rgba(60, 130, 255, 0)"
-            : "1px dashed rgba(160, 160, 160, 0.55)",
-          backgroundImage: sprite ? `url(${sprite})` : undefined,
-          backgroundSize: "100% 100%",
-          backgroundRepeat: "no-repeat",
-          cursor: movable
-            ? isDragging
-              ? "grabbing"
-              : "grab"
-            : "not-allowed",
-          pointerEvents: "auto",
-        }}
-        title={
-          movable
-            ? `Image ${img.resourceName} (drag to move)`
-            : `Image ${img.resourceName} (un-movable)`
-        }
-        onMouseDown={(e) => {
-          if (!movable) return;
-          onMouseDown(e, { dx, dy });
-        }}
-      />
-    </Fragment>
+    <div
+      data-image-id={img.id}
+      style={{
+        position: "absolute",
+        left: left + dx,
+        top: top + dy,
+        width: w,
+        height: h,
+        outline: movable
+          ? isDragging
+            ? "1px dashed rgba(60, 130, 255, 0.85)"
+            : isMoved
+              ? "1px solid rgba(60, 130, 255, 0.45)"
+              : "1px dashed rgba(60, 130, 255, 0)"
+          : "1px dashed rgba(160, 160, 160, 0.55)",
+        backgroundImage: sprite ? `url(${sprite})` : undefined,
+        backgroundSize: "100% 100%",
+        backgroundRepeat: "no-repeat",
+        cursor: movable
+          ? isDragging
+            ? "grabbing"
+            : "grab"
+          : "not-allowed",
+        pointerEvents: "auto",
+      }}
+      title={
+        movable
+          ? `Image ${img.resourceName} (drag to move)`
+          : `Image ${img.resourceName} (un-movable)`
+      }
+      onMouseDown={(e) => {
+        if (!movable) return;
+        onMouseDown(e, { dx, dy });
+      }}
+    />
   );
 }
 

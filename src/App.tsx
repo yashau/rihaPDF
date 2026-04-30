@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { loadPdf, renderPage } from "./lib/pdf";
 import type { RenderedPage } from "./lib/pdf";
@@ -13,6 +13,11 @@ import {
   type ImageMove,
   type PageOp,
 } from "./lib/save";
+import {
+  buildPreviewBytes,
+  renderPagePreviewCanvas,
+  type PageStripSpec,
+} from "./lib/preview";
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 
 const RENDER_SCALE = 1.5;
@@ -33,6 +38,23 @@ export default function App() {
   const [pageOps, setPageOps] = useState<PageOp[]>([]);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /** Per-page replacement canvases produced by the live preview pipeline.
+   *  When present, PdfPage paints `previewCanvases.get(pageIndex)`
+   *  instead of the original `page.canvas` — that's how the original
+   *  glyphs / images are actually removed from the render rather than
+   *  covered with a white box. */
+  const [previewCanvases, setPreviewCanvases] = useState<
+    Map<number, HTMLCanvasElement>
+  >(new Map());
+  /** Monotonic generation counter used to discard stale preview-rebuild
+   *  results when the user keeps editing during the rebuild. */
+  const previewGenRef = useRef(0);
+  /** Map<pageIndex, currently-open runId> — populated by PdfPage's
+   *  onEditingChange. Folded into the preview-strip spec so an open
+   *  editor immediately hides the original glyph behind it. */
+  const [editingByPage, setEditingByPage] = useState<Map<number, string>>(
+    new Map(),
+  );
 
   const handleFile = useCallback(async (file: File) => {
     setBusy(true);
@@ -69,6 +91,7 @@ export default function App() {
       setEdits(new Map());
       setImageMoves(new Map());
       setPageOps([]);
+      setPreviewCanvases(new Map());
     } finally {
       setBusy(false);
     }
@@ -94,6 +117,89 @@ export default function App() {
         const pageMap = new Map(next.get(pageIndex) ?? new Map());
         pageMap.set(imageId, value);
         next.set(pageIndex, pageMap);
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Rebuild the per-page preview canvases whenever the set of edited
+  // runs or moved images changes. The preview is a copy of the source
+  // PDF with those items REMOVED from the content stream — pdf.js then
+  // renders a clean canvas for each affected page, and the HTML
+  // overlays in PdfPage paint the moved/edited content on top with
+  // nothing to hide. Debounced so a fast edit loop doesn't spawn a
+  // dozen overlapping renders.
+  useEffect(() => {
+    if (!originalBytes || pages.length === 0) return;
+    const specs: PageStripSpec[] = [];
+    const affected = new Set<number>([
+      ...edits.keys(),
+      ...imageMoves.keys(),
+      ...editingByPage.keys(),
+    ]);
+    for (const pi of affected) {
+      const runIds = new Set(edits.get(pi)?.keys() ?? []);
+      // Currently-open editor counts as "needs strip" too — we want
+      // the original to vanish the moment the input appears, not only
+      // after commit.
+      const editing = editingByPage.get(pi);
+      if (editing) runIds.add(editing);
+      const imageIds = new Set(
+        Array.from(imageMoves.get(pi) ?? new Map()).flatMap(([id, v]) =>
+          (v.dx ?? 0) !== 0 || (v.dy ?? 0) !== 0 ? [id] : [],
+        ),
+      );
+      if (runIds.size === 0 && imageIds.size === 0) continue;
+      specs.push({ pageIndex: pi, runIds, imageIds });
+    }
+    if (specs.length === 0) {
+      // Nothing left modified — drop any cached preview canvases so the
+      // pristine `page.canvas` shows again.
+      setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map()));
+      return;
+    }
+    const gen = ++previewGenRef.current;
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      try {
+        const previewBytes = await buildPreviewBytes(
+          originalBytes.slice(0),
+          pages,
+          specs,
+        );
+        if (cancelled || previewGenRef.current !== gen) return;
+        const next = new Map<number, HTMLCanvasElement>();
+        for (const spec of specs) {
+          const canvas = await renderPagePreviewCanvas(
+            previewBytes,
+            spec.pageIndex,
+            RENDER_SCALE,
+          );
+          if (cancelled || previewGenRef.current !== gen) return;
+          next.set(spec.pageIndex, canvas);
+        }
+        if (cancelled || previewGenRef.current !== gen) return;
+        setPreviewCanvases(next);
+      } catch (err) {
+        // Don't tear down editing on a preview failure — fall back to
+        // the original canvas (the user just sees the old glyphs along
+        // with overlays, same as before this feature).
+        console.warn("preview rebuild failed", err);
+      }
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [originalBytes, pages, edits, imageMoves, editingByPage]);
+
+  const onEditingChange = useCallback(
+    (pageIndex: number, runId: string | null) => {
+      setEditingByPage((prev) => {
+        const next = new Map(prev);
+        if (runId) next.set(pageIndex, runId);
+        else next.delete(pageIndex);
         return next;
       });
     },
@@ -207,10 +313,12 @@ export default function App() {
                 pageIndex={idx}
                 edits={edits.get(idx) ?? new Map()}
                 imageMoves={imageMoves.get(idx) ?? new Map()}
+                previewCanvas={previewCanvases.get(idx) ?? null}
                 onEdit={(runId, value) => onEdit(idx, runId, value)}
                 onImageMove={(imageId, value) =>
                   onImageMove(idx, imageId, value)
                 }
+                onEditingChange={(runId) => onEditingChange(idx, runId)}
                 onPageOp={(op) => setPageOps((prev) => [...prev, op])}
               />
             ))}
@@ -226,16 +334,20 @@ function PageWithToolbar({
   pageIndex,
   edits,
   imageMoves,
+  previewCanvas,
   onEdit,
   onImageMove,
+  onEditingChange,
   onPageOp,
 }: {
   page: RenderedPage;
   pageIndex: number;
   edits: Map<string, EditValue>;
   imageMoves: Map<string, ImageMoveValue>;
+  previewCanvas: HTMLCanvasElement | null;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
+  onEditingChange: (runId: string | null) => void;
   onPageOp: (op: PageOp) => void;
 }) {
   return (
@@ -264,8 +376,10 @@ function PageWithToolbar({
         pageIndex={pageIndex}
         edits={edits}
         imageMoves={imageMoves}
+        previewCanvas={previewCanvas}
         onEdit={onEdit}
         onImageMove={onImageMove}
+        onEditingChange={onEditingChange}
       />
     </div>
   );
