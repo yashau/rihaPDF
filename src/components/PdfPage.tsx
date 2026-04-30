@@ -112,51 +112,22 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
         {page.textRuns.map((run) => {
           const isEditing = editingId === run.id;
           const editedValue = edits.get(run.id);
-          if (isEditing) {
-            return (
-              <EditField
-                key={run.id}
-                run={run}
-                initial={
-                  editedValue ?? { text: run.text, style: undefined }
-                }
-                onCommit={(value) => {
-                  // Preserve any existing move offset (dx/dy) — the
-                  // EditField only owns text + style, so we layer back
-                  // the persisted offset from editedValue.
-                  const merged: EditValue = {
-                    ...value,
-                    dx: editedValue?.dx ?? 0,
-                    dy: editedValue?.dy ?? 0,
-                  };
-                  const hasOffset =
-                    (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
-                  if (value.text !== run.text || value.style || hasOffset) {
-                    onEdit(run.id, merged);
-                  }
-                  setEditingId(null);
-                }}
-                onCancel={() => setEditingId(null)}
-              />
-            );
-          }
           const edited = editedValue !== undefined;
           const isDragging = drag?.runId === run.id;
-          const isEditingThis = editingId === run.id;
           const isModified = edited || isDragging;
           // Live drag offset for THIS run (or the persisted offset if we're
           // not currently dragging it).
           const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
           const dy = (isDragging ? drag.dy : editedValue?.dy) ?? 0;
 
-          // Cover the original glyphs at their unmodified bounds so a drag
-          // or text replacement makes the source disappear immediately
-          // (otherwise the canvas underneath bleeds through and the user
-          // sees both old and new).
+          // Cover the original glyphs at their unmodified bounds so a drag,
+          // text replacement, OR an open editor makes the source disappear
+          // immediately. Without this, the canvas glyphs bleed through and
+          // the user sees both the old text and the editor / replacement.
           const padX = 4;
           const padY = Math.max(run.height * 0.25, 4);
           const cover =
-            isModified || isEditingThis ? (
+            isModified || isEditing ? (
               <div
                 key={`${run.id}-cover`}
                 aria-hidden
@@ -171,6 +142,37 @@ export function PdfPage({ page, pageIndex, edits, onEdit }: Props) {
                 }}
               />
             ) : null;
+
+          if (isEditing) {
+            return (
+              <Fragment key={run.id}>
+                {cover}
+                <EditField
+                  run={run}
+                  initial={
+                    editedValue ?? { text: run.text, style: undefined }
+                  }
+                  onCommit={(value) => {
+                    // Preserve any existing move offset (dx/dy) — the
+                    // EditField only owns text + style, so we layer back
+                    // the persisted offset from editedValue.
+                    const merged: EditValue = {
+                      ...value,
+                      dx: editedValue?.dx ?? 0,
+                      dy: editedValue?.dy ?? 0,
+                    };
+                    const hasOffset =
+                      (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
+                    if (value.text !== run.text || value.style || hasOffset) {
+                      onEdit(run.id, merged);
+                    }
+                    setEditingId(null);
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              </Fragment>
+            );
+          }
 
           if (edited) {
             const style = editedValue.style ?? {};
