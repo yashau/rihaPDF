@@ -98,9 +98,26 @@ function resolveXObjectDict(pageNode: PDFDict, doc: PDFDocument): PDFDict | null
   return null;
 }
 
-/** Look up the Subtype of the XObject named `resName` on the page. */
-function subtypeOf(xobjectDict: PDFDict | null, resName: string): ImageInstance["subtype"] {
-  if (!xobjectDict) return "Unknown";
+type Mat6 = [number, number, number, number, number, number];
+type BBox4 = [number, number, number, number];
+
+/** Subtype + Form-specific geometry (BBox, Matrix) for an XObject. The
+ *  BBox / Matrix entries are required by the PDF spec for Form XObjects
+ *  (defaulting to identity matrix and the unit square); we leave them
+ *  null for Image XObjects, where the unit square `(0, 0, 1, 1)` is the
+ *  implicit BBox and the CTM at the time of `Do` is the only transform
+ *  that matters.
+ *
+ *  We need this because some PDFs draw their letterhead emblem as a
+ *  Form XObject whose `/BBox` is e.g. `[0, 0, 42, 47]` and whose
+ *  `/Matrix` further scales that, making the rendered size much larger
+ *  than `|CTM[0]|`. Without consulting BBox + Matrix the extracted
+ *  size for those is sub-pixel and the user can't grab the overlay. */
+function lookupXObject(
+  xobjectDict: PDFDict | null,
+  resName: string,
+): { subtype: ImageInstance["subtype"]; bbox: BBox4 | null; matrix: Mat6 | null } {
+  if (!xobjectDict) return { subtype: "Unknown", bbox: null, matrix: null };
   const x = xobjectDict.lookup(PDFName.of(resName));
   // pdf-lib resolves PDFRef on lookup; if it's a stream we still get a
   // PDFRawStream-like thing with a .dict accessor.
@@ -111,12 +128,75 @@ function subtypeOf(xobjectDict: PDFDict | null, resName: string): ImageInstance[
     const maybeDict = (x as unknown as { dict?: unknown }).dict;
     if (maybeDict instanceof PDFDict) dict = maybeDict;
   }
-  if (!dict) return "Unknown";
+  if (!dict) return { subtype: "Unknown", bbox: null, matrix: null };
   const sub = dict.lookup(PDFName.of("Subtype"));
   const s = sub ? String(sub).replace(/^\//, "") : "";
-  if (s === "Image") return "Image";
-  if (s === "Form") return "Form";
-  return "Unknown";
+  let subtype: ImageInstance["subtype"] = "Unknown";
+  if (s === "Image") subtype = "Image";
+  else if (s === "Form") subtype = "Form";
+  if (subtype !== "Form") return { subtype, bbox: null, matrix: null };
+  const bbox = readNumberArray(dict.lookup(PDFName.of("BBox")), 4) as BBox4 | null;
+  const matrix = readNumberArray(dict.lookup(PDFName.of("Matrix")), 6) as Mat6 | null;
+  return { subtype, bbox, matrix };
+}
+
+/** Decode a fixed-length array of numbers from a PDFArray, defensively
+ *  ignoring entries that aren't numbers. Returns null on length / shape
+ *  mismatch so the caller can fall back to the implicit defaults. */
+function readNumberArray(value: unknown, length: number): number[] | null {
+  if (!value || typeof value !== "object" || !("asArray" in value)) return null;
+  const arr = (value as { asArray(): unknown[] }).asArray();
+  if (arr.length < length) return null;
+  const out: number[] = [];
+  for (let i = 0; i < length; i++) {
+    const v = arr[i];
+    if (v && typeof v === "object" && "asNumber" in v) {
+      out.push((v as { asNumber(): number }).asNumber());
+    } else if (typeof v === "number") {
+      out.push(v);
+    } else {
+      return null;
+    }
+  }
+  return out;
+}
+
+const IDENTITY_BBOX: BBox4 = [0, 0, 1, 1];
+const IDENTITY_MATRIX: Mat6 = [1, 0, 0, 1, 0, 0];
+
+/** Compute the page-space axis-aligned bounding rectangle a Form
+ *  (or Image) XObject occupies when drawn with the given outer CTM.
+ *  For Forms we apply the chain `BBox-corner × Matrix × CTM`; for
+ *  Images the BBox is the unit square and Matrix is identity, so the
+ *  result reduces to `(|ctm[0]|, |ctm[3]|)` for axis-aligned cases —
+ *  which is what we used to return directly. */
+function transformedRect(
+  bbox: BBox4 | null,
+  matrix: Mat6 | null,
+  ctm: Mat6,
+): { x: number; y: number; width: number; height: number } {
+  const b = bbox ?? IDENTITY_BBOX;
+  const m = matrix ?? IDENTITY_MATRIX;
+  const composed = mulCm(m, ctm);
+  const corners: Array<[number, number]> = [
+    [b[0], b[1]],
+    [b[2], b[1]],
+    [b[0], b[3]],
+    [b[2], b[3]],
+  ];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of corners) {
+    const px = composed[0] * x + composed[2] * y + composed[4];
+    const py = composed[1] * x + composed[3] * y + composed[5];
+    if (px < minX) minX = px;
+    if (px > maxX) maxX = px;
+    if (py < minY) minY = py;
+    if (py > maxY) maxY = py;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 /** 6-element affine A × B (PDF row-vector convention: P' = P × M). */
@@ -185,24 +265,30 @@ function findImagesInOps(
         const arg = o.operands[0];
         if (!arg || arg.kind !== "name") break;
         const resName = arg.value;
-        const subtype = subtypeOf(xobjectDict, resName);
-        if (subtype !== "Image" && subtype !== "Form") break;
-        // Skip Forms with all-zero scale (sometimes used as invisible
-        // markers).
+        const lookup = lookupXObject(xobjectDict, resName);
+        if (lookup.subtype !== "Image" && lookup.subtype !== "Form") break;
+        // Skip drawings with all-zero outer scale (sometimes used as
+        // invisible markers — the rendered rect would be empty).
         if (Math.abs(ctm[0]) < 1e-6 && Math.abs(ctm[3]) < 1e-6) break;
         const block = blockStack[blockStack.length - 1] ?? null;
+        // Apply the Form's BBox + Matrix to get the actual rendered
+        // rect on the page. For Image XObjects the helper falls back
+        // to the unit-square BBox + identity Matrix, reproducing the
+        // older `|ctm[0]|, |ctm[3]|` size for axis-aligned cases.
+        const rect = transformedRect(lookup.bbox, lookup.matrix, ctm);
+        if (rect.width < 1e-6 || rect.height < 1e-6) break;
         out.push({
           id: `p${pageNumber}-i${imageCounter++}`,
           resourceName: resName,
-          subtype,
+          subtype: lookup.subtype,
           doOpIndex: i,
           qOpIndex: block?.qIdx ?? null,
           cmOpIndex: block?.firstCmIdx ?? null,
           ctm: [...ctm],
-          pdfX: ctm[4],
-          pdfY: ctm[5],
-          pdfWidth: Math.abs(ctm[0]),
-          pdfHeight: Math.abs(ctm[3]),
+          pdfX: rect.x,
+          pdfY: rect.y,
+          pdfWidth: rect.width,
+          pdfHeight: rect.height,
         });
         break;
       }

@@ -509,6 +509,40 @@ export function PdfPage({
     window.addEventListener("mouseup", onUp);
   };
 
+  // Blocker rects the formatting toolbar must avoid. Computed once per
+  // render so EditField + InsertedTextOverlay can decide whether to
+  // place the toolbar above or below the editor without each rebuilding
+  // the same list. Honors persisted move offsets so a dragged run still
+  // counts as occupying its NEW position, not its source position.
+  const toolbarBlockers: ToolbarBlocker[] = [];
+  for (const r of page.textRuns) {
+    const ev = edits.get(r.id);
+    if (ev?.deleted) continue;
+    const dx = ev?.dx ?? 0;
+    const dy = ev?.dy ?? 0;
+    toolbarBlockers.push({
+      id: r.id,
+      left: r.bounds.left + dx,
+      right: r.bounds.left + dx + r.bounds.width,
+      top: r.bounds.top + dy,
+      bottom: r.bounds.top + dy + r.bounds.height,
+    });
+  }
+  for (const ins of insertedTexts) {
+    const fontSizePx = ins.fontSize * page.scale;
+    const lineHeightPx = ins.fontSize * 1.4 * page.scale;
+    const left = ins.pdfX * page.scale;
+    const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
+    const width = Math.max(ins.pdfWidth * page.scale, 60);
+    toolbarBlockers.push({
+      id: ins.id,
+      left,
+      right: left + width,
+      top,
+      bottom: top + lineHeightPx,
+    });
+  }
+
   return (
     <div
       ref={containerRef}
@@ -581,6 +615,7 @@ export function PdfPage({
                 key={run.id}
                 run={run}
                 pageScale={page.scale}
+                toolbarBlockers={toolbarBlockers}
                 initial={editedValue ?? { text: run.text, style: undefined }}
                 onCommit={(value) => {
                   // Preserve any existing move offset (dx/dy) — the
@@ -752,6 +787,7 @@ export function PdfPage({
             key={ins.id}
             ins={ins}
             page={page}
+            toolbarBlockers={toolbarBlockers}
             isEditing={editingId === ins.id}
             onChange={(patch) => onTextInsertChange(ins.id, patch)}
             onDelete={() => {
@@ -951,6 +987,7 @@ function cropCanvasToDataUrl(
 function InsertedTextOverlay({
   ins,
   page,
+  toolbarBlockers,
   isEditing,
   onChange,
   onDelete,
@@ -959,6 +996,7 @@ function InsertedTextOverlay({
 }: {
   ins: TextInsertion;
   page: RenderedPage;
+  toolbarBlockers: readonly ToolbarBlocker[];
   isEditing: boolean;
   onChange: (patch: Partial<TextInsertion>) => void;
   onDelete: () => void;
@@ -1081,7 +1119,13 @@ function InsertedTextOverlay({
       {isEditing ? (
         <EditTextToolbar
           left={left - 2}
-          top={top - 48}
+          top={chooseToolbarTop({
+            editorLeft: left - 2,
+            editorTop: top,
+            editorBottom: top + height,
+            blockers: toolbarBlockers,
+            selfId: ins.id,
+          })}
           fontFamily={family}
           fontSize={fontSizePt}
           bold={bold}
@@ -1431,6 +1475,7 @@ function ResizeHandle({
 function EditField({
   run,
   pageScale,
+  toolbarBlockers,
   initial,
   onCommit,
   onCancel,
@@ -1441,6 +1486,10 @@ function EditField({
    *  toolbar's user-facing PDF-point size and the CSS pixel size for
    *  rendering. */
   pageScale: number;
+  /** Page-local rects the formatting toolbar must avoid — see
+   *  `chooseToolbarTop`. The run being edited is included; the helper
+   *  filters it out via `selfId`. */
+  toolbarBlockers: readonly ToolbarBlocker[];
   initial: EditValue;
   onCommit: (value: EditValue) => void;
   onCancel: () => void;
@@ -1506,7 +1555,13 @@ function EditField({
       />
       <EditTextToolbar
         left={run.bounds.left - 2 + dx}
-        top={run.bounds.top - 48 + dy}
+        top={chooseToolbarTop({
+          editorLeft: run.bounds.left - 2 + dx,
+          editorTop: run.bounds.top - 2 + dy,
+          editorBottom: run.bounds.top + run.bounds.height + 2 + dy,
+          blockers: toolbarBlockers,
+          selfId: run.id,
+        })}
         fontFamily={effectiveFamily}
         fontSize={fontSizePt}
         bold={effectiveBold}
@@ -1598,6 +1653,69 @@ function isFocusMovingToToolbar(next: EventTarget | null): boolean {
   return next instanceof HTMLElement && !!next.closest("[data-edit-toolbar]");
 }
 
+/** Approximate footprint of `EditTextToolbar` in page-local pixels.
+ *  Used by `chooseToolbarPosition` to decide if the default position
+ *  (above the editor) would overlap a neighbouring run. The actual
+ *  rendered toolbar grows slightly when a long font name is selected,
+ *  but the dominant variability is the font dropdown — 432px covers
+ *  the usual case (Times New Roman / Faruma / etc.). */
+const TOOLBAR_HEIGHT_PX = 42;
+const TOOLBAR_WIDTH_PX = 432;
+const TOOLBAR_GAP_PX = 6;
+
+export type ToolbarBlocker = {
+  /** id of the run / inserted text the blocker rect comes from. The
+   *  caller uses this to skip the run currently being edited. */
+  id: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+/** Decide whether the formatting toolbar should sit above or below the
+ *  editor. Returns the top in the same page-local pixel space the rest
+ *  of the overlays use. The default is above; we flip below when the
+ *  above-position would overlap a neighbouring text element on the
+ *  same page (the case the user hit on maldivian2.pdf, where the
+ *  paragraph being edited sat directly under the registration URL run
+ *  and the 42-px toolbar extended up over the URL). */
+function chooseToolbarTop({
+  editorLeft,
+  editorTop,
+  editorBottom,
+  blockers,
+  selfId,
+}: {
+  editorLeft: number;
+  editorTop: number;
+  editorBottom: number;
+  blockers: readonly ToolbarBlocker[];
+  selfId: string;
+}): number {
+  const aboveTop = editorTop - TOOLBAR_HEIGHT_PX - TOOLBAR_GAP_PX;
+  const belowTop = editorBottom + TOOLBAR_GAP_PX;
+  const right = editorLeft + TOOLBAR_WIDTH_PX;
+  const overlaps = (top: number) => {
+    const bottom = top + TOOLBAR_HEIGHT_PX;
+    for (const b of blockers) {
+      if (b.id === selfId) continue;
+      if (b.right <= editorLeft) continue;
+      if (b.left >= right) continue;
+      if (b.bottom <= top) continue;
+      if (b.top >= bottom) continue;
+      return true;
+    }
+    return false;
+  };
+  if (!overlaps(aboveTop)) return aboveTop;
+  if (!overlaps(belowTop)) return belowTop;
+  // Both sides overlap — uncommon (the page is densely packed). Fall
+  // back to the default (above) so the toolbar at least keeps its
+  // usual relationship to the editor.
+  return aboveTop;
+}
+
 /** Shared formatting toolbar — font picker, size, B / I / U toggles, X.
  *  Used by both the existing-run EditField and the InsertedTextOverlay
  *  so a brand-new text box has the exact same controls as an inline
@@ -1638,6 +1756,16 @@ function EditTextToolbar({
   return (
     <div
       data-edit-toolbar
+      // Theme-aware colours: HeroUI's ToggleButton honours the `.dark`
+      // class (added by useTheme()) and renders dark fills there. The
+      // wrapper used to hard-code `background: "white"`, which made the
+      // panel jarringly bright around dark-filled buttons when the user
+      // was in dark mode (the "all toggled, font empty" symptom). Match
+      // the rest of the chrome (PageSidebar tile / sidebar) by switching
+      // to Tailwind dark-variants. `color-scheme: dark` on the wrapper
+      // also makes the native <select> dropdown arrow + <input>
+      // up/down spinner pick the OS dark UI.
+      className="border border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
       style={{
         position: "absolute",
         left,
@@ -1646,10 +1774,7 @@ function EditTextToolbar({
         display: "flex",
         gap: 4,
         padding: 4,
-        background: "white",
-        border: "1px solid rgba(0,0,0,0.15)",
         borderRadius: 6,
-        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
         alignItems: "center",
         pointerEvents: "auto",
         whiteSpace: "nowrap",
@@ -1666,12 +1791,11 @@ function EditTextToolbar({
       <select
         aria-label="Font"
         value={fontFamily}
+        className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
         style={{
           padding: "4px 6px",
-          border: "1px solid rgba(0,0,0,0.15)",
           borderRadius: 4,
           fontSize: 12,
-          background: "white",
           minWidth: 140,
         }}
         onChange={(e) => onChange({ fontFamily: e.target.value })}
@@ -1689,10 +1813,10 @@ function EditTextToolbar({
         max={144}
         step={1}
         value={Math.round(fontSize)}
+        className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
         style={{
           width: 56,
           padding: "4px 6px",
-          border: "1px solid rgba(0,0,0,0.15)",
           borderRadius: 4,
           fontSize: 12,
         }}
