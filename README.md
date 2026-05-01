@@ -60,6 +60,12 @@ removed from the content stream, not just covered with a whiteout.
   Noto Sans Thaana ship as `@font-face` (`local()` first → user's
   installed copy wins). The save path embeds whichever family the
   user selected with `subset: false` so glyph IDs round-trip.
+- **Dark theme.** Top-bar segmented toggle (system / light / dark) —
+  defaults to system and tracks `prefers-color-scheme` live; light/dark
+  pin the result and persist across reloads. Implemented as a `.dark`
+  class on `<html>` driven by [src/lib/theme.ts](src/lib/theme.ts), so a
+  single class flip wires both Tailwind v4's `dark:` variant and
+  HeroUI's `.dark, [data-theme=dark]` rules without conflict.
 
 ## Stack
 
@@ -67,7 +73,7 @@ removed from the content stream, not just covered with a whiteout.
 - **pdf.js** — page rendering + text extraction
 - **pdf-lib** — page operations + font embedding + saving (also handles
   the Thaana save path via `drawText`; see _Thaana shaping_ below)
-- **HeroUI v3 + Tailwind v4** — component library / styling
+- **HeroUI v3 + Tailwind v4 + lucide-react** — component library / styling / icons
 - **@dnd-kit** — sortable thumbnails in the page sidebar
 - **38 bundled Dhivehi fonts + Noto Sans Thaana** — every common Thaana
   font is shipped via `@font-face`, with `local()` first so a user's
@@ -201,6 +207,7 @@ pnpm test         # in another — runs every spec
 | `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                |
 | `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages  |
 | `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable    |
+| `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload      |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -210,6 +217,13 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Dark theme with system override.** Three-way toolbar toggle
+      (system / light / dark) that defaults to system and tracks
+      `prefers-color-scheme` live via `matchMedia`. The user's pick
+      persists in localStorage and pins the result regardless of OS
+      theme. Implemented as a Tailwind v4 `@custom-variant` keyed off a
+      `.dark` class on `<html>` — the same class that activates HeroUI's
+      built-in dark rules, so chrome and components flip together.
 - [x] **Delete any object.** Source images and inserted images select
       on click and delete on `Del` / `Backspace`. Source text runs and
       inserted text get a trash button on the floating toolbar.

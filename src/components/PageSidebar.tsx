@@ -174,9 +174,11 @@ export function PageSidebar({
   };
 
   return (
-    <aside className="flex-shrink-0 w-52 border-r border-zinc-200 bg-zinc-50 overflow-y-auto py-2">
+    <aside className="flex-shrink-0 w-52 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2">
       <div className="flex flex-col gap-2 px-3 mb-2">
-        <span className="text-xs uppercase tracking-wide text-zinc-500">Pages</span>
+        <span className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Pages
+        </span>
         <div className="flex gap-1.5">
           <Button
             size="sm"
@@ -243,11 +245,13 @@ function InsertGap({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center justify-center h-3 w-full text-zinc-400 hover:text-zinc-700 cursor-pointer"
+      className="group flex items-center justify-center h-3 w-full text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
       aria-label="Insert blank page here"
     >
-      <span className="opacity-0 group-hover:opacity-100 text-[10px] leading-none border-t border-zinc-400 w-full mx-2 relative">
-        <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-50 px-1">+ Blank</span>
+      <span className="opacity-0 group-hover:opacity-100 text-[10px] leading-none border-t border-zinc-400 dark:border-zinc-600 w-full mx-2 relative">
+        <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-50 dark:bg-zinc-900 px-1">
+          + Blank
+        </span>
       </span>
     </button>
   );
@@ -278,9 +282,9 @@ function SortableSlotThumb({
       style={style}
       {...attributes}
       {...listeners}
-      className="group relative bg-white border border-zinc-300 rounded shadow-sm overflow-hidden cursor-grab active:cursor-grabbing touch-none"
+      className="group relative bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded shadow-sm overflow-hidden cursor-grab active:cursor-grabbing touch-none"
     >
-      <div className="absolute top-1 left-1 z-10 bg-zinc-700/75 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
+      <div className="absolute top-1 left-1 z-10 bg-zinc-700/75 dark:bg-zinc-950/75 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
         {displayIndex + 1}
       </div>
       {/* Stop pointerdown so dnd-kit's PointerSensor doesn't capture
@@ -300,7 +304,7 @@ function SortableSlotThumb({
         </Button>
       </div>
       {slot.kind === "blank" ? (
-        <div className="flex items-center justify-center text-zinc-400 text-xs h-32 border border-dashed border-zinc-200 m-1 rounded bg-zinc-50">
+        <div className="flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs h-32 border border-dashed border-zinc-200 dark:border-zinc-700 m-1 rounded bg-zinc-50 dark:bg-zinc-900">
           Blank
         </div>
       ) : dataUrl ? (
@@ -313,7 +317,9 @@ function SortableSlotThumb({
           )}
         </>
       ) : (
-        <div className="flex items-center justify-center text-zinc-300 text-xs h-32">…</div>
+        <div className="flex items-center justify-center text-zinc-300 dark:text-zinc-600 text-xs h-32">
+          …
+        </div>
       )}
     </div>
   );

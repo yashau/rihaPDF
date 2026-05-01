@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* Dark mode is opt-in via a `.dark` class on <html> rather than
+   `prefers-color-scheme` directly. The toggle in the toolbar lets the
+   user override system; useTheme() in lib/theme.ts is what actually
+   adds/removes the class (also when system flips while in "system"
+   mode), so this single hook drives BOTH Tailwind v4 dark utilities
+   AND HeroUI's matching `.dark, [data-theme=dark]` rules. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* @font-face rules for the Dhivehi font registry are injected at runtime
    by src/lib/fonts.ts so adding a new font is a one-line edit there
    instead of duplicating CSS + a TS list. */

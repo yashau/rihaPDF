@@ -19,14 +19,17 @@ import { buildPreviewBytes, renderPagePreviewCanvas, type PageStripSpec } from "
 import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 import { PageSidebar } from "./components/PageSidebar";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { externalSlot, slotsFromPages, type PageSlot } from "./lib/slots";
 import { loadExternalPdf } from "./lib/externalPdf";
+import { useTheme } from "./lib/theme";
 
 export type ToolMode = "select" | "addText" | "addImage";
 
 const RENDER_SCALE = 1.5;
 
 export default function App() {
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const [filename, setFilename] = useState<string | null>(null);
   const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
@@ -743,8 +746,8 @@ export default function App() {
     removedSourceCount + blankSlotCount + externalSlotCount + (slotsReordered ? 1 : 0);
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-100">
-      <header className="flex items-center gap-3 px-4 py-3 bg-white border-b">
+    <div className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <header className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
         <button
           type="button"
           onClick={() => setAboutOpen(true)}
@@ -852,13 +855,16 @@ export default function App() {
             }}
           />
         </div>
-        <span className="text-sm text-zinc-500 ml-auto">
+        <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto">
           {tool === "addText"
             ? "Click on a page to drop a text box"
             : tool === "addImage" && pendingImage
               ? "Click on a page to place the image"
               : (filename ?? "No file loaded")}
         </span>
+        <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 pl-3 ml-1">
+          <ThemeToggle mode={themeMode} onChange={setThemeMode} />
+        </div>
       </header>
       <div className="flex flex-1 overflow-hidden">
         {slots.length > 0 && (
@@ -873,7 +879,7 @@ export default function App() {
         )}
         <main className="flex-1 overflow-auto px-6 py-6">
           {slots.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-zinc-400">
+            <div className="flex h-full items-center justify-center text-zinc-400 dark:text-zinc-500">
               Open a PDF to begin. Double-click any text fragment to edit it.
             </div>
           ) : (
@@ -883,7 +889,7 @@ export default function App() {
                   return (
                     <div
                       key={slot.id}
-                      className="bg-white border border-dashed border-zinc-300 rounded shadow-sm flex items-center justify-center text-zinc-300 text-sm"
+                      className="bg-white dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 rounded shadow-sm flex items-center justify-center text-zinc-300 dark:text-zinc-500 text-sm"
                       style={{
                         width: slot.size[0] * RENDER_SCALE,
                         height: slot.size[1] * RENDER_SCALE,
@@ -1021,7 +1027,7 @@ function AboutModal({
               <Modal.Heading>rihaPDF</Modal.Heading>
               <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="space-y-5 text-sm text-zinc-800">
+            <Modal.Body className="space-y-5 text-sm text-zinc-800 dark:text-zinc-200">
               <section className="flex flex-col items-center text-center gap-3">
                 <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
                 <p>
@@ -1033,7 +1039,7 @@ function AboutModal({
                     href="https://github.com/yashau/rihaPDF"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-blue-600 hover:underline"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
                   >
                     open source
                   </a>{" "}
@@ -1042,8 +1048,8 @@ function AboutModal({
               </section>
 
               <section>
-                <h3 className="font-semibold text-zinc-900 mb-1">Features</h3>
-                <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
+                <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
                   <li>Edit existing text runs in place</li>
                   <li>Insert new text and images anywhere on a page</li>
                   <li>Move and resize inserted images; move text and image runs</li>
@@ -1052,31 +1058,34 @@ function AboutModal({
               </section>
 
               <section>
-                <h3 className="font-semibold text-zinc-900 mb-1">Built with</h3>
-                <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Built with</h3>
+                <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
                   <li>React 19 + TypeScript + Vite</li>
-                  <li>Tailwind CSS + HeroUI</li>
+                  <li>Tailwind CSS + HeroUI + lucide-react</li>
                   <li>pdf-lib (write) and pdfjs-dist (render)</li>
                   <li>Runs entirely in the browser — no server, no upload</li>
                 </ul>
               </section>
 
               <section>
-                <h3 className="font-semibold text-zinc-900 mb-1">Author</h3>
-                <p className="text-zinc-700">Ibrahim Yashau</p>
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Author</h3>
+                <p className="text-zinc-700 dark:text-zinc-300">Ibrahim Yashau</p>
                 <ul className="mt-1 space-y-0.5">
                   <li>
                     <a
                       href="https://yashau.com"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       yashau.com
                     </a>
                   </li>
                   <li>
-                    <a href="mailto:ibrahim@yashau.com" className="text-blue-600 hover:underline">
+                    <a
+                      href="mailto:ibrahim@yashau.com"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
                       ibrahim@yashau.com
                     </a>
                   </li>
@@ -1112,14 +1121,14 @@ function ExternalPageView({ page, displayIndex }: { page: RenderedPage; displayI
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex gap-2 items-center text-sm">
-        <span className="text-zinc-500">Page {displayIndex + 1}</span>
+        <span className="text-zinc-500 dark:text-zinc-400">Page {displayIndex + 1}</span>
         <span className="text-[10px] uppercase tracking-wide bg-amber-500/90 text-white px-1.5 py-0.5 rounded">
           Read-only
         </span>
       </div>
       <div
         ref={ref}
-        className="relative border border-zinc-300 shadow-sm bg-white"
+        className="relative border border-zinc-300 dark:border-zinc-700 shadow-sm bg-white"
         style={{ width: page.viewWidth, height: page.viewHeight }}
       />
     </div>
@@ -1174,7 +1183,7 @@ function PageWithToolbar({
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex gap-2 items-center text-sm">
-        <span className="text-zinc-500">Page {pageIndex + 1}</span>
+        <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>
       <PdfPage
         page={page}
