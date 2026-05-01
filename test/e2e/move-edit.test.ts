@@ -17,7 +17,7 @@ import {
 
 let h: Harness;
 let originalRuns: Array<{ id: string; text: string; x: number; y: number; w: number; h: number }>;
-let titleRun: typeof originalRuns[number];
+let titleRun: (typeof originalRuns)[number];
 
 const TITLE_TEXT = "ރައްޔިތުންގެ މަޖިލިސް";
 
@@ -72,9 +72,7 @@ describe("text move + edit", () => {
 
 async function captureRuns(page: import("playwright").Page) {
   return page.evaluate(() =>
-    Array.from(
-      document.querySelectorAll('[data-page-index="0"] [data-run-id]'),
-    ).map((el) => {
+    Array.from(document.querySelectorAll('[data-page-index="0"] [data-run-id]')).map((el) => {
       const r = el.getBoundingClientRect();
       return {
         id: el.getAttribute("data-run-id")!,
@@ -109,20 +107,15 @@ async function runScenario({
   // Find the run id whose text matches the title, since the index can
   // shift between runs of the extractor as we change recovery logic.
   const titleRunId = await h.page.evaluate((title) => {
-    for (const el of document.querySelectorAll(
-      '[data-page-index="0"] [data-run-id]',
-    )) {
-      if ((el.textContent || "") === title)
-        return el.getAttribute("data-run-id");
+    for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
+      if ((el.textContent || "") === title) return el.getAttribute("data-run-id");
     }
     return null;
   }, TITLE_TEXT);
   if (!titleRunId) {
     // Diagnostics: dump every run we DID find.
     const all = await h.page.evaluate(() =>
-      Array.from(
-        document.querySelectorAll('[data-page-index="0"] [data-run-id]'),
-      ).map((el) => ({
+      Array.from(document.querySelectorAll('[data-page-index="0"] [data-run-id]')).map((el) => ({
         id: el.getAttribute("data-run-id"),
         text: (el.textContent || "").slice(0, 80),
       })),
@@ -143,10 +136,7 @@ async function runScenario({
     await h.page.mouse.move(cx, cy);
     await h.page.mouse.down();
     for (let i = 1; i <= 8; i++) {
-      await h.page.mouse.move(
-        cx + (drag.dx * i) / 8,
-        cy + (drag.dy * i) / 8,
-      );
+      await h.page.mouse.move(cx + (drag.dx * i) / 8, cy + (drag.dy * i) / 8);
       await h.page.waitForTimeout(20);
     }
     await h.page.mouse.up();

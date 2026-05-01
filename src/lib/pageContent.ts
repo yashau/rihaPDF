@@ -21,10 +21,7 @@ import {
  * concatenated with a newline separator (PDF spec §7.8.2 says they're
  * concatenated as if one stream).
  */
-export function getPageContentBytes(
-  context: PDFContext,
-  pageNode: PDFDict,
-): Uint8Array {
+export function getPageContentBytes(context: PDFContext, pageNode: PDFDict): Uint8Array {
   const contents = pageNode.lookup(PDFName.of("Contents"));
   if (!contents) return new Uint8Array();
 
@@ -44,8 +41,7 @@ export function getPageContentBytes(
   if (contents instanceof PDFArray) {
     const chunks: Uint8Array[] = [];
     for (const item of contents.asArray()) {
-      const resolved =
-        item instanceof PDFRef ? context.lookup(item) : item;
+      const resolved = item instanceof PDFRef ? context.lookup(item) : item;
       if (!(resolved instanceof PDFStream)) continue;
       chunks.push(decode(resolved));
       chunks.push(new Uint8Array([0x0a]));
@@ -66,10 +62,10 @@ export function setPageContentBytes(
   pageNode: PDFDict,
   bytes: Uint8Array,
 ): void {
-  const dict = context.obj({}) as PDFDict;
+  const dict = context.obj({});
   const stream = PDFRawStream.of(dict, bytes);
   const ref = context.register(stream);
-  const array = context.obj([ref]) as PDFArray;
+  const array = context.obj([ref]);
   pageNode.set(PDFName.of("Contents"), array);
 }
 

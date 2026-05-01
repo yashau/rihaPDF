@@ -17,11 +17,7 @@ const root = path.resolve(__dirname, "..");
 const outDir = path.join(root, "scripts", "screenshots", "diff");
 fs.mkdirSync(outDir, { recursive: true });
 
-const PDF_PATH = path.resolve(
-  root,
-  "..",
-  "test/fixtures/maldivian.pdf",
-);
+const PDF_PATH = path.resolve(root, "..", "test/fixtures/maldivian.pdf");
 
 setTimeout(() => process.exit(2), 90_000).unref?.();
 
@@ -60,13 +56,10 @@ const titleish = runs
   .filter((r) => r.id?.startsWith("p1-") && isThaana(r.text) && r.h > 30)
   .sort((a, b) => b.h - a.h)[0];
 if (titleish) candidates.push(titleish);
-const dateLabel = runs.find((r) =>
-  r.text.startsWith("ތ") && r.text.includes(":"),
-);
+const dateLabel = runs.find((r) => r.text.startsWith("ތ") && r.text.includes(":"));
 if (dateLabel) candidates.push(dateLabel);
 const venueRow = runs.find(
-  (r) =>
-    r.text.includes("ރައ") && r.id?.startsWith("p1-") && r.id !== titleish?.id,
+  (r) => r.text.includes("ރައ") && r.id?.startsWith("p1-") && r.id !== titleish?.id,
 );
 if (venueRow) candidates.push(venueRow);
 const longParagraph = runs
@@ -99,15 +92,9 @@ async function setProbeMode(mode) {
   await page.evaluate((m) => {
     document.body.setAttribute("data-probe-mode", m);
     if (m === "render") {
-      document.documentElement.style.setProperty(
-        "--probe-overlay-visible",
-        "hidden",
-      );
+      document.documentElement.style.setProperty("--probe-overlay-visible", "hidden");
     } else {
-      document.documentElement.style.setProperty(
-        "--probe-overlay-visible",
-        "visible",
-      );
+      document.documentElement.style.setProperty("--probe-overlay-visible", "visible");
     }
   }, mode);
 }
@@ -166,9 +153,7 @@ for (const run of candidates) {
     path: path.join(outDir, `${run.id}-3-edit.png`),
     clip: editClip,
   });
-  const editVal = await editorLoc
-    .inputValue()
-    .catch(() => "(no editor)");
+  const editVal = await editorLoc.inputValue().catch(() => "(no editor)");
   console.log(`-> ${run.id}: text="${run.text}"`);
   console.log(`             editor="${editVal}"`);
   console.log(
@@ -199,9 +184,7 @@ for (const run of candidates) {
   // Reset for next iteration.
   await target.click({ timeout: 3_000 });
   await page.waitForTimeout(200);
-  const editorAgain = page.locator(
-    `input[data-editor][data-run-id="${run.id}"]`,
-  );
+  const editorAgain = page.locator(`input[data-editor][data-run-id="${run.id}"]`);
   await editorAgain.fill(run.text);
   await editorAgain.press("Enter");
   await page.waitForTimeout(150);

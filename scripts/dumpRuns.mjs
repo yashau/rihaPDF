@@ -7,10 +7,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 setTimeout(() => process.exit(2), 60_000).unref?.();
 
 const browser = await chromium.launch({ headless: true });
@@ -23,9 +20,7 @@ await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
 await page.waitForTimeout(2_500);
 
 const runs = await page.evaluate(() =>
-  Array.from(
-    document.querySelectorAll('[data-page-index="0"] [data-run-id]'),
-  ).map((el) => {
+  Array.from(document.querySelectorAll('[data-page-index="0"] [data-run-id]')).map((el) => {
     const r = el.getBoundingClientRect();
     const t = el.textContent || "";
     return {

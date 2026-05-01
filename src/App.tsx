@@ -15,16 +15,8 @@ import {
   type PageOp,
   type TextInsert,
 } from "./lib/save";
-import {
-  buildPreviewBytes,
-  renderPagePreviewCanvas,
-  type PageStripSpec,
-} from "./lib/preview";
-import {
-  readImageFile,
-  type ImageInsertion,
-  type TextInsertion,
-} from "./lib/insertions";
+import { buildPreviewBytes, renderPagePreviewCanvas, type PageStripSpec } from "./lib/preview";
+import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 
 export type ToolMode = "select" | "addText" | "addImage";
@@ -36,14 +28,10 @@ export default function App() {
   const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
   /** Map<pageIndex, Map<runId, EditValue>> */
-  const [edits, setEdits] = useState<Map<number, Map<string, EditValue>>>(
-    new Map(),
-  );
+  const [edits, setEdits] = useState<Map<number, Map<string, EditValue>>>(new Map());
   /** Map<pageIndex, Map<imageId, ImageMoveValue>> — drag offsets per
    *  image, identical shape to edits but for image XObject placements. */
-  const [imageMoves, setImageMoves] = useState<
-    Map<number, Map<string, ImageMoveValue>>
-  >(new Map());
+  const [imageMoves, setImageMoves] = useState<Map<number, Map<string, ImageMoveValue>>>(new Map());
   const [pageOps, setPageOps] = useState<PageOp[]>([]);
   const [busy, setBusy] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -53,30 +41,22 @@ export default function App() {
    *  instead of the original `page.canvas` — that's how the original
    *  glyphs / images are actually removed from the render rather than
    *  covered with a white box. */
-  const [previewCanvases, setPreviewCanvases] = useState<
-    Map<number, HTMLCanvasElement>
-  >(new Map());
+  const [previewCanvases, setPreviewCanvases] = useState<Map<number, HTMLCanvasElement>>(new Map());
   /** Monotonic generation counter used to discard stale preview-rebuild
    *  results when the user keeps editing during the rebuild. */
   const previewGenRef = useRef(0);
   /** Map<pageIndex, currently-open runId> — populated by PdfPage's
    *  onEditingChange. Folded into the preview-strip spec so an open
    *  editor immediately hides the original glyph behind it. */
-  const [editingByPage, setEditingByPage] = useState<Map<number, string>>(
-    new Map(),
-  );
+  const [editingByPage, setEditingByPage] = useState<Map<number, string>>(new Map());
   /** Tool mode for click-to-place actions ("select" = no insertion;
    *  "addText" = next click on a page drops a new text box; "addImage"
    *  = next click drops the pending image at that position). */
   const [tool, setTool] = useState<ToolMode>("select");
   /** Per-page net-new text/image insertions — separate from edits
    *  because they don't reference an existing run/image. */
-  const [insertedTexts, setInsertedTexts] = useState<
-    Map<number, TextInsertion[]>
-  >(new Map());
-  const [insertedImages, setInsertedImages] = useState<
-    Map<number, ImageInsertion[]>
-  >(new Map());
+  const [insertedTexts, setInsertedTexts] = useState<Map<number, TextInsertion[]>>(new Map());
+  const [insertedImages, setInsertedImages] = useState<Map<number, ImageInsertion[]>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -127,9 +107,7 @@ export default function App() {
           __runOpIndices?: Map<string, number[]>;
         }
       ).__runOpIndices = new Map(
-        rendered.flatMap((p) =>
-          p.textRuns.map((r) => [r.id, r.contentStreamOpIndices]),
-        ),
+        rendered.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
       );
       setEdits(new Map());
       setImageMoves(new Map());
@@ -144,31 +122,25 @@ export default function App() {
     }
   }, []);
 
-  const onEdit = useCallback(
-    (pageIndex: number, runId: string, value: EditValue) => {
-      setEdits((prev) => {
-        const next = new Map(prev);
-        const pageMap = new Map(next.get(pageIndex) ?? new Map());
-        pageMap.set(runId, value);
-        next.set(pageIndex, pageMap);
-        return next;
-      });
-    },
-    [],
-  );
+  const onEdit = useCallback((pageIndex: number, runId: string, value: EditValue) => {
+    setEdits((prev) => {
+      const next = new Map(prev);
+      const pageMap = new Map<string, EditValue>(next.get(pageIndex) ?? []);
+      pageMap.set(runId, value);
+      next.set(pageIndex, pageMap);
+      return next;
+    });
+  }, []);
 
-  const onImageMove = useCallback(
-    (pageIndex: number, imageId: string, value: ImageMoveValue) => {
-      setImageMoves((prev) => {
-        const next = new Map(prev);
-        const pageMap = new Map(next.get(pageIndex) ?? new Map());
-        pageMap.set(imageId, value);
-        next.set(pageIndex, pageMap);
-        return next;
-      });
-    },
-    [],
-  );
+  const onImageMove = useCallback((pageIndex: number, imageId: string, value: ImageMoveValue) => {
+    setImageMoves((prev) => {
+      const next = new Map(prev);
+      const pageMap = new Map<string, ImageMoveValue>(next.get(pageIndex) ?? []);
+      pageMap.set(imageId, value);
+      next.set(pageIndex, pageMap);
+      return next;
+    });
+  }, []);
 
   // Rebuild the per-page preview canvases whenever the set of edited
   // runs or moved images changes. The preview is a copy of the source
@@ -192,12 +164,9 @@ export default function App() {
       // after commit.
       const editing = editingByPage.get(pi);
       if (editing) runIds.add(editing);
-      const imageIds = new Set(
-        Array.from(imageMoves.get(pi) ?? new Map()).flatMap(([id, v]) =>
-          (v.dx ?? 0) !== 0 ||
-          (v.dy ?? 0) !== 0 ||
-          (v.dw ?? 0) !== 0 ||
-          (v.dh ?? 0) !== 0
+      const imageIds = new Set<string>(
+        Array.from(imageMoves.get(pi) ?? new Map<string, ImageMoveValue>()).flatMap(([id, v]) =>
+          (v.dx ?? 0) !== 0 || (v.dy ?? 0) !== 0 || (v.dw ?? 0) !== 0 || (v.dh ?? 0) !== 0
             ? [id]
             : [],
         ),
@@ -207,7 +176,10 @@ export default function App() {
     }
     if (specs.length === 0) {
       // Nothing left modified — drop any cached preview canvases so the
-      // pristine `page.canvas` shows again.
+      // pristine `page.canvas` shows again. We're already in a render-
+      // triggered effect; the cascading re-render here is intentional
+      // (one extra paint to clear the preview).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map()));
       return;
     }
@@ -215,19 +187,11 @@ export default function App() {
     let cancelled = false;
     const handle = window.setTimeout(async () => {
       try {
-        const previewBytes = await buildPreviewBytes(
-          originalBytes.slice(0),
-          pages,
-          specs,
-        );
+        const previewBytes = await buildPreviewBytes(originalBytes.slice(0), pages, specs);
         if (cancelled || previewGenRef.current !== gen) return;
         const next = new Map<number, HTMLCanvasElement>();
         for (const spec of specs) {
-          const canvas = await renderPagePreviewCanvas(
-            previewBytes,
-            spec.pageIndex,
-            RENDER_SCALE,
-          );
+          const canvas = await renderPagePreviewCanvas(previewBytes, spec.pageIndex, RENDER_SCALE);
           if (cancelled || previewGenRef.current !== gen) return;
           next.set(spec.pageIndex, canvas);
         }
@@ -246,17 +210,14 @@ export default function App() {
     };
   }, [originalBytes, pages, edits, imageMoves, editingByPage]);
 
-  const onEditingChange = useCallback(
-    (pageIndex: number, runId: string | null) => {
-      setEditingByPage((prev) => {
-        const next = new Map(prev);
-        if (runId) next.set(pageIndex, runId);
-        else next.delete(pageIndex);
-        return next;
-      });
-    },
-    [],
-  );
+  const onEditingChange = useCallback((pageIndex: number, runId: string | null) => {
+    setEditingByPage((prev) => {
+      const next = new Map(prev);
+      if (runId) next.set(pageIndex, runId);
+      else next.delete(pageIndex);
+      return next;
+    });
+  }, []);
 
   /** Handle a click on a page when a tool mode is active — drops a new
    *  text/image insertion at the click position (PDF user space). */
@@ -326,50 +287,40 @@ export default function App() {
     (pageIndex: number, id: string, patch: Partial<TextInsertion>) => {
       setInsertedTexts((prev) => {
         const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).map((t) =>
-          t.id === id ? { ...t, ...patch } : t,
-        );
+        const arr = (next.get(pageIndex) ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t));
         next.set(pageIndex, arr);
         return next;
       });
     },
     [],
   );
-  const onTextInsertDelete = useCallback(
-    (pageIndex: number, id: string) => {
-      setInsertedTexts((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).filter((t) => t.id !== id);
-        next.set(pageIndex, arr);
-        return next;
-      });
-    },
-    [],
-  );
+  const onTextInsertDelete = useCallback((pageIndex: number, id: string) => {
+    setInsertedTexts((prev) => {
+      const next = new Map(prev);
+      const arr = (next.get(pageIndex) ?? []).filter((t) => t.id !== id);
+      next.set(pageIndex, arr);
+      return next;
+    });
+  }, []);
   const onImageInsertChange = useCallback(
     (pageIndex: number, id: string, patch: Partial<ImageInsertion>) => {
       setInsertedImages((prev) => {
         const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).map((m) =>
-          m.id === id ? { ...m, ...patch } : m,
-        );
+        const arr = (next.get(pageIndex) ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m));
         next.set(pageIndex, arr);
         return next;
       });
     },
     [],
   );
-  const onImageInsertDelete = useCallback(
-    (pageIndex: number, id: string) => {
-      setInsertedImages((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).filter((m) => m.id !== id);
-        next.set(pageIndex, arr);
-        return next;
-      });
-    },
-    [],
-  );
+  const onImageInsertDelete = useCallback((pageIndex: number, id: string) => {
+    setInsertedImages((prev) => {
+      const next = new Map(prev);
+      const arr = (next.get(pageIndex) ?? []).filter((m) => m.id !== id);
+      next.set(pageIndex, arr);
+      return next;
+    });
+  }, []);
 
   const onPickImageFile = useCallback(async (file: File) => {
     const parsed = await readImageFile(file);
@@ -458,25 +409,10 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  }, [
-    originalBytes,
-    filename,
-    edits,
-    imageMoves,
-    pageOps,
-    pages,
-    insertedTexts,
-    insertedImages,
-  ]);
+  }, [originalBytes, filename, edits, imageMoves, pageOps, pages, insertedTexts, insertedImages]);
 
-  const totalEdits = Array.from(edits.values()).reduce(
-    (sum, m) => sum + m.size,
-    0,
-  );
-  const totalImageMoves = Array.from(imageMoves.values()).reduce(
-    (sum, m) => sum + m.size,
-    0,
-  );
+  const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
+  const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
   const totalInsertedTexts = Array.from(insertedTexts.values()).reduce(
     (sum, arr) => sum + arr.length,
     0,
@@ -505,15 +441,11 @@ export default function App() {
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) handleFile(f);
+            if (f) void handleFile(f);
             e.target.value = "";
           }}
         />
-        <Button
-          variant="primary"
-          isDisabled={busy}
-          onPress={() => fileInputRef.current?.click()}
-        >
+        <Button variant="primary" isDisabled={busy} onPress={() => fileInputRef.current?.click()}>
           Open PDF
         </Button>
         <Button
@@ -528,7 +460,7 @@ export default function App() {
               totalInsertedImages ===
               0
           }
-          onPress={onSave}
+          onPress={() => void onSave()}
         >
           Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
           {totalImageMoves
@@ -587,7 +519,7 @@ export default function App() {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onPickImageFile(f);
+              if (f) void onPickImageFile(f);
               e.target.value = "";
             }}
           />
@@ -597,7 +529,7 @@ export default function App() {
             ? "Click on a page to drop a text box"
             : tool === "addImage" && pendingImage
               ? "Click on a page to place the image"
-              : filename ?? "No file loaded"}
+              : (filename ?? "No file loaded")}
         </span>
       </header>
       <main className="flex-1 overflow-auto px-6 py-6">
@@ -620,20 +552,12 @@ export default function App() {
                 tool={tool}
                 editingId={editingByPage.get(idx) ?? null}
                 onEdit={(runId, value) => onEdit(idx, runId, value)}
-                onImageMove={(imageId, value) =>
-                  onImageMove(idx, imageId, value)
-                }
+                onImageMove={(imageId, value) => onImageMove(idx, imageId, value)}
                 onEditingChange={(runId) => onEditingChange(idx, runId)}
-                onCanvasClick={(pdfX, pdfY) =>
-                  onCanvasClick(idx, pdfX, pdfY)
-                }
-                onTextInsertChange={(id, patch) =>
-                  onTextInsertChange(idx, id, patch)
-                }
+                onCanvasClick={(pdfX, pdfY) => onCanvasClick(idx, pdfX, pdfY)}
+                onTextInsertChange={(id, patch) => onTextInsertChange(idx, id, patch)}
                 onTextInsertDelete={(id) => onTextInsertDelete(idx, id)}
-                onImageInsertChange={(id, patch) =>
-                  onImageInsertChange(idx, id, patch)
-                }
+                onImageInsertChange={(id, patch) => onImageInsertChange(idx, id, patch)}
                 onImageInsertDelete={(id) => onImageInsertDelete(idx, id)}
                 onPageOp={(op) => setPageOps((prev) => [...prev, op])}
               />
@@ -685,11 +609,10 @@ function AboutModal({ onClose }: { onClose: () => void }) {
           <section className="flex flex-col items-center text-center gap-3">
             <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
             <p>
-              Browser-based PDF editor focused on Dhivehi / Thaana documents.
-              Click any text run on a page, type a replacement, save. The saved
-              PDF contains real, selectable, searchable text — original glyphs
-              are surgically removed and replaced with new ones rendered in the
-              correct font. rihaPDF is{" "}
+              Browser-based PDF editor focused on Dhivehi / Thaana documents. Click any text run on
+              a page, type a replacement, save. The saved PDF contains real, selectable, searchable
+              text — original glyphs are surgically removed and replaced with new ones rendered in
+              the correct font. rihaPDF is{" "}
               <a
                 href="https://github.com/yashau/rihaPDF"
                 target="_blank"
@@ -738,10 +661,7 @@ function AboutModal({ onClose }: { onClose: () => void }) {
                 </a>
               </li>
               <li>
-                <a
-                  href="mailto:ibrahim@yashau.com"
-                  className="text-blue-600 hover:underline"
-                >
+                <a href="mailto:ibrahim@yashau.com" className="text-blue-600 hover:underline">
                   ibrahim@yashau.com
                 </a>
               </li>
@@ -799,9 +719,7 @@ function PageWithToolbar({
         <Button
           size="sm"
           variant="ghost"
-          onPress={() =>
-            onPageOp({ kind: "insertBlank", afterPageIndex: pageIndex })
-          }
+          onPress={() => onPageOp({ kind: "insertBlank", afterPageIndex: pageIndex })}
         >
           + Blank after
         </Button>

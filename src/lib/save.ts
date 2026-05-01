@@ -16,17 +16,9 @@
 import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { RenderedPage, TextRun } from "./pdf";
-import {
-  parseContentStream,
-  serializeContentStream,
-  findTextShows,
-} from "./contentStream";
+import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
-import {
-  DEFAULT_FONT_FAMILY,
-  FONTS,
-  loadFontBytes,
-} from "./fonts";
+import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -126,10 +118,7 @@ export async function applyEditsAndSave(
   }
   // Pages that need a content-stream rewrite even if there are no text
   // edits — image-only moves still go through the stream surgery path.
-  const pagesToRewrite = new Set<number>([
-    ...editsByPage.keys(),
-    ...imageMovesByPage.keys(),
-  ]);
+  const pagesToRewrite = new Set<number>([...editsByPage.keys(), ...imageMovesByPage.keys()]);
 
   // Per-(family, bold, italic) embedded font. Lazy: only the families
   // and weight/style combinations actually used end up in the saved
@@ -163,11 +152,7 @@ export async function applyEditsAndSave(
   };
   const variantKey = (bold: boolean, italic: boolean) =>
     bold && italic ? "boldItalic" : bold ? "bold" : italic ? "italic" : "regular";
-  const getFont = async (
-    family: string,
-    bold: boolean = false,
-    italic: boolean = false,
-  ) => {
+  const getFont = async (family: string, bold: boolean = false, italic: boolean = false) => {
     const cacheKey = `${family}|${bold ? "b" : ""}${italic ? "i" : ""}`;
     const cached = fontCache.get(cacheKey);
     if (cached) return cached;
@@ -223,8 +208,7 @@ export async function applyEditsAndSave(
     const indicesToRemove = new Set<number>();
     /** For move-only edits: the indices of the Tj/TJ ops we need to
      *  reposition + the new text-matrix to insert before them. */
-    const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> =
-      [];
+    const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> = [];
     const editPlans: Array<{
       edit: Edit;
       run: TextRun;
@@ -247,9 +231,7 @@ export async function applyEditsAndSave(
       // Falls back to position-matching only if the run has no
       // recorded op indices (shouldn't happen for source-extracted
       // runs but the fallback keeps old PDFs working).
-      let matched = shows.filter((s) =>
-        run.contentStreamOpIndices.includes(s.index),
-      );
+      let matched = shows.filter((s) => run.contentStreamOpIndices.includes(s.index));
       if (matched.length === 0) {
         const tolY = Math.max(2, runPdfHeight * 0.4);
         const tolX = Math.max(2, runPdfHeight * 0.3);
@@ -269,9 +251,7 @@ export async function applyEditsAndSave(
       // each matched Tj/TJ that translates by (dx_pdf, -dy_pdf) from its
       // original text-matrix position.
       const isMoveOnly =
-        edit.newText === run.text &&
-        !edit.style &&
-        ((edit.dx ?? 0) !== 0 || (edit.dy ?? 0) !== 0);
+        edit.newText === run.text && !edit.style && ((edit.dx ?? 0) !== 0 || (edit.dy ?? 0) !== 0);
       if (isMoveOnly && matched.length > 0) {
         const moveX = (edit.dx ?? 0) / scale;
         const moveY = -(edit.dy ?? 0) / scale;
@@ -305,10 +285,7 @@ export async function applyEditsAndSave(
     //     the original Tj/TJ that translates the text matrix to the new
     //     absolute position. The original glyphs follow unchanged so
     //     rendering is pixel-perfect — no rerender via drawText needed.
-    const moveByTjIndex = new Map<
-      number,
-      { newTx: number; newTy: number }
-    >();
+    const moveByTjIndex = new Map<number, { newTx: number; newTy: number }>();
     for (const m of moveOps) {
       moveByTjIndex.set(m.tjIndex, { newTx: m.newTx, newTy: m.newTy });
     }
@@ -325,10 +302,7 @@ export async function applyEditsAndSave(
     // right after the image's q. The composed transform takes the
     // unit-square corner `(u_pdf, v_pdf)` produced by the existing
     // image chain and maps it to `(sx*u + ex, sy*v + ey)`.
-    const insertAfterQ = new Map<
-      number,
-      [number, number, number, number, number, number]
-    >();
+    const insertAfterQ = new Map<number, [number, number, number, number, number, number]>();
     for (const move of pageImageMoves) {
       const img = rendered.images.find((i) => i.id === move.imageId);
       if (!img || img.qOpIndex == null) continue;
@@ -397,11 +371,7 @@ export async function applyEditsAndSave(
         });
       }
     }
-    setPageContentBytes(
-      doc.context,
-      page.node,
-      serializeContentStream(newOps),
-    );
+    setPageContentBytes(doc.context, page.node, serializeContentStream(newOps));
 
     // Append the replacement text via pdf-lib's drawText so its internal
     // Unicode→CID encoding matches the font it embedded. (Bypassing it
@@ -440,8 +410,7 @@ export async function applyEditsAndSave(
       const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
       const moveX = (edit.dx ?? 0) / rendered.scale;
       const moveY = -(edit.dy ?? 0) / rendered.scale;
-      const baseX =
-        (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
+      const baseX = (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
       const drawY = runPdfY + moveY;
 
       // Use pdf-lib's drawText for the actual glyph rendering — it owns
@@ -519,19 +488,14 @@ export async function applyEditsAndSave(
   // Embed each unique image once, then draw at its placement. Different
   // insertions sharing the same byte buffer reuse the embedded XObject
   // so the saved file stays small.
-  const embeddedImageCache = new Map<
-    Uint8Array,
-    Awaited<ReturnType<typeof doc.embedPng>>
-  >();
+  const embeddedImageCache = new Map<Uint8Array, Awaited<ReturnType<typeof doc.embedPng>>>();
   for (const ins of imageInserts) {
     const page = docPages[ins.pageIndex];
     if (!page) continue;
     let embedded = embeddedImageCache.get(ins.bytes);
     if (!embedded) {
       embedded =
-        ins.format === "png"
-          ? await doc.embedPng(ins.bytes)
-          : await doc.embedJpg(ins.bytes);
+        ins.format === "png" ? await doc.embedPng(ins.bytes) : await doc.embedJpg(ins.bytes);
       embeddedImageCache.set(ins.bytes, embedded);
     }
     page.drawImage(embedded, {

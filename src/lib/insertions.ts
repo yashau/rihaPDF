@@ -48,17 +48,10 @@ export type ImageInsertion = {
 /** Detect a binary blob's image format from the first few bytes.
  *  Returns null when neither PNG nor JPEG (we don't try to support
  *  GIF/BMP/etc — pdf-lib doesn't either). */
-export function detectImageFormat(
-  bytes: Uint8Array,
-): "png" | "jpeg" | null {
+export function detectImageFormat(bytes: Uint8Array): "png" | "jpeg" | null {
   if (bytes.length < 4) return null;
   // PNG: 89 50 4E 47
-  if (
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  ) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
     return "png";
   }
   // JPEG: FF D8 FF
@@ -71,9 +64,7 @@ export function detectImageFormat(
 /** Read an <input type="file"> selection into a typed ImageInsertion
  *  blob (without yet attaching it to a page — caller picks the
  *  position via click). Resolves to null if the file isn't PNG/JPEG. */
-export async function readImageFile(
-  file: File,
-): Promise<{
+export async function readImageFile(file: File): Promise<{
   bytes: Uint8Array;
   format: "png" | "jpeg";
   naturalWidth: number;
@@ -86,9 +77,7 @@ export async function readImageFile(
   // Use the browser to read the natural pixel dimensions so the
   // initial PDF placement has reasonable defaults.
   const dims = await new Promise<{ w: number; h: number }>((resolve) => {
-    const url = URL.createObjectURL(
-      new Blob([bytes as BlobPart], { type: `image/${format}` }),
-    );
+    const url = URL.createObjectURL(new Blob([bytes], { type: `image/${format}` }));
     const img = new Image();
     img.onload = () => {
       resolve({ w: img.naturalWidth, h: img.naturalHeight });

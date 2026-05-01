@@ -2,14 +2,7 @@
 // text with the same font the source PDF uses. Walks Resources → Font →
 // FontDescriptor → FontFile2 to find the binary stream.
 
-import {
-  PDFDocument,
-  PDFDict,
-  PDFName,
-  PDFRawStream,
-  PDFRef,
-  decodePDFRawStream,
-} from "pdf-lib";
+import { PDFDocument, PDFDict, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 
 /**
  * Walk all pages and return the first embedded TrueType font we find.
@@ -40,9 +33,7 @@ export function extractFirstEmbeddedFont(doc: PDFDocument): {
       //   Type0.DescendantFonts[0].FontDescriptor.FontFile2
       let descriptor: PDFDict | undefined;
       if (subtypeStr === "/Type0") {
-        const descendants = font.lookup(
-          PDFName.of("DescendantFonts"),
-        );
+        const descendants = font.lookup(PDFName.of("DescendantFonts"));
         const arr =
           descendants && "asArray" in descendants
             ? (descendants as { asArray(): unknown[] }).asArray()

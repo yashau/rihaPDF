@@ -8,10 +8,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 setTimeout(() => process.exit(2), 60_000).unref?.();
 
 const browser = await chromium.launch({ headless: true });
@@ -32,12 +29,15 @@ const out = await page.evaluate(async () => {
   const shows = await mod.extractPageFontShows(buf);
   return {
     pageCount: shows.length,
-    page1: shows[0]?.map((s) => ({
-      x: s.x,
-      y: s.y,
-      base: s.baseFont,
-      bytes: Array.from(s.bytes).map((b) => b.toString(16).padStart(2, "0")).join(""),
-    })) ?? [],
+    page1:
+      shows[0]?.map((s) => ({
+        x: s.x,
+        y: s.y,
+        base: s.baseFont,
+        bytes: Array.from(s.bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+      })) ?? [],
   };
 });
 console.log(JSON.stringify(out, null, 2).slice(0, 8000));

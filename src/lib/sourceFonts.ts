@@ -8,17 +8,8 @@
 // that the run-builder uses to attach a fontFamily / bold / italic to
 // each TextRun.
 
-import {
-  PDFDocument,
-  PDFDict,
-  PDFName,
-  PDFArray,
-  PDFRef,
-} from "pdf-lib";
-import {
-  parseContentStream,
-  findTextShows,
-} from "./contentStream";
+import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRef } from "pdf-lib";
+import { parseContentStream, findTextShows } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
 
 export type FontShow = {
@@ -51,9 +42,7 @@ export type FontShow = {
  * Build a FontShow[] for every page in the document. Index of the array
  * matches PDF page index (0-based).
  */
-export async function extractPageFontShows(
-  pdfBytes: ArrayBuffer,
-): Promise<FontShow[][]> {
+export async function extractPageFontShows(pdfBytes: ArrayBuffer): Promise<FontShow[][]> {
   const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const pages = doc.getPages();
   const result: FontShow[][] = [];
@@ -71,9 +60,7 @@ export async function extractPageFontShows(
         if (!(fontEntryRaw instanceof PDFDict)) continue;
         const fontEntry = fontEntryRaw;
         const baseFontObj = fontEntry.lookup(PDFName.of("BaseFont"));
-        const baseFont = baseFontObj
-          ? String(baseFontObj).replace(/^\//, "")
-          : null;
+        const baseFont = baseFontObj ? String(baseFontObj).replace(/^\//, "") : null;
         let bold = false;
         let italic = false;
         const descriptorRaw = fontEntry.lookup(PDFName.of("FontDescriptor"));
@@ -121,17 +108,11 @@ export async function extractPageFontShows(
         for (const b of bytes) operandBytes.push(b);
       };
       for (const operand of s.op.operands) {
-        if (
-          operand.kind === "literal-string" ||
-          operand.kind === "hex-string"
-        ) {
+        if (operand.kind === "literal-string" || operand.kind === "hex-string") {
           collect(operand.bytes);
         } else if (operand.kind === "array") {
           for (const item of operand.items) {
-            if (
-              item.kind === "literal-string" ||
-              item.kind === "hex-string"
-            ) {
+            if (item.kind === "literal-string" || item.kind === "hex-string") {
               collect(item.bytes);
             }
           }

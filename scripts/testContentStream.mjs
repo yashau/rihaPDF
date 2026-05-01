@@ -14,11 +14,7 @@ import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF_PATH = path.resolve(
-  root,
-  "..",
-  "test/fixtures/maldivian.pdf",
-);
+const PDF_PATH = path.resolve(root, "..", "test/fixtures/maldivian.pdf");
 
 setTimeout(() => process.exit(2), 90_000).unref?.();
 

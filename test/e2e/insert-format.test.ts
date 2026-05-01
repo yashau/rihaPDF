@@ -33,13 +33,13 @@ describe("inserted-text formatting toolbar", () => {
     await loadFixture(h.page, FIXTURE.withImages);
 
     // Drop a text box near the top-left.
-    await h.page.locator("button").filter({ hasText: /^\+ Text$/ }).click();
+    await h.page
+      .locator("button")
+      .filter({ hasText: /^\+ Text$/ })
+      .click();
     const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
     expect(pageBox).not.toBeNull();
-    await h.page.mouse.click(
-      pageBox!.x + pageBox!.width * 0.3,
-      pageBox!.y + pageBox!.height * 0.5,
-    );
+    await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.5);
     await h.page.waitForTimeout(200);
     const insertInput = h.page.locator("[data-text-insert-id] input").first();
     await insertInput.fill(SENTINEL);
@@ -58,9 +58,7 @@ describe("inserted-text formatting toolbar", () => {
 
     // Live-overlay computed style sanity.
     const live = await h.page.evaluate(() => {
-      const el = document.querySelector(
-        "[data-text-insert-id] input",
-      ) as HTMLElement | null;
+      const el = document.querySelector("[data-text-insert-id] input");
       if (!el) return null;
       const cs = getComputedStyle(el);
       return {
@@ -88,26 +86,23 @@ describe("inserted-text formatting toolbar", () => {
     await loadFixture(h.page, saved);
 
     const checks = await h.page.evaluate(async (b64) => {
-      const importer = new Function("p", "return import(p)") as (
-        p: string,
-      ) => Promise<unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const pdfMod = (await importer("/src/lib/pdf.ts")) as
-        typeof import("../../src/lib/pdf");
-      const baseFontMod = (await importer("/src/dev/readBaseFonts.ts")) as
-        typeof import("../../src/dev/readBaseFonts");
+      const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+      const baseFontMod = (await importer(
+        "/src/dev/readBaseFonts.ts",
+      )) as typeof import("../../src/dev/readBaseFonts");
       const doc = await pdfMod.loadPdf(bytes.buffer.slice(0));
       const p = await doc.getPage(1);
       const content = await p.getTextContent();
       const target = content.items
         .filter((it) => "str" in it)
-        .find((it) =>
-          (it as { str: string }).str.includes("FORMAT_PROBE_xyz"),
-        ) as { str: string; transform: number[] } | undefined;
+        .find((it) => (it as { str: string }).str.includes("FORMAT_PROBE_xyz")) as
+        | { str: string; transform: number[] }
+        | undefined;
       if (!target) return { found: false } as const;
-      const baseFontStrings = (
-        await baseFontMod.readBaseFonts(bytes.buffer.slice(0))
-      )[0] ?? [];
+      const baseFontStrings = (await baseFontMod.readBaseFonts(bytes.buffer.slice(0)))[0] ?? [];
       return {
         found: true as const,
         text: target.str,

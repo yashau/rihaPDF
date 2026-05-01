@@ -39,7 +39,9 @@ const dump = await page.evaluate(() => {
 });
 
 for (const r of dump) {
-  console.log(`${r.id.padEnd(8)} (${String(r.x).padStart(4)},${String(r.y).padStart(4)},w${String(r.w).padStart(4)},h${String(r.h).padStart(3)}) "${r.text.slice(0, 80)}"`);
+  console.log(
+    `${r.id.padEnd(8)} (${String(r.x).padStart(4)},${String(r.y).padStart(4)},w${String(r.w).padStart(4)},h${String(r.h).padStart(3)}) "${r.text.slice(0, 80)}"`,
+  );
 }
 
 await browser.close();

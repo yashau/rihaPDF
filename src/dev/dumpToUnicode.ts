@@ -2,14 +2,7 @@
 // authoritative CID → Unicode map) so we can see exactly which CIDs
 // the source PDF claims are mapped — and which it leaves out.
 
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRawStream,
-  PDFRef,
-  decodePDFRawStream,
-} from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 
 export type ToUnicodeDump = {
   resource: string;
@@ -29,9 +22,7 @@ export type ToUnicodeDump = {
   }>;
 };
 
-export async function dumpToUnicode(
-  pdfBytes: ArrayBuffer,
-): Promise<ToUnicodeDump[]> {
+export async function dumpToUnicode(pdfBytes: ArrayBuffer): Promise<ToUnicodeDump[]> {
   const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const out: ToUnicodeDump[] = [];
   const page = doc.getPages()[0];

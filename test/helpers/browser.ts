@@ -12,12 +12,7 @@ import type { Browser, BrowserContext, Page } from "playwright";
 import { fileURLToPath } from "url";
 import path from "path";
 
-export const ROOT = path.resolve(
-  fileURLToPath(import.meta.url),
-  "..",
-  "..",
-  "..",
-);
+export const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 export const FIXTURES = path.join(ROOT, "test", "fixtures");
 export const SCREENSHOTS = path.join(ROOT, "test", "e2e", "screenshots");
 
@@ -56,6 +51,7 @@ export async function setupBrowser(opts?: {
     await browser.close();
     throw new Error(
       `Couldn't reach the dev server at ${APP_URL} — start it with \`pnpm dev\` before running the E2E suite. (${(err as Error).message})`,
+      { cause: err },
     );
   }
   return { browser, context, page };
@@ -82,9 +78,7 @@ export async function loadFixture(
   options: { expectedPages?: number } = {},
 ): Promise<void> {
   const { expectedPages } = options;
-  await page
-    .locator('input[type="file"][accept="application/pdf"]')
-    .setInputFiles(fixturePath);
+  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(fixturePath);
   await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
   // Poll the page count: it should grow as renderPage finishes for
   // each page, then plateau. Treat 1.5s of unchanged count as "done"
@@ -134,10 +128,7 @@ export async function loadFixture(
 }
 
 /** Click the named toolbar button by its visible label. */
-export async function clickToolbarButton(
-  page: Page,
-  label: RegExp,
-): Promise<void> {
+export async function clickToolbarButton(page: Page, label: RegExp): Promise<void> {
   await page.locator("button").filter({ hasText: label }).click();
 }
 
@@ -158,12 +149,13 @@ export async function clickToolbarButton(
  *  to hop through one extra round-trip when they only need a single
  *  exported value, OR inline the `new Function` themselves.
  */
-export async function dynImport<T = unknown>(
-  page: Page,
-  modulePath: string,
-): Promise<T> {
+export async function dynImport<T = unknown>(page: Page, modulePath: string): Promise<T> {
   return page.evaluate(async (p) => {
-    const importer = new Function("path", "return import(path)");
+    // The Function() bypass is intentional: vitest's SSR transform
+    // rewrites raw `import(p)` to a helper that doesn't exist in the
+    // page browser's runtime, so wrap to defer parsing.
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const importer = new Function("path", "return import(path)") as (p: string) => Promise<unknown>;
     return await importer(p);
   }, modulePath) as Promise<T>;
 }

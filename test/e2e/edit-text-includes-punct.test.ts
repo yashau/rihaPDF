@@ -41,7 +41,7 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       if (!host) return null;
       for (const el of host.querySelectorAll("[data-run-id]")) {
         const text = el.textContent || "";
-        if (text.includes("14/2019") || text.includes("14") && text.includes("2019")) {
+        if (text.includes("14/2019") || (text.includes("14") && text.includes("2019"))) {
           const r = el.getBoundingClientRect();
           return {
             id: el.getAttribute("data-run-id")!,
@@ -53,18 +53,12 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       }
       return null;
     });
-    expect(
-      target,
-      "couldn't find a run carrying the 14/2019 line on page 2",
-    ).not.toBeNull();
+    expect(target, "couldn't find a run carrying the 14/2019 line on page 2").not.toBeNull();
 
     // Click to open the editor.
     await h.page.locator(`[data-run-id="${target!.id}"]`).click();
     await h.page.waitForTimeout(300);
-    const editorValue = await h.page
-      .locator("input[data-editor]")
-      .first()
-      .inputValue();
+    const editorValue = await h.page.locator("input[data-editor]").first().inputValue();
 
     // The edit box must show every visible piece of the line.
     expect(editorValue).toContain("14");

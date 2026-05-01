@@ -9,10 +9,7 @@ import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 const pageIdx = Number(process.argv[2] ?? "1");
 const SCREENSHOTS = path.join(root, "scripts", "screenshots");
 fs.mkdirSync(SCREENSHOTS, { recursive: true });

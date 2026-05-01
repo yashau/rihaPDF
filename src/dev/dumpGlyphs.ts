@@ -4,14 +4,7 @@
 // stripped. Imported from a Playwright probe via a Vite virtual import.
 
 import fontkit from "@pdf-lib/fontkit";
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRawStream,
-  PDFRef,
-  decodePDFRawStream,
-} from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 
 export type GlyphDumpEntry = {
   resource: string;
@@ -59,10 +52,7 @@ export async function dumpGlyphs(pdfBytes: ArrayBuffer): Promise<GlyphDumpEntry[
     let descriptor: PDFDict | null = null;
     if (subtype === "/Type0") {
       const desc = fd.lookup(PDFName.of("DescendantFonts"));
-      const arr =
-        desc && "asArray" in desc
-          ? (desc as { asArray(): unknown[] }).asArray()
-          : null;
+      const arr = desc && "asArray" in desc ? (desc as { asArray(): unknown[] }).asArray() : null;
       const first = arr?.[0];
       let descendant: PDFDict | null = null;
       if (first instanceof PDFRef) {
@@ -97,9 +87,7 @@ export async function dumpGlyphs(pdfBytes: ArrayBuffer): Promise<GlyphDumpEntry[
       getGlyph?(id: number): { id: number; name?: string; codePoints?: number[] };
     };
     try {
-      fk = (fontkit as unknown as { create(b: Uint8Array): typeof fk }).create(
-        bytes,
-      );
+      fk = (fontkit as unknown as { create(b: Uint8Array): typeof fk }).create(bytes);
     } catch (e) {
       out.push({
         resource: name.toString(),
@@ -128,7 +116,7 @@ export async function dumpGlyphs(pdfBytes: ArrayBuffer): Promise<GlyphDumpEntry[
         });
       }
     }
-    let cid3: GlyphDumpEntry["cid3"] = {};
+    let cid3: GlyphDumpEntry["cid3"];
     try {
       const g = fk.getGlyph?.(3);
       cid3 = { id: g?.id, name: g?.name ?? null, codePoints: g?.codePoints ?? null };
@@ -140,8 +128,9 @@ export async function dumpGlyphs(pdfBytes: ArrayBuffer): Promise<GlyphDumpEntry[
       baseFont,
       numGlyphs,
       cmapSize: charSet.length,
-      cmapHasFili: [0x07a6, 0x07a7, 0x07a8, 0x07a9, 0x07aa, 0x07ab, 0x07ac, 0x07ad, 0x07ae, 0x07af, 0x07b0]
-        .filter((cp) => charSet.includes(cp)),
+      cmapHasFili: [
+        0x07a6, 0x07a7, 0x07a8, 0x07a9, 0x07aa, 0x07ab, 0x07ac, 0x07ad, 0x07ae, 0x07af, 0x07b0,
+      ].filter((cp) => charSet.includes(cp)),
       glyphSample: sample,
       cid3,
     });

@@ -9,10 +9,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 setTimeout(() => process.exit(2), 60_000).unref?.();
 
 const FILI_NAMES = {
@@ -40,9 +37,7 @@ await page.waitForTimeout(3_500);
 
 const pages = await page.evaluate(() =>
   Array.from(document.querySelectorAll("[data-page-index]")).map((p, i) => {
-    const runs = Array.from(p.querySelectorAll("[data-run-id]")).map(
-      (el) => el.textContent || "",
-    );
+    const runs = Array.from(p.querySelectorAll("[data-run-id]")).map((el) => el.textContent || "");
     return { pageIndex: i, runs };
   }),
 );
@@ -66,7 +61,8 @@ for (const p of pages) {
   console.log(`\n=== Page ${p.pageIndex + 1} (${p.runs.length} runs) ===`);
   for (const [cp, n] of Object.entries(counts)) {
     const name = FILI_NAMES[cp];
-    if (n > 0) console.log(`  U+${Number(cp).toString(16).toUpperCase()} ${name.padEnd(10)} : ${n}`);
+    if (n > 0)
+      console.log(`  U+${Number(cp).toString(16).toUpperCase()} ${name.padEnd(10)} : ${n}`);
   }
   totalAabaafili += counts[0x07a7];
   console.log(`  runs containing aabaafili: ${runsWithAabaafili}`);

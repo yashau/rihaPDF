@@ -68,9 +68,7 @@ describe("preview strip on agenda item 6 paragraph runs", () => {
       // Reload between attempts so previous edit + preview state
       // doesn't bleed into the next run.
       await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
-      await h.page
-        .locator('[data-page-index="1"]')
-        .scrollIntoViewIfNeeded();
+      await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
       await h.page.waitForTimeout(200);
     }
     expect(failures, `${failures.length} run(s) failed:\n${failures.join("\n")}`).toEqual([]);
@@ -95,7 +93,6 @@ async function collectRuns(): Promise<RunInfo[]> {
       });
     }
     return out;
-    type _Marker = RunInfo;
   });
 }
 
@@ -119,8 +116,7 @@ async function stripCheck(target: RunInfo): Promise<string | null> {
   // Threshold of 350 (i.e. average per channel < ~117) catches only
   // black ink glyphs, not the ~210/210/210 gray of Word's section
   // heading shading or anti-aliased glyph edges.
-  const isInk = (p: [number, number, number, number] | null) =>
-    !!p && p[0] + p[1] + p[2] < 350;
+  const isInk = (p: [number, number, number, number] | null) => !!p && p[0] + p[1] + p[2] < 350;
   const sampleBefore = await samplePixelsAt(beforeRect);
   const inkBefore = sampleBefore.filter(isInk).length;
   if (inkBefore === 0) {
@@ -141,13 +137,8 @@ async function stripCheck(target: RunInfo): Promise<string | null> {
   // eyeball whether the original glyphs really vanished — pixel
   // sampling along the run rect can miss a residual ghost glyph that
   // sits in the gaps between sample points.
-  const screenshot = path.join(
-    SCREENSHOTS,
-    `agenda6-drag-${id}.png`,
-  );
-  await h.page
-    .locator('[data-page-index="1"]')
-    .screenshot({ path: screenshot });
+  const screenshot = path.join(SCREENSHOTS, `agenda6-drag-${id}.png`);
+  await h.page.locator('[data-page-index="1"]').screenshot({ path: screenshot });
 
   const saveLabel = await h.page
     .locator("button")
@@ -195,7 +186,7 @@ async function samplePixelsAt(rect: {
   return h.page.evaluate((rect) => {
     const host = document.querySelector('[data-page-index="1"]');
     if (!host) return [];
-    const canvas = host.querySelector("canvas") as HTMLCanvasElement | null;
+    const canvas = host.querySelector("canvas");
     if (!canvas) return [];
     const cRect = canvas.getBoundingClientRect();
     const sx = canvas.width / cRect.width;

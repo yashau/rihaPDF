@@ -21,12 +21,7 @@
 // the rewrite trivially safe: nothing else on the page is affected, and
 // scaling/rotation is preserved verbatim.
 
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRef,
-} from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
 import { parseContentStream, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
 
@@ -66,9 +61,7 @@ export type PageImages = ImageInstance[];
 
 /** Build an ImageInstance[] for every page in the document. The returned
  *  array is page-indexed (0-based). */
-export async function extractPageImages(
-  pdfBytes: ArrayBuffer,
-): Promise<PageImages[]> {
+export async function extractPageImages(pdfBytes: ArrayBuffer): Promise<PageImages[]> {
   const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const pages = doc.getPages();
   const out: PageImages[] = [];
@@ -84,10 +77,7 @@ export async function extractPageImages(
 
 /** Resources / XObject for the given page, walking the page tree so an
  *  inherited Resources entry on a parent Pages node also works. */
-function resolveXObjectDict(
-  pageNode: PDFDict,
-  doc: PDFDocument,
-): PDFDict | null {
+function resolveXObjectDict(pageNode: PDFDict, doc: PDFDocument): PDFDict | null {
   let node: PDFDict | null = pageNode;
   while (node) {
     const resourcesRaw = node.lookup(PDFName.of("Resources"));
@@ -109,10 +99,7 @@ function resolveXObjectDict(
 }
 
 /** Look up the Subtype of the XObject named `resName` on the page. */
-function subtypeOf(
-  xobjectDict: PDFDict | null,
-  resName: string,
-): ImageInstance["subtype"] {
+function subtypeOf(xobjectDict: PDFDict | null, resName: string): ImageInstance["subtype"] {
   if (!xobjectDict) return "Unknown";
   const x = xobjectDict.lookup(PDFName.of(resName));
   // pdf-lib resolves PDFRef on lookup; if it's a stream we still get a
@@ -147,9 +134,7 @@ function mulCm(
   ];
 }
 
-const IDENTITY: [number, number, number, number, number, number] = [
-  1, 0, 0, 1, 0, 0,
-];
+const IDENTITY: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
 
 /** Walk ops with a q/Q stack tracking CTM, and emit one ImageInstance per
  *  Do op that references an Image / Form XObject. */
@@ -160,20 +145,12 @@ function findImagesInOps(
   pageNumber: number,
 ): ImageInstance[] {
   const out: ImageInstance[] = [];
-  const stack: [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ][] = [];
+  const stack: [number, number, number, number, number, number][] = [];
   let ctm: [number, number, number, number, number, number] = [...IDENTITY];
   // For each open q-block, the index of the q op AND the index of
   // the first cm seen inside it. Save uses qIdx to insert a fresh
   // outermost translate cm; the firstCmIdx is mostly a diagnostic.
   const blockStack: { qIdx: number; firstCmIdx: number | null }[] = [];
-  let depth = 0;
   let imageCounter = 0;
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];
@@ -181,23 +158,23 @@ function findImagesInOps(
       case "q":
         stack.push([...ctm]);
         blockStack.push({ qIdx: i, firstCmIdx: null });
-        depth++;
         break;
       case "Q": {
         const popped = stack.pop();
         if (popped) ctm = popped;
         blockStack.pop();
-        depth--;
         break;
       }
       case "cm": {
-        if (
-          o.operands.length === 6 &&
-          o.operands.every((x) => x.kind === "number")
-        ) {
-          const m = o.operands.map(
-            (x) => (x as { value: number }).value,
-          ) as [number, number, number, number, number, number];
+        if (o.operands.length === 6 && o.operands.every((x) => x.kind === "number")) {
+          const m = o.operands.map((x) => (x as { value: number }).value) as [
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+          ];
           ctm = mulCm(m, ctm);
           const top = blockStack[blockStack.length - 1];
           if (top && top.firstCmIdx == null) top.firstCmIdx = i;

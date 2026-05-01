@@ -15,8 +15,7 @@ export async function dumpDecodeTrace(pdfBytes: ArrayBuffer): Promise<unknown> {
   const doc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
   const plDoc = await PDFDocument.load(pdfBytes.slice(0));
   const fontShowsAll = await extractPageFontShows(pdfBytes.slice(0));
-  const pageIndexParam = (globalThis as { _DUMP_PAGE_INDEX?: number })
-    ._DUMP_PAGE_INDEX ?? 0;
+  const pageIndexParam = (globalThis as { _DUMP_PAGE_INDEX?: number })._DUMP_PAGE_INDEX ?? 0;
   const glyphMap = extractPageGlyphMaps(plDoc, pageIndexParam);
   const page = await doc.getPage(pageIndexParam + 1);
   const viewport = page.getViewport({ scale: 1.5 });
@@ -37,8 +36,7 @@ export async function dumpDecodeTrace(pdfBytes: ArrayBuffer): Promise<unknown> {
     const x = +it.transform[4].toFixed(2);
     const y = +it.transform[5].toFixed(2);
     // Find matching show.
-    let bestShow: { fontResource: string | null; bytes: Uint8Array } | null =
-      null;
+    let bestShow: { fontResource: string | null; bytes: Uint8Array } | null = null;
     let bestDist = Infinity;
     for (const s of fontShowsAll[pageIndexParam] ?? []) {
       const d = Math.abs(s.x - x) + Math.abs(s.y - y) * 10;

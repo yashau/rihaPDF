@@ -134,7 +134,7 @@ export async function renderPage(
   // pdf.js gives us text item transforms in PDF user space. We compose with
   // viewport.transform so all downstream code (overlay positioning, run
   // bounding boxes, save coord conversion) works in viewport pixel space.
-  const vt = viewport.transform as Mat;
+  const vt = viewport.transform;
   const items: TextItem[] = content.items.map((raw, index) => {
     const item = raw as {
       str: string;
@@ -285,11 +285,7 @@ function applyShowDecodes(
         // can claim ANY show (these are often the leading-visual-char
         // split items that pdf.js emits with a single combining mark).
         const showScript = scriptOf(ds.text);
-        if (
-          itemScript !== "unknown" &&
-          showScript !== "unknown" &&
-          itemScript !== showScript
-        ) {
+        if (itemScript !== "unknown" && showScript !== "unknown" && itemScript !== showScript) {
           continue;
         }
         const dx = Math.abs(ds.show.x - xPdf);
@@ -320,9 +316,7 @@ function applyShowDecodes(
     const claimed = showToItems.get(ds);
     if (!claimed || claimed.length === 0) {
       // Orphan show — synthesise an item.
-      const composed = multiplyTransforms(viewportTransform, [
-        12, 0, 0, 12, ds.show.x, ds.show.y,
-      ]);
+      const composed = multiplyTransforms(viewportTransform, [12, 0, 0, 12, ds.show.x, ds.show.y]);
       // Borrow average height from any item on the same line so the
       // run-merger picks it up.
       const yKey = Math.round(ds.show.y);
@@ -384,17 +378,11 @@ function applyShowDecodes(
     // Tj/TJ to remove without position guessing. We also stamp every
     // OTHER claimed item so even if a downstream rebuild merges
     // differently, the op index lives somewhere reachable.
-    main.contentStreamOpIndices = [
-      ...(main.contentStreamOpIndices ?? []),
-      ds.show.opIndex,
-    ];
+    main.contentStreamOpIndices = [...(main.contentStreamOpIndices ?? []), ds.show.opIndex];
     for (const it of claimed) {
       if (it !== main) {
         it.str = "";
-        it.contentStreamOpIndices = [
-          ...(it.contentStreamOpIndices ?? []),
-          ds.show.opIndex,
-        ];
+        it.contentStreamOpIndices = [...(it.contentStreamOpIndices ?? []), ds.show.opIndex];
       }
     }
   }
@@ -487,10 +475,7 @@ function scriptOf(text: string): "rtl" | "ltr" | "unknown" {
  *  should leave the corresponding pdf.js item alone rather than risk
  *  overwriting it with a partially-decoded string (or a string of
  *  silent placeholders). */
-function decodeViaMap(
-  bytes: Uint8Array,
-  map: import("./glyphMap").GlyphMap,
-): string | null {
+function decodeViaMap(bytes: Uint8Array, map: import("./glyphMap").GlyphMap): string | null {
   const isIdentity = map.encoding.startsWith("Identity");
   let out = "";
   if (isIdentity) {
@@ -513,8 +498,7 @@ function decodeViaMap(
 
 // Strong-RTL Unicode ranges: Hebrew, Arabic, Thaana, Syriac, plus the
 // Arabic Presentation Forms blocks. Used to detect run direction.
-const RTL_REGEX =
-  /[֐-ࣿיִ-﷿ﹰ-﻿\u{10800}-\u{10FFF}]/u;
+const RTL_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE\u{10800}-\u{10FFF}]/u;
 
 function isRtlText(text: string): boolean {
   return RTL_REGEX.test(text);
@@ -534,9 +518,7 @@ function isRtlText(text: string): boolean {
  * dropped.
  */
 function cleanCombiningSpaces(text: string): string {
-  return text
-    .replace(/\s+(?=[ަ-ް])/g, "")
-    .replace(/\s+(?=[ً-ٰٟۖ-ۭ])/g, "");
+  return text.replace(/\s+(?=[ަ-ް])/g, "").replace(/\s+(?=[ً-ٰٟۖ-ۭ])/g, "");
 }
 
 /**
@@ -699,8 +681,7 @@ function buildTextRuns(
     }
     const prev = bucket[bucket.length - 1];
     const sameLine =
-      Math.abs(item.transform[5] - prev.transform[5]) <
-      Math.max(item.height, prev.height) * 0.3;
+      Math.abs(item.transform[5] - prev.transform[5]) < Math.max(item.height, prev.height) * 0.3;
     if (!sameLine) {
       flush();
       bucket.push(item);

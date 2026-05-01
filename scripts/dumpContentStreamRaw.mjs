@@ -8,10 +8,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 const PAGE = Number(process.argv[2] ?? "1");
 setTimeout(() => process.exit(2), 60_000).unref?.();
 
@@ -74,8 +71,7 @@ const out = await page.evaluate(async (pageIdx) => {
         .map((t) => {
           if (t.kind === "number") return t.raw;
           if (t.kind === "name") return "/" + t.value;
-          if (t.kind === "literal-string")
-            return `(${t.bytes.length}b)`;
+          if (t.kind === "literal-string") return `(${t.bytes.length}b)`;
           if (t.kind === "hex-string") return `<${t.bytes.length}b>`;
           if (t.kind === "array") return `[${t.items.length}]`;
           return t.kind;

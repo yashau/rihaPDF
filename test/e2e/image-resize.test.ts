@@ -31,6 +31,7 @@ async function captureImages(pdfPath: string) {
   const bytes = fs.readFileSync(pdfPath);
   const b64 = bytes.toString("base64");
   return h.page.evaluate(async (b64) => {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const importer = new Function("p", "return import(p)") as (
       p: string,
     ) => Promise<typeof import("../../src/lib/sourceImages")>;
@@ -56,9 +57,7 @@ async function dragHandle(
   dxView: number,
   dyView: number,
 ) {
-  const handle = h.page.locator(
-    `[data-image-id="${imageId}"] [data-resize-handle="${corner}"]`,
-  );
+  const handle = h.page.locator(`[data-image-id="${imageId}"] [data-resize-handle="${corner}"]`);
   const box = await handle.boundingBox();
   expect(box, `${corner} handle for ${imageId} not in DOM`).not.toBeNull();
   const cx = box!.x + box!.width / 2;
@@ -102,20 +101,11 @@ describe("image XObject resize via corner handles", () => {
     // height-growth (since pdfY is the bottom). pdfX stays.
     const expectedDw = DXV / RENDER_SCALE;
     const expectedDh = DYV / RENDER_SCALE;
-    expect(a.w - target.w, "width should grow by DXV/scale").toBeCloseTo(
-      expectedDw,
-      0,
-    );
-    expect(a.h - target.h, "height should grow by DYV/scale").toBeCloseTo(
-      expectedDh,
-      0,
-    );
+    expect(a.w - target.w, "width should grow by DXV/scale").toBeCloseTo(expectedDw, 0);
+    expect(a.h - target.h, "height should grow by DYV/scale").toBeCloseTo(expectedDh, 0);
     expect(a.pdfX - target.pdfX, "BR drag keeps left edge").toBeCloseTo(0, 0);
     // Top edge = pdfY + h stays → pdfY' + h' = pdfY + h
-    expect(
-      a.pdfY + a.h - (target.pdfY + target.h),
-      "BR drag keeps top edge",
-    ).toBeCloseTo(0, 0);
+    expect(a.pdfY + a.h - (target.pdfY + target.h), "BR drag keeps top edge").toBeCloseTo(0, 0);
 
     // Other images untouched.
     for (const b of before[0]) {
@@ -147,10 +137,7 @@ describe("image XObject resize via corner handles", () => {
     expect(a.w - target.w).toBeCloseTo(expectedDw, 0);
     expect(a.h - target.h).toBeCloseTo(expectedDh, 0);
     // TL anchor in PDF = BR anchor: right edge & bottom edge stay.
-    expect(
-      a.pdfX + a.w - (target.pdfX + target.w),
-      "TL drag keeps right edge",
-    ).toBeCloseTo(0, 0);
+    expect(a.pdfX + a.w - (target.pdfX + target.w), "TL drag keeps right edge").toBeCloseTo(0, 0);
     expect(a.pdfY - target.pdfY, "TL drag keeps bottom edge").toBeCloseTo(0, 0);
   });
 });

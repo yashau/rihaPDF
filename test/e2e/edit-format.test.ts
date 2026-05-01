@@ -40,9 +40,7 @@ describe("edit-existing-run formatting", () => {
       // source bold info via the same modules the app uses. We just
       // pick the visual title here and trust the toolbar's reported
       // initial state to tell us if it's bold.
-      for (const el of document.querySelectorAll(
-        '[data-page-index="0"] [data-run-id]',
-      )) {
+      for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
         out.push({
           id: el.getAttribute("data-run-id")!,
           text: (el.textContent ?? "").slice(0, 40),
@@ -60,37 +58,22 @@ describe("edit-existing-run formatting", () => {
     await h.page.waitForTimeout(300);
 
     const initialWeight = await h.page.evaluate(() =>
-      Number(
-        getComputedStyle(
-          document.querySelector("input[data-editor]")!,
-        ).fontWeight,
-      ),
+      Number(getComputedStyle(document.querySelector("input[data-editor]")!).fontWeight),
     );
     const initiallyBold = initialWeight >= 600;
 
     // Toggle bold.
-    await h.page
-      .locator('[data-edit-toolbar] button[aria-pressed]')
-      .first()
-      .click();
+    await h.page.locator("[data-edit-toolbar] button[aria-pressed]").first().click();
     await h.page.waitForTimeout(150);
     const afterToggleWeight = await h.page.evaluate(() =>
-      Number(
-        getComputedStyle(
-          document.querySelector("input[data-editor]")!,
-        ).fontWeight,
-      ),
+      Number(getComputedStyle(document.querySelector("input[data-editor]")!).fontWeight),
     );
     if (initiallyBold) {
-      expect(
-        afterToggleWeight,
-        "toggling bold off should drop the weight",
-      ).toBeLessThan(600);
+      expect(afterToggleWeight, "toggling bold off should drop the weight").toBeLessThan(600);
     } else {
-      expect(
-        afterToggleWeight,
-        "toggling bold on should raise the weight",
-      ).toBeGreaterThanOrEqual(600);
+      expect(afterToggleWeight, "toggling bold on should raise the weight").toBeGreaterThanOrEqual(
+        600,
+      );
     }
 
     // Press Enter to commit, then re-open the editor and confirm the
@@ -102,11 +85,7 @@ describe("edit-existing-run formatting", () => {
     await h.page.locator(`[data-run-id="${target!.id}"]`).click();
     await h.page.waitForTimeout(300);
     const reopenWeight = await h.page.evaluate(() =>
-      Number(
-        getComputedStyle(
-          document.querySelector("input[data-editor]")!,
-        ).fontWeight,
-      ),
+      Number(getComputedStyle(document.querySelector("input[data-editor]")!).fontWeight),
     );
     if (initiallyBold) {
       expect(
@@ -121,35 +100,28 @@ describe("edit-existing-run formatting", () => {
     }
   });
 
-
   test("toggling bold OFF on an inserted run sticks across reopen", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
 
     // Drop a text box and bold it.
-    await h.page.locator("button").filter({ hasText: /^\+ Text$/ }).click();
+    await h.page
+      .locator("button")
+      .filter({ hasText: /^\+ Text$/ })
+      .click();
     const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
     expect(pageBox).not.toBeNull();
-    await h.page.mouse.click(
-      pageBox!.x + pageBox!.width * 0.3,
-      pageBox!.y + pageBox!.height * 0.4,
-    );
+    await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.4);
     await h.page.waitForTimeout(200);
     const insertInput = h.page.locator("[data-text-insert-id] input").first();
     await insertInput.fill("Toggle me");
     await h.page.waitForTimeout(150);
 
     // First click on B → bold ON.
-    const boldBtn = () =>
-      h.page
-        .locator('[data-edit-toolbar] button[aria-pressed]')
-        .first();
+    const boldBtn = () => h.page.locator("[data-edit-toolbar] button[aria-pressed]").first();
     await boldBtn().click();
     await h.page.waitForTimeout(150);
     let weight = await h.page.evaluate(
-      () =>
-        getComputedStyle(
-          document.querySelector("[data-text-insert-id] input")!,
-        ).fontWeight,
+      () => getComputedStyle(document.querySelector("[data-text-insert-id] input")!).fontWeight,
     );
     expect(parseInt(weight, 10), "bold ON should make the input bold").toBeGreaterThanOrEqual(600);
 
@@ -157,10 +129,7 @@ describe("edit-existing-run formatting", () => {
     await boldBtn().click();
     await h.page.waitForTimeout(150);
     weight = await h.page.evaluate(
-      () =>
-        getComputedStyle(
-          document.querySelector("[data-text-insert-id] input")!,
-        ).fontWeight,
+      () => getComputedStyle(document.querySelector("[data-text-insert-id] input")!).fontWeight,
     );
     expect(
       parseInt(weight, 10),
@@ -179,10 +148,7 @@ describe("edit-existing-run formatting", () => {
     await h.page.locator("[data-text-insert-id]").first().click();
     await h.page.waitForTimeout(300);
     const reopenedWeight = await h.page.evaluate(
-      () =>
-        getComputedStyle(
-          document.querySelector("[data-text-insert-id] input")!,
-        ).fontWeight,
+      () => getComputedStyle(document.querySelector("[data-text-insert-id] input")!).fontWeight,
     );
     expect(
       parseInt(reopenedWeight, 10),

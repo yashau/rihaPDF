@@ -28,22 +28,22 @@ afterAll(async () => {
 });
 
 async function pixelAt(cx: number, cy: number) {
-  return h.page.evaluate(({ cx, cy }) => {
-    const canvas = document.querySelector(
-      '[data-page-index="0"] canvas',
-    ) as HTMLCanvasElement | null;
-    if (!canvas) return null;
-    const r = canvas.getBoundingClientRect();
-    const sx = canvas.width / r.width;
-    const sy = canvas.height / r.height;
-    const px = Math.round((cx - r.x) * sx);
-    const py = Math.round((cy - r.y) * sy);
-    if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height)
-      return null;
-    const ctx = canvas.getContext("2d")!;
-    const d = ctx.getImageData(px, py, 1, 1).data;
-    return [d[0], d[1], d[2], d[3]];
-  }, { cx, cy });
+  return h.page.evaluate(
+    ({ cx, cy }) => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-page-index="0"] canvas');
+      if (!canvas) return null;
+      const r = canvas.getBoundingClientRect();
+      const sx = canvas.width / r.width;
+      const sy = canvas.height / r.height;
+      const px = Math.round((cx - r.x) * sx);
+      const py = Math.round((cy - r.y) * sy);
+      if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return null;
+      const ctx = canvas.getContext("2d")!;
+      const d = ctx.getImageData(px, py, 1, 1).data;
+      return [d[0], d[1], d[2], d[3]];
+    },
+    { cx, cy },
+  );
 }
 
 describe("preview strip — original glyphs disappear, no white cover", () => {
@@ -68,7 +68,10 @@ describe("preview strip — original glyphs disappear, no white cover", () => {
     // The synthetic fixture fills the target with red ink — must not
     // be near-white before the drag.
     const beforeIsInk = !!before && before[0] + before[1] + before[2] < 600;
-    expect(beforeIsInk, `expected ink at centroid before drag, got rgba(${before?.join(",")})`).toBe(true);
+    expect(
+      beforeIsInk,
+      `expected ink at centroid before drag, got rgba(${before?.join(",")})`,
+    ).toBe(true);
 
     // Drag by a chunk so the move clearly clears the source rect.
     const DRAG_DX = 200;
@@ -88,15 +91,12 @@ describe("preview strip — original glyphs disappear, no white cover", () => {
     // Preview rebuild is debounced 150ms + a render pass; give it time.
     await h.page.waitForTimeout(900);
 
-    await h.page
-      .locator('[data-page-index="0"]')
-      .screenshot({
-        path: path.join(SCREENSHOTS, "preview-strip-after-drag.png"),
-      });
+    await h.page.locator('[data-page-index="0"]').screenshot({
+      path: path.join(SCREENSHOTS, "preview-strip-after-drag.png"),
+    });
 
     const after = await pixelAt(target.cx, target.cy);
-    const afterIsBackground =
-      !!after && after[0] > 230 && after[1] > 230 && after[2] > 230;
+    const afterIsBackground = !!after && after[0] > 230 && after[1] > 230 && after[2] > 230;
     expect(
       afterIsBackground,
       `expected page background at centroid after drag, got rgba(${after?.join(",")})`,

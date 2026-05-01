@@ -17,10 +17,7 @@ const root = path.resolve(__dirname, "..");
 const screenshotsDir = path.join(root, "scripts", "screenshots");
 fs.mkdirSync(screenshotsDir, { recursive: true });
 
-const PDF_PATH = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF_PATH = path.resolve(root, "test/fixtures/maldivian.pdf");
 const URL = "http://localhost:5173/";
 const STEP = process.argv[2] ?? "load";
 
@@ -48,9 +45,7 @@ page.on("pageerror", (err) => {
   pageErrors.push(`${err.name}: ${err.message}\n${err.stack ?? ""}`);
 });
 page.on("requestfailed", (req) => {
-  networkErrors.push(
-    `${req.method()} ${req.url()} -> ${req.failure()?.errorText ?? "?"}`,
-  );
+  networkErrors.push(`${req.method()} ${req.url()} -> ${req.failure()?.errorText ?? "?"}`);
 });
 
 async function snap(name) {
@@ -113,9 +108,7 @@ const longest = [...runMeta]
 if (longest) candidates.push({ label: "longest Thaana run", run: longest });
 
 const onPage1 = runMeta.filter((r) => r.id?.startsWith("p1-"));
-const titleish = onPage1
-  .filter((r) => isThaana(r.text) && r.h > 20)
-  .sort((a, b) => b.h - a.h)[0];
+const titleish = onPage1.filter((r) => isThaana(r.text) && r.h > 20).sort((a, b) => b.h - a.h)[0];
 if (titleish && titleish.id !== longest?.id) {
   candidates.push({ label: "tallest Thaana run (title)", run: titleish });
 }
@@ -186,8 +179,7 @@ for (const { label, run } of candidates) {
       )
     : false;
 
-  const verdict =
-    editorMounted && valueMatch && overlapsBefore ? "OK" : "FAIL";
+  const verdict = editorMounted && valueMatch && overlapsBefore ? "OK" : "FAIL";
   results.push({
     label,
     run,
@@ -244,13 +236,14 @@ if (STEP === "move" || STEP === "save") {
   // Round-trip: edit several runs to exercise the save pipeline at
   // varying lengths / positions (RTL Thaana title, label with colon,
   // mid-paragraph long Thaana). Save, verify download.
-  const targets = STEP === "move"
-    ? [{ id: "p1-r5", text: "ބަދަލު" }]
-    : [
-        { id: "p1-r2", text: "ތެސްޓު ބަދަލު" },
-        { id: "p1-r5", text: "ބަދަލުކޮށްފި:" },
-        { id: "p1-r10", text: "ބަދަލު މަޖިލިސް ތާނަ" },
-      ];
+  const targets =
+    STEP === "move"
+      ? [{ id: "p1-r5", text: "ބަދަލު" }]
+      : [
+          { id: "p1-r2", text: "ތެސްޓު ބަދަލު" },
+          { id: "p1-r5", text: "ބަދަލުކޮށްފި:" },
+          { id: "p1-r10", text: "ބަދަލު މަޖިލިސް ތާނަ" },
+        ];
   for (const t of targets) {
     const target = page.locator(`[data-run-id="${t.id}"]`);
     if ((await target.count()) === 0) {
@@ -260,9 +253,7 @@ if (STEP === "move" || STEP === "save") {
     await target.scrollIntoViewIfNeeded();
     await target.click({ timeout: 3_000 });
     await page.waitForTimeout(200);
-    const editorInput = page
-      .locator(`input[data-editor][data-run-id="${t.id}"]`)
-      .first();
+    const editorInput = page.locator(`input[data-editor][data-run-id="${t.id}"]`).first();
     console.log(`-> save: ${t.id} ← "${t.text}"`);
     await editorInput.fill(t.text);
     await editorInput.press("Enter");
@@ -270,10 +261,7 @@ if (STEP === "move" || STEP === "save") {
   }
 
   const downloadPromise = page.waitForEvent("download", { timeout: 20_000 });
-  await page
-    .locator("button")
-    .filter({ hasText: /Save/ })
-    .click({ timeout: 3_000 });
+  await page.locator("button").filter({ hasText: /Save/ }).click({ timeout: 3_000 });
   try {
     const dl = await downloadPromise;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -301,9 +289,7 @@ for (const r of results) {
   console.log(
     `   editor    = mounted:${r.editorMounted} value:"${(r.editorValue ?? "(none)").slice(0, 60)}"`,
   );
-  console.log(
-    `   match     = textsEqual:${r.valueMatch} overlap:${r.overlapsBefore}`,
-  );
+  console.log(`   match     = textsEqual:${r.valueMatch} overlap:${r.overlapsBefore}`);
   if (r.beforeBox) {
     console.log(
       `   span box  = ${[r.beforeBox.x, r.beforeBox.y, r.beforeBox.width, r.beforeBox.height].map((n) => Math.round(n)).join(",")}`,

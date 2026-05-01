@@ -45,31 +45,27 @@ describe("inserting net-new content", () => {
     fs.writeFileSync(tmpPng, RED_PIXEL_PNG);
 
     // Click "+ Text" → drop on page → type sentinel → Enter.
-    await h.page.locator("button").filter({ hasText: /^\+ Text$/ }).click();
+    await h.page
+      .locator("button")
+      .filter({ hasText: /^\+ Text$/ })
+      .click();
     const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
     expect(pageBox).not.toBeNull();
-    await h.page.mouse.click(
-      pageBox!.x + pageBox!.width * 0.3,
-      pageBox!.y + pageBox!.height * 0.3,
-    );
+    await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.3);
     await h.page.waitForTimeout(200);
-    const insertedTextInput = h.page
-      .locator("[data-text-insert-id] input")
-      .first();
+    const insertedTextInput = h.page.locator("[data-text-insert-id] input").first();
     await insertedTextInput.fill(SENTINEL);
     await insertedTextInput.press("Enter");
     await h.page.waitForTimeout(200);
 
     // Click "+ Image" → upload tmp PNG → click on page to place.
-    await h.page.locator("button").filter({ hasText: /^\+ Image/ }).click();
     await h.page
-      .locator('input[type="file"][accept*="image"]')
-      .setInputFiles(tmpPng);
+      .locator("button")
+      .filter({ hasText: /^\+ Image/ })
+      .click();
+    await h.page.locator('input[type="file"][accept*="image"]').setInputFiles(tmpPng);
     await h.page.waitForTimeout(400);
-    await h.page.mouse.click(
-      pageBox!.x + pageBox!.width * 0.6,
-      pageBox!.y + pageBox!.height * 0.6,
-    );
+    await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.6, pageBox!.y + pageBox!.height * 0.6);
     await h.page.waitForTimeout(300);
 
     // The inserted-image overlay should be carrying a real data: URL
@@ -83,11 +79,9 @@ describe("inserting net-new content", () => {
     expect(overlayBg, "inserted-image overlay must paint a backgroundImage").toMatch(
       /url\(.*data:image\/(png|jpeg);base64,/,
     );
-    await h.page
-      .locator('[data-page-index="0"]')
-      .screenshot({
-        path: path.join(SCREENSHOTS, "insert-overlay.png"),
-      });
+    await h.page.locator('[data-page-index="0"]').screenshot({
+      path: path.join(SCREENSHOTS, "insert-overlay.png"),
+    });
 
     // Save + reload.
     const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
@@ -100,14 +94,13 @@ describe("inserting net-new content", () => {
 
     // Verify text + image count via the app's own modules.
     const checks = await h.page.evaluate(async (b64) => {
-      const importer = new Function("p", "return import(p)") as (
-        p: string,
-      ) => Promise<unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const sourceImages = (await importer("/src/lib/sourceImages.ts")) as
-        typeof import("../../src/lib/sourceImages");
-      const pdfMod = (await importer("/src/lib/pdf.ts")) as
-        typeof import("../../src/lib/pdf");
+      const sourceImages = (await importer(
+        "/src/lib/sourceImages.ts",
+      )) as typeof import("../../src/lib/sourceImages");
+      const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
       const imagesByPage = await sourceImages.extractPageImages(bytes.buffer);
       const doc = await pdfMod.loadPdf(bytes.buffer.slice(0));
       const p = await doc.getPage(1);
@@ -130,12 +123,12 @@ describe("inserting net-new content", () => {
 async function captureImageCount(pdfPath: string): Promise<number> {
   const bytes = fs.readFileSync(pdfPath);
   return h.page.evaluate(async (b64) => {
-    const importer = new Function("p", "return import(p)") as (
-      p: string,
-    ) => Promise<unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const mod = (await importer("/src/lib/sourceImages.ts")) as
-      typeof import("../../src/lib/sourceImages");
+    const mod = (await importer(
+      "/src/lib/sourceImages.ts",
+    )) as typeof import("../../src/lib/sourceImages");
     const images = await mod.extractPageImages(bytes.buffer);
     return images[0]?.length ?? 0;
   }, bytes.toString("base64"));

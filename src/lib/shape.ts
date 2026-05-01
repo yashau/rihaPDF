@@ -38,7 +38,10 @@ export type ShapeResult = {
 
 type Hb = {
   createBlob(buf: ArrayBuffer): { destroy(): void };
-  createFace(blob: { destroy(): void }, index: number): {
+  createFace(
+    blob: { destroy(): void },
+    index: number,
+  ): {
     destroy(): void;
     upem?: number;
     get_upem?(): number;
@@ -70,13 +73,12 @@ let hbPromise: Promise<Hb> | null = null;
 async function getHb(): Promise<Hb> {
   if (hbPromise) return hbPromise;
   hbPromise = (async () => {
-    const factory = hbModuleFactory as (
-      opts: { locateFile?: (f: string) => string },
-    ) => Promise<unknown>;
+    const factory = hbModuleFactory as (opts: {
+      locateFile?: (f: string) => string;
+    }) => Promise<unknown>;
     const wrap = hbjsWrap as (instance: unknown) => Hb;
     const instance = await factory({
-      locateFile: (file: string) =>
-        file.endsWith(".wasm") ? hbWasmUrl : file,
+      locateFile: (file: string) => (file.endsWith(".wasm") ? hbWasmUrl : file),
     });
     return wrap(instance);
   })();
@@ -105,8 +107,7 @@ async function getFont(fontBytes: Uint8Array): Promise<HbFont> {
   ) as ArrayBuffer;
   const blob = hb.createBlob(buf);
   const face = hb.createFace(blob, 0);
-  const upem =
-    typeof face.get_upem === "function" ? face.get_upem() : (face.upem ?? 1000);
+  const upem = typeof face.get_upem === "function" ? face.get_upem() : (face.upem ?? 1000);
   const font = hb.createFont(face);
   // Best-effort metrics — refined later via fontkit if needed.
   const ascender = Math.round(upem * 0.85);
@@ -157,10 +158,8 @@ export async function shapeWithFallback(
   // characters that share the same font assignment. Iterate by code point
   // (handle surrogate pairs by step-by-2 when needed; Thaana/Latin/Arabic
   // here is all in BMP so simple per-char is fine).
-  const chunks: { font: typeof primary | typeof fallback; chars: string }[] =
-    [];
-  let current: { font: typeof primary | typeof fallback; chars: string } | null =
-    null;
+  const chunks: { font: typeof primary | typeof fallback; chars: string }[] = [];
+  let current: { font: typeof primary | typeof fallback; chars: string } | null = null;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const useFallback = missingClusters.has(i);
@@ -182,10 +181,7 @@ export async function shapeWithFallback(
   return result;
 }
 
-export async function shapeRtlThaana(
-  text: string,
-  fontBytes: Uint8Array,
-): Promise<ShapeResult> {
+export async function shapeRtlThaana(text: string, fontBytes: Uint8Array): Promise<ShapeResult> {
   const hb = await getHb();
   const f = await getFont(fontBytes);
   const buf = hb.createBuffer();
@@ -223,10 +219,7 @@ export async function shapeRtlThaana(
  * direction-guess via guessSegmentProperties handles it; we just give it a
  * starting hint.
  */
-export async function shapeAuto(
-  text: string,
-  fontBytes: Uint8Array,
-): Promise<ShapeResult> {
+export async function shapeAuto(text: string, fontBytes: Uint8Array): Promise<ShapeResult> {
   const hasRtl = /[֐-׿؀-ۿހ-޿]/u.test(text);
   if (hasRtl) return shapeRtlThaana(text, fontBytes);
   // Pure-LTR fallback.

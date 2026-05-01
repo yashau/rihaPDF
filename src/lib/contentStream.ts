@@ -38,9 +38,7 @@ export type ContentOp = {
 };
 
 const WS = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
-const DELIMITER = new Set([
-  0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x25,
-]);
+const DELIMITER = new Set([0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x25]);
 
 function isWS(b: number) {
   return WS.has(b);
@@ -108,15 +106,32 @@ class Tokenizer {
         if (this.eof()) break;
         const n = this.bytes[this.pos++];
         switch (n) {
-          case 0x6e: out.push(0x0a); break; // \n
-          case 0x72: out.push(0x0d); break; // \r
-          case 0x74: out.push(0x09); break; // \t
-          case 0x62: out.push(0x08); break; // \b
-          case 0x66: out.push(0x0c); break; // \f
-          case 0x28: out.push(0x28); break; // \(
-          case 0x29: out.push(0x29); break; // \)
-          case 0x5c: out.push(0x5c); break; // \\
-          case 0x0a: break; // line continuation
+          case 0x6e:
+            out.push(0x0a);
+            break; // \n
+          case 0x72:
+            out.push(0x0d);
+            break; // \r
+          case 0x74:
+            out.push(0x09);
+            break; // \t
+          case 0x62:
+            out.push(0x08);
+            break; // \b
+          case 0x66:
+            out.push(0x0c);
+            break; // \f
+          case 0x28:
+            out.push(0x28);
+            break; // \(
+          case 0x29:
+            out.push(0x29);
+            break; // \)
+          case 0x5c:
+            out.push(0x5c);
+            break; // \\
+          case 0x0a:
+            break; // line continuation
           case 0x0d:
             if (!this.eof() && this.bytes[this.pos] === 0x0a) this.pos++;
             break;
@@ -163,7 +178,7 @@ class Tokenizer {
         return new Uint8Array(out);
       }
       if (isWS(b)) continue;
-      let v = -1;
+      let v: number;
       if (b >= 0x30 && b <= 0x39) v = b - 0x30;
       else if (b >= 0x41 && b <= 0x46) v = b - 0x41 + 10;
       else if (b >= 0x61 && b <= 0x66) v = b - 0x61 + 10;
@@ -190,10 +205,8 @@ class Tokenizer {
       this.pos++;
     }
     // Names support # hex escapes; for content streams we rarely see them.
-    let raw = new TextDecoder("ascii").decode(
-      this.bytes.slice(start, this.pos),
-    );
-    raw = raw.replace(/#([0-9a-fA-F]{2})/g, (_, hex) =>
+    let raw = new TextDecoder("ascii").decode(this.bytes.slice(start, this.pos));
+    raw = raw.replace(/#([0-9a-fA-F]{2})/g, (_, hex: string) =>
       String.fromCharCode(parseInt(hex, 16)),
     );
     return raw;
@@ -254,9 +267,7 @@ class Tokenizer {
       throw new Error(`Bad number token: ${raw}`);
     }
     // Otherwise it's a bareword — operators are handled by parseContentStream.
-    throw new Error(
-      `Unexpected token start byte 0x${b.toString(16)} at ${this.pos}`,
-    );
+    throw new Error(`Unexpected token start byte 0x${b.toString(16)} at ${this.pos}`);
   }
 }
 
@@ -269,13 +280,7 @@ export function parseContentStream(bytes: Uint8Array): ContentOp[] {
     tk.skipWS();
     if (tk.eof()) break;
     const b = tk.peek();
-    if (
-      b === 0x28 ||
-      b === 0x3c ||
-      b === 0x5b ||
-      b === 0x2f ||
-      isDigitOrSign(b)
-    ) {
+    if (b === 0x28 || b === 0x3c || b === 0x5b || b === 0x2f || isDigitOrSign(b)) {
       operands.push(tk.readToken());
       continue;
     }
@@ -396,12 +401,8 @@ export function findTextShows(ops: ContentOp[]): TextShowMatch[] {
   let fontSize = 0;
   let textRenderingMode = 0;
   // Identity matrix.
-  let tm: [number, number, number, number, number, number] = [
-    1, 0, 0, 1, 0, 0,
-  ];
-  let tlm: [number, number, number, number, number, number] = [
-    1, 0, 0, 1, 0, 0,
-  ];
+  let tm: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
+  let tlm: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
 
   // Text state lives inside the graphics state, so q/Q DOES push and
   // pop it (PDF §8.4.1 + §9.3.1 — `Tr`, `Tf`, `Tfs` are listed under

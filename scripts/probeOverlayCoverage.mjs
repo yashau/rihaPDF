@@ -22,10 +22,7 @@ import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 const SCREENSHOTS = path.join(root, "scripts", "screenshots");
 fs.mkdirSync(SCREENSHOTS, { recursive: true });
 setTimeout(() => process.exit(2), 240_000).unref?.();
@@ -42,9 +39,7 @@ await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles
 await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
 await page.waitForTimeout(3_500);
 
-const numPages = await page.evaluate(() =>
-  document.querySelectorAll("[data-page-index]").length,
-);
+const numPages = await page.evaluate(() => document.querySelectorAll("[data-page-index]").length);
 console.log(`PDF has ${numPages} pages`);
 
 const issues = [];
@@ -108,7 +103,11 @@ for (let pi = 0; pi < numPages; pi++) {
         const idx = cy * cw + cx;
         if (!grid[idx] || visited[idx]) continue;
         // BFS
-        let minX = cx, maxX = cx, minY = cy, maxY = cy, count = 0;
+        let minX = cx,
+          maxX = cx,
+          minY = cy,
+          maxY = cy,
+          count = 0;
         const stack = [idx];
         visited[idx] = 1;
         while (stack.length) {
@@ -120,8 +119,14 @@ for (let pi = 0; pi < numPages; pi++) {
           if (y < minY) minY = y;
           if (y > maxY) maxY = y;
           count++;
-          for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-            const nx = x + dx, ny = y + dy;
+          for (const [dx, dy] of [
+            [-1, 0],
+            [1, 0],
+            [0, -1],
+            [0, 1],
+          ]) {
+            const nx = x + dx,
+              ny = y + dy;
             if (nx < 0 || ny < 0 || nx >= cw || ny >= ch) continue;
             const ni = ny * cw + nx;
             if (grid[ni] && !visited[ni]) {
@@ -160,17 +165,18 @@ for (let pi = 0; pi < numPages; pi++) {
 
   // Step B: for each cluster centroid, check if a data-run-id exists
   // under that point.
-  const coverage = await page.evaluate(({ pts, pageIndex }) => {
-    const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
-    if (!host) return [];
-    return pts.map(({ cx, cy }) => {
-      const els = document.elementsFromPoint(cx, cy);
-      const run = els.find(
-        (e) => e instanceof HTMLElement && e.dataset.runId,
-      );
-      return run?.dataset?.runId ?? null;
-    });
-  }, { pts: clusters.map((c) => ({ cx: c.cx, cy: c.cy })), pageIndex: pi });
+  const coverage = await page.evaluate(
+    ({ pts, pageIndex }) => {
+      const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
+      if (!host) return [];
+      return pts.map(({ cx, cy }) => {
+        const els = document.elementsFromPoint(cx, cy);
+        const run = els.find((e) => e instanceof HTMLElement && e.dataset.runId);
+        return run?.dataset?.runId ?? null;
+      });
+    },
+    { pts: clusters.map((c) => ({ cx: c.cx, cy: c.cy })), pageIndex: pi },
+  );
 
   // Filter out false-positive clusters before scoring coverage:
   //   - Bitmaps embedded as ink in the PDF (the bismillah calligraphy
@@ -230,9 +236,9 @@ for (let pi = 0; pi < numPages; pi++) {
     const t = r.textRect;
     if (t.w === 0 || t.h === 0) continue;
     const leftSlack = o.x - t.x;
-    const rightSlack = (o.x + o.w) - (t.x + t.w);
+    const rightSlack = o.x + o.w - (t.x + t.w);
     const topSlack = o.y - t.y;
-    const bottomSlack = (o.y + o.h) - (t.y + t.h);
+    const bottomSlack = o.y + o.h - (t.y + t.h);
     if (leftSlack < -8 || rightSlack < -8 || topSlack < -8 || bottomSlack < -8) {
       misaligned++;
       misalignedIds.push(r.id);
@@ -251,9 +257,7 @@ for (let pi = 0; pi < numPages; pi++) {
   console.log(
     `page ${pi + 1}: ${runs.length} runs, ${misaligned} misaligned overlays, ` +
       `glyph-coverage ${covered}/${clusters.length} (${
-        clusters.length > 0
-          ? ((covered / clusters.length) * 100).toFixed(1)
-          : "n/a"
+        clusters.length > 0 ? ((covered / clusters.length) * 100).toFixed(1) : "n/a"
       }%)`,
   );
 
@@ -358,7 +362,10 @@ for (let pi = 0; pi < numPages; pi++) {
       for (let cx = 0; cx < cw; cx++) {
         const idx = cy * cw + cx;
         if (!grid[idx] || visited[idx]) continue;
-        let minX = cx, maxX = cx, minY = cy, maxY = cy;
+        let minX = cx,
+          maxX = cx,
+          minY = cy,
+          maxY = cy;
         const stack = [idx];
         visited[idx] = 1;
         while (stack.length) {
@@ -369,8 +376,14 @@ for (let pi = 0; pi < numPages; pi++) {
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
           if (y > maxY) maxY = y;
-          for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-            const nx = x + dx, ny = y + dy;
+          for (const [dx, dy] of [
+            [-1, 0],
+            [1, 0],
+            [0, -1],
+            [0, 1],
+          ]) {
+            const nx = x + dx,
+              ny = y + dy;
             if (nx < 0 || ny < 0 || nx >= cw || ny >= ch) continue;
             const ni = ny * cw + nx;
             if (grid[ni] && !visited[ni]) {
@@ -407,57 +420,58 @@ for (let pi = 0; pi < numPages; pi++) {
   //       the user perceives the overlay as broken at that spot.
   // We also sample the centroid of every dark glyph cluster on the
   // canvas — those are the real "I clicked on what I see" probes.
-  const sampleSet = await page.evaluate(({ pageIndex, glyphCentroids }) => {
-    const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
-    if (!host) return [];
-    const out = [];
-    for (const el of host.querySelectorAll("[data-run-id]")) {
-      const id = el.getAttribute("data-run-id");
-      const overlay = el.getBoundingClientRect();
-      let textRect = overlay;
-      try {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const r = range.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) textRect = r;
-      } catch {
-        /* */
-      }
-      const cy = overlay.y + overlay.height / 2;
-      for (let i = 0; i < 5; i++) {
-        const t = (i + 1) / 6;
+  const sampleSet = await page.evaluate(
+    ({ pageIndex, glyphCentroids }) => {
+      const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
+      if (!host) return [];
+      const out = [];
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const id = el.getAttribute("data-run-id");
+        const overlay = el.getBoundingClientRect();
+        let textRect = overlay;
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const r = range.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) textRect = r;
+        } catch {
+          /* */
+        }
+        const cy = overlay.y + overlay.height / 2;
+        for (let i = 0; i < 5; i++) {
+          const t = (i + 1) / 6;
+          out.push({
+            id,
+            cx: overlay.x + overlay.width * t,
+            cy,
+            desc: `overlay-t${t.toFixed(2)}`,
+          });
+        }
+        // Plus one mid-text-rect point so we exercise overflow.
         out.push({
           id,
-          cx: overlay.x + overlay.width * t,
+          cx: textRect.x + textRect.width * 0.5,
           cy,
-          desc: `overlay-t${t.toFixed(2)}`,
+          desc: "text-mid",
         });
       }
-      // Plus one mid-text-rect point so we exercise overflow.
-      out.push({
-        id,
-        cx: textRect.x + textRect.width * 0.5,
-        cy,
-        desc: "text-mid",
-      });
-    }
-    // Glyph-cluster centroid clicks — caller passes in canvas-detected
-    // dark clusters from the previous step. Expected id is whatever
-    // run currently sits under that point (may be null if uncovered).
-    for (const g of glyphCentroids) {
-      const els = document.elementsFromPoint(g.cx, g.cy);
-      const run = els.find(
-        (e) => e instanceof HTMLElement && e.dataset.runId,
-      );
-      out.push({
-        id: run?.dataset?.runId ?? null,
-        cx: g.cx,
-        cy: g.cy,
-        desc: "glyph-centroid",
-      });
-    }
-    return out;
-  }, { pageIndex: pi, glyphCentroids: allGlyphCentroidsByPage.get(pi) ?? [] });
+      // Glyph-cluster centroid clicks — caller passes in canvas-detected
+      // dark clusters from the previous step. Expected id is whatever
+      // run currently sits under that point (may be null if uncovered).
+      for (const g of glyphCentroids) {
+        const els = document.elementsFromPoint(g.cx, g.cy);
+        const run = els.find((e) => e instanceof HTMLElement && e.dataset.runId);
+        out.push({
+          id: run?.dataset?.runId ?? null,
+          cx: g.cx,
+          cy: g.cy,
+          desc: "glyph-centroid",
+        });
+      }
+      return out;
+    },
+    { pageIndex: pi, glyphCentroids: allGlyphCentroidsByPage.get(pi) ?? [] },
+  );
 
   for (const c of sampleSet) {
     totalClickAttempts++;
@@ -475,15 +489,8 @@ for (let pi = 0; pi < numPages; pi++) {
       let bestArea = 0;
       for (const el of document.querySelectorAll("[data-run-id]")) {
         const r = el.getBoundingClientRect();
-        const ix = Math.max(
-          0,
-          Math.min(r.x + r.width, er.x + er.width) - Math.max(r.x, er.x),
-        );
-        const iy = Math.max(
-          0,
-          Math.min(r.y + r.height, er.y + er.height) -
-            Math.max(r.y, er.y),
-        );
+        const ix = Math.max(0, Math.min(r.x + r.width, er.x + er.width) - Math.max(r.x, er.x));
+        const iy = Math.max(0, Math.min(r.y + r.height, er.y + er.height) - Math.max(r.y, er.y));
         const area = ix * iy;
         if (area > bestArea) {
           bestArea = area;
@@ -519,16 +526,12 @@ for (let pi = 0; pi < numPages; pi++) {
 console.log(`\n=== OVERALL ===`);
 console.log(
   `Glyph-cluster coverage: ${totalCoveredClusters}/${totalGlyphClusters} (${
-    totalGlyphClusters > 0
-      ? ((totalCoveredClusters / totalGlyphClusters) * 100).toFixed(1)
-      : "n/a"
+    totalGlyphClusters > 0 ? ((totalCoveredClusters / totalGlyphClusters) * 100).toFixed(1) : "n/a"
   }%)`,
 );
 console.log(
   `Click hits: ${totalClickHits}/${totalClickAttempts} (${
-    totalClickAttempts > 0
-      ? ((totalClickHits / totalClickAttempts) * 100).toFixed(1)
-      : "n/a"
+    totalClickAttempts > 0 ? ((totalClickHits / totalClickAttempts) * 100).toFixed(1) : "n/a"
   }%)`,
 );
 if (clickIssues.length) {
@@ -539,11 +542,7 @@ if (clickIssues.length) {
     );
   }
 }
-console.log(
-  `Misaligned overlays: ${
-    issues.filter((i) => i.kind === "MISALIGNED").length
-  }`,
-);
+console.log(`Misaligned overlays: ${issues.filter((i) => i.kind === "MISALIGNED").length}`);
 
 console.log("\n=== Worst-misaligned runs (top 12) ===");
 for (const i of issues

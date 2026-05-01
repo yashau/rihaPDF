@@ -2,16 +2,9 @@
 // Used by scripts/verifyInsertFormat.mjs to confirm the saved file
 // references the right StandardFont variant for an inserted run.
 
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRef,
-} from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
 
-export async function readBaseFonts(
-  pdfBytes: ArrayBuffer,
-): Promise<string[][]> {
+export async function readBaseFonts(pdfBytes: ArrayBuffer): Promise<string[][]> {
   const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const out: string[][] = [];
   for (const page of doc.getPages()) {

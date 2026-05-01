@@ -28,14 +28,7 @@
 // the extraction-side code in `pdf.ts` doesn't change.
 
 import fontkit from "@pdf-lib/fontkit";
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRawStream,
-  PDFRef,
-  decodePDFRawStream,
-} from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 
 export type GlyphMap = {
   /** `cid` → first Unicode codepoint that maps to it. For Identity-H
@@ -51,17 +44,11 @@ export type GlyphMap = {
 /** Resolve the dict that holds the actual TrueType binary stream for a
  *  PDF font. For Type 0 (composite) fonts the FontDescriptor lives one
  *  level deeper, on the descendant font. */
-function fontDescriptorOf(
-  fontDict: PDFDict,
-  doc: PDFDocument,
-): PDFDict | null {
+function fontDescriptorOf(fontDict: PDFDict, doc: PDFDocument): PDFDict | null {
   const subtype = String(fontDict.lookup(PDFName.of("Subtype")) ?? "");
   if (subtype === "/Type0") {
     const desc = fontDict.lookup(PDFName.of("DescendantFonts"));
-    const arr =
-      desc && "asArray" in desc
-        ? (desc as { asArray(): unknown[] }).asArray()
-        : null;
+    const arr = desc && "asArray" in desc ? (desc as { asArray(): unknown[] }).asArray() : null;
     const first = arr?.[0];
     let descendant: PDFDict | null = null;
     if (first instanceof PDFRef) {
@@ -78,9 +65,7 @@ function fontDescriptorOf(
   return d instanceof PDFDict ? d : null;
 }
 
-function fontFileBytesOf(
-  descriptor: PDFDict,
-): Uint8Array | null {
+function fontFileBytesOf(descriptor: PDFDict): Uint8Array | null {
   // FontFile2 = TrueType, FontFile3 = OpenType/CFF, FontFile = Type1.
   const file =
     descriptor.lookup(PDFName.of("FontFile2")) ??
@@ -280,10 +265,7 @@ function buildFontBinaryCmap(fontBytes: Uint8Array): Map<number, number> {
 /** Build the CID → Unicode map for one PDF font. Prefers the PDF's
  *  `/ToUnicode` CMap (with fili-gap patching), falls back to the
  *  embedded font's binary cmap. */
-function buildCidToUnicode(
-  fontDict: PDFDict,
-  doc: PDFDocument,
-): Map<number, number> {
+function buildCidToUnicode(fontDict: PDFDict, doc: PDFDocument): Map<number, number> {
   const tu = fontDict.lookup(PDFName.of("ToUnicode"));
   if (tu instanceof PDFRawStream) {
     const text = new TextDecoder("latin1").decode(decodePDFRawStream(tu).decode());
@@ -305,10 +287,7 @@ function buildCidToUnicode(
  * Extract a per-page CID → Unicode map keyed by the page's font resource
  * name (the `/F<n>` you see in `Tf` operators).
  */
-export function extractPageGlyphMaps(
-  doc: PDFDocument,
-  pageIndex: number,
-): Map<string, GlyphMap> {
+export function extractPageGlyphMaps(doc: PDFDocument, pageIndex: number): Map<string, GlyphMap> {
   const result = new Map<string, GlyphMap>();
   const page = doc.getPages()[pageIndex];
   if (!page) return result;

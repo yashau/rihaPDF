@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
-import type {
-  ImageInsertion,
-  TextInsertion,
-} from "../lib/insertions";
+import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { ToolMode } from "../App";
 import { FONTS } from "../lib/fonts";
 
@@ -94,57 +91,53 @@ export function PdfPage({
   /** While dragging a run, the live offset for the dragged run. We keep
    *  it in local state during the drag so we don't churn the parent's
    *  edits Map on every mousemove. */
-  const [drag, setDrag] = useState<
-    | { runId: string; startX: number; startY: number; dx: number; dy: number }
-    | null
-  >(null);
+  const [drag, setDrag] = useState<{
+    runId: string;
+    startX: number;
+    startY: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
   /** Same idea for images. Separate state because image drags don't
    *  have the click-suppression / edit handoff that text runs do.
    *  Carries a resize corner when the gesture is a corner drag — null
    *  means whole-image translate. */
-  const [imageDrag, setImageDrag] = useState<
-    | {
-        imageId: string;
-        startX: number;
-        startY: number;
-        dx: number;
-        dy: number;
-        dw: number;
-        dh: number;
-        corner: ResizeCorner | null;
-      }
-    | null
-  >(null);
+  const [imageDrag, setImageDrag] = useState<{
+    imageId: string;
+    startX: number;
+    startY: number;
+    dx: number;
+    dy: number;
+    dw: number;
+    dh: number;
+    corner: ResizeCorner | null;
+  } | null>(null);
   /** Set to the runId during a drag and cleared a tick after mouseup, used
    *  to suppress the click-to-edit that would otherwise fire after a drag
    *  (Playwright's synthesised events don't match the browser's native
    *  click-suppression on movement, so we guard explicitly). */
   const justDraggedRef = useRef<string | null>(null);
 
+  // Mounts the live canvas (preview or original) into our DOM slot and
+  // sizes it. Mutating the DOM canvas's style is the whole point of
+  // this effect — react-hooks/immutability would have us copy first,
+  // but the canvas is a render artefact, not an owned prop value.
+  /* eslint-disable-next-line react-hooks/immutability */
   useEffect(() => {
-    const node = containerRef.current?.querySelector(
-      "[data-canvas-slot]",
-    ) as HTMLElement | null;
+    const node = containerRef.current?.querySelector("[data-canvas-slot]") as HTMLElement | null;
     if (!node) return;
-    // Paint the preview canvas (= original content stream minus the
-    // items the user is currently editing/moving) when one is
-    // available; otherwise fall back to the original render. Either
-    // way we size to the same viewport so the HTML overlay positions
-    // line up.
     const liveCanvas = previewCanvas ?? page.canvas;
     node.replaceChildren(liveCanvas);
+    /* eslint-disable react-hooks/immutability */
     liveCanvas.style.display = "block";
     liveCanvas.style.width = `${page.viewWidth}px`;
     liveCanvas.style.height = `${page.viewHeight}px`;
+    /* eslint-enable react-hooks/immutability */
   }, [page, previewCanvas]);
 
   /** Start a drag on a run. The handlers track movement on the window so
    *  the drag continues even if the cursor leaves the original span. */
-  const startDrag = (
-    runId: string,
-    e: React.MouseEvent,
-    base: { dx: number; dy: number },
-  ) => {
+  const startDrag = (runId: string, e: React.MouseEvent, base: { dx: number; dy: number }) => {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
@@ -154,11 +147,7 @@ export function PdfPage({
     const onMove = (ev: MouseEvent) => {
       const newDx = base.dx + (ev.clientX - startX);
       const newDy = base.dy + (ev.clientY - startY);
-      setDrag((prev) =>
-        prev && prev.runId === runId
-          ? { ...prev, dx: newDx, dy: newDy }
-          : prev,
-      );
+      setDrag((prev) => (prev && prev.runId === runId ? { ...prev, dx: newDx, dy: newDy } : prev));
     };
     const onUp = (ev: MouseEvent) => {
       window.removeEventListener("mousemove", onMove);
@@ -212,9 +201,7 @@ export function PdfPage({
       const newDx = base.dx + (ev.clientX - startX);
       const newDy = base.dy + (ev.clientY - startY);
       setImageDrag((prev) =>
-        prev && prev.imageId === imageId
-          ? { ...prev, dx: newDx, dy: newDy }
-          : prev,
+        prev && prev.imageId === imageId ? { ...prev, dx: newDx, dy: newDy } : prev,
       );
     };
     const onUp = (ev: MouseEvent) => {
@@ -281,10 +268,22 @@ export function PdfPage({
       let nDw = base.dw;
       let nDh = base.dh;
       switch (corner) {
-        case "br": nDw = base.dw + dxV; nDh = base.dh + dyV; break;
-        case "tr": nDw = base.dw + dxV; nDh = base.dh - dyV; break;
-        case "tl": nDw = base.dw - dxV; nDh = base.dh - dyV; break;
-        case "bl": nDw = base.dw - dxV; nDh = base.dh + dyV; break;
+        case "br":
+          nDw = base.dw + dxV;
+          nDh = base.dh + dyV;
+          break;
+        case "tr":
+          nDw = base.dw + dxV;
+          nDh = base.dh - dyV;
+          break;
+        case "tl":
+          nDw = base.dw - dxV;
+          nDh = base.dh - dyV;
+          break;
+        case "bl":
+          nDw = base.dw - dxV;
+          nDh = base.dh + dyV;
+          break;
       }
       // Step 2: clamp size so the viewport bbox stays ≥ MIN_VIEW.
       if (origW + nDw < MIN_VIEW) nDw = MIN_VIEW - origW;
@@ -304,9 +303,7 @@ export function PdfPage({
         nDy = base.dy + (nDh - base.dh);
       }
       setImageDrag((prev) =>
-        prev && prev.imageId === imageId
-          ? { ...prev, dx: nDx, dy: nDy, dw: nDw, dh: nDh }
-          : prev,
+        prev && prev.imageId === imageId ? { ...prev, dx: nDx, dy: nDy, dw: nDw, dh: nDh } : prev,
       );
     };
     const onUp = () => {
@@ -391,9 +388,7 @@ export function PdfPage({
                 key={run.id}
                 run={run}
                 pageScale={page.scale}
-                initial={
-                  editedValue ?? { text: run.text, style: undefined }
-                }
+                initial={editedValue ?? { text: run.text, style: undefined }}
                 onCommit={(value) => {
                   // Preserve any existing move offset (dx/dy) — the
                   // EditField only owns text + style, so we layer back
@@ -403,8 +398,7 @@ export function PdfPage({
                     dx: editedValue?.dx ?? 0,
                     dy: editedValue?.dy ?? 0,
                   };
-                  const hasOffset =
-                    (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
+                  const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
                   if (value.text !== run.text || value.style || hasOffset) {
                     onEdit(run.id, merged);
                   }
@@ -465,8 +459,7 @@ export function PdfPage({
                     fontSize: `${style.fontSize ?? run.height}px`,
                     lineHeight: `${run.bounds.height}px`,
                     fontWeight: (style.bold ?? run.bold) ? 700 : 400,
-                    fontStyle:
-                      (style.italic ?? run.italic) ? "italic" : "normal",
+                    fontStyle: (style.italic ?? run.italic) ? "italic" : "normal",
                     textDecoration: style.underline ? "underline" : "none",
                     color: "black",
                     width: "100%",
@@ -536,9 +529,7 @@ export function PdfPage({
             liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
             liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
             onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
-            onResizeStart={(corner, e, base) =>
-              startImageResize(img.id, img, corner, e, base)
-            }
+            onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
           />
         ))}
         {/* Inserted (net-new) text boxes. These render the same way as
@@ -622,10 +613,10 @@ function ImageOverlay({
   const top = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
   const w = img.pdfWidth * page.scale;
   const h = img.pdfHeight * page.scale;
-  const dx = (liveDx ?? persisted?.dx) ?? 0;
-  const dy = (liveDy ?? persisted?.dy) ?? 0;
-  const dw = (liveDw ?? persisted?.dw) ?? 0;
-  const dh = (liveDh ?? persisted?.dh) ?? 0;
+  const dx = liveDx ?? persisted?.dx ?? 0;
+  const dy = liveDy ?? persisted?.dy ?? 0;
+  const dw = liveDw ?? persisted?.dw ?? 0;
+  const dh = liveDh ?? persisted?.dh ?? 0;
   const isMoved = dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0;
   const movable = img.qOpIndex != null;
 
@@ -667,11 +658,7 @@ function ImageOverlay({
         backgroundImage: sprite ? `url(${sprite})` : undefined,
         backgroundSize: "100% 100%",
         backgroundRepeat: "no-repeat",
-        cursor: movable
-          ? isDragging
-            ? "grabbing"
-            : "grab"
-          : "not-allowed",
+        cursor: movable ? (isDragging ? "grabbing" : "grab") : "not-allowed",
         pointerEvents: "auto",
       }}
       title={
@@ -686,22 +673,10 @@ function ImageOverlay({
     >
       {movable ? (
         <>
-          <ResizeHandle
-            position="tl"
-            onMouseDown={(e) => onResizeStart("tl", e, baseFor())}
-          />
-          <ResizeHandle
-            position="tr"
-            onMouseDown={(e) => onResizeStart("tr", e, baseFor())}
-          />
-          <ResizeHandle
-            position="bl"
-            onMouseDown={(e) => onResizeStart("bl", e, baseFor())}
-          />
-          <ResizeHandle
-            position="br"
-            onMouseDown={(e) => onResizeStart("br", e, baseFor())}
-          />
+          <ResizeHandle position="tl" onMouseDown={(e) => onResizeStart("tl", e, baseFor())} />
+          <ResizeHandle position="tr" onMouseDown={(e) => onResizeStart("tr", e, baseFor())} />
+          <ResizeHandle position="bl" onMouseDown={(e) => onResizeStart("bl", e, baseFor())} />
+          <ResizeHandle position="br" onMouseDown={(e) => onResizeStart("br", e, baseFor())} />
         </>
       ) : null}
     </div>
@@ -731,17 +706,7 @@ function cropCanvasToDataUrl(
   const ctx = dst.getContext("2d");
   if (!ctx) return null;
   try {
-    ctx.drawImage(
-      src,
-      x * sx,
-      y * sy,
-      w * sx,
-      h * sy,
-      0,
-      0,
-      dst.width,
-      dst.height,
-    );
+    ctx.drawImage(src, x * sx, y * sy, w * sx, h * sy, 0, 0, dst.width, dst.height);
     return dst.toDataURL("image/png");
   } catch {
     // Cross-origin canvases would taint here, but pdf.js renders into
@@ -780,8 +745,7 @@ function InsertedTextOverlay({
   // Pick a sensible default per script if no explicit family was set
   // — Faruma when the typed text contains Thaana, otherwise Arial.
   const isRtlText = /[֐-׿؀-ۿހ-޿]/u.test(ins.text);
-  const family =
-    style.fontFamily ?? (isRtlText ? "Faruma" : "Arial");
+  const family = style.fontFamily ?? (isRtlText ? "Faruma" : "Arial");
   const bold = !!style.bold;
   const italic = !!style.italic;
   const underline = !!style.underline;
@@ -796,7 +760,9 @@ function InsertedTextOverlay({
   const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
   const width = Math.max(ins.pdfWidth * page.scale, 60);
   const height = lineHeight * page.scale;
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (isEditing) {
@@ -877,97 +843,97 @@ function InsertedTextOverlay({
           }}
         />
       ) : null}
-    <div
-      data-text-insert-id={ins.id}
-      style={{
-        position: "absolute",
-        left,
-        top,
-        width,
-        height,
-        outline: isEditing
-          ? "1px solid rgba(40, 130, 255, 0.85)"
-          : "1px dashed rgba(40, 130, 255, 0.5)",
-        background: isEditing ? "rgba(255, 255, 255, 0.9)" : "transparent",
-        cursor: isEditing ? "text" : "grab",
-        pointerEvents: "auto",
-        display: "flex",
-        alignItems: "center",
-        zIndex: 20,
-      }}
-      onMouseDown={startDrag}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onOpen();
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!isEditing) onOpen();
-      }}
-    >
-      {isEditing ? (
-        <input
-          ref={inputRef}
-          type="text"
-          dir="auto"
-          value={ins.text}
-          style={{
-            width: "100%",
-            border: "none",
-            outline: "none",
-            padding: "0 4px",
-            fontFamily: `"${family}"`,
-            fontSize: `${fontSizePx}px`,
-            lineHeight: `${height}px`,
-            fontWeight: bold ? 700 : 400,
-            fontStyle: italic ? "italic" : "normal",
-            textDecoration: underline ? "underline" : "none",
-            background: "transparent",
-          }}
-          onChange={(e) => onChange({ text: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              onClose();
-            } else if (e.key === "Escape") {
+      <div
+        data-text-insert-id={ins.id}
+        style={{
+          position: "absolute",
+          left,
+          top,
+          width,
+          height,
+          outline: isEditing
+            ? "1px solid rgba(40, 130, 255, 0.85)"
+            : "1px dashed rgba(40, 130, 255, 0.5)",
+          background: isEditing ? "rgba(255, 255, 255, 0.9)" : "transparent",
+          cursor: isEditing ? "text" : "grab",
+          pointerEvents: "auto",
+          display: "flex",
+          alignItems: "center",
+          zIndex: 20,
+        }}
+        onMouseDown={startDrag}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!isEditing) onOpen();
+        }}
+      >
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            dir="auto"
+            value={ins.text}
+            style={{
+              width: "100%",
+              border: "none",
+              outline: "none",
+              padding: "0 4px",
+              fontFamily: `"${family}"`,
+              fontSize: `${fontSizePx}px`,
+              lineHeight: `${height}px`,
+              fontWeight: bold ? 700 : 400,
+              fontStyle: italic ? "italic" : "normal",
+              textDecoration: underline ? "underline" : "none",
+              background: "transparent",
+            }}
+            onChange={(e) => onChange({ text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onClose();
+              } else if (e.key === "Escape") {
+                if (ins.text === "") onDelete();
+                onClose();
+              } else if (e.key === "Backspace" && ins.text === "") {
+                e.preventDefault();
+                onDelete();
+                onClose();
+              }
+            }}
+            onBlur={(e) => {
+              if (isFocusMovingToToolbar(e.relatedTarget)) return;
               if (ins.text === "") onDelete();
               onClose();
-            } else if (e.key === "Backspace" && ins.text === "") {
-              e.preventDefault();
-              onDelete();
-              onClose();
-            }
-          }}
-          onBlur={(e) => {
-            if (isFocusMovingToToolbar(e.relatedTarget)) return;
-            if (ins.text === "") onDelete();
-            onClose();
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-        />
-      ) : (
-        <span
-          dir="auto"
-          style={{
-            fontFamily: `"${family}"`,
-            fontSize: `${fontSizePx}px`,
-            lineHeight: `${height}px`,
-            fontWeight: bold ? 700 : 400,
-            fontStyle: italic ? "italic" : "normal",
-            textDecoration: underline ? "underline" : "none",
-            paddingLeft: 4,
-            paddingRight: 4,
-            color: "black",
-            whiteSpace: "pre",
-            width: "100%",
-          }}
-          title={ins.text || "(empty — click to type)"}
-        >
-          {ins.text || " "}
-        </span>
-      )}
-    </div>
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            dir="auto"
+            style={{
+              fontFamily: `"${family}"`,
+              fontSize: `${fontSizePx}px`,
+              lineHeight: `${height}px`,
+              fontWeight: bold ? 700 : 400,
+              fontStyle: italic ? "italic" : "normal",
+              textDecoration: underline ? "underline" : "none",
+              paddingLeft: 4,
+              paddingRight: 4,
+              color: "black",
+              whiteSpace: "pre",
+              width: "100%",
+            }}
+            title={ins.text || "(empty — click to type)"}
+          >
+            {ins.text || " "}
+          </span>
+        )}
+      </div>
     </>
   );
 }
@@ -1033,9 +999,7 @@ function InsertedImageOverlay({
   // ins.pdfY is the BOTTOM of the box, ins.pdfY+pdfHeight is the top.
   // Each handle anchors the OPPOSITE corner so the box grows/shrinks
   // toward the dragged corner.
-  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (
-    e: React.MouseEvent,
-  ) => {
+  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
@@ -1193,9 +1157,7 @@ function EditField({
   const dx = initial.dx ?? 0;
   const dy = initial.dy ?? 0;
   const [style, setStyle] = useState<EditStyle>(initial.style ?? {});
-  const [width, setWidth] = useState<number>(
-    Math.max(run.bounds.width + 24, 80),
-  );
+  const [width, setWidth] = useState<number>(Math.max(run.bounds.width + 24, 80));
 
   // Default everything to the run's source-detected formatting; the
   // toolbar overrides take precedence when explicitly set.
@@ -1333,13 +1295,8 @@ function hasStyle(s: EditStyle): boolean {
 /** True when a `blur` event is moving focus into the formatting
  *  toolbar (so the editor should stay open). Caller passes the blur
  *  event's `relatedTarget`. */
-function isFocusMovingToToolbar(
-  next: EventTarget | null,
-): boolean {
-  return (
-    next instanceof HTMLElement &&
-    !!next.closest("[data-edit-toolbar]")
-  );
+function isFocusMovingToToolbar(next: EventTarget | null): boolean {
+  return next instanceof HTMLElement && !!next.closest("[data-edit-toolbar]");
 }
 
 /** Shared formatting toolbar — font picker, size, B / I / U toggles, X.
@@ -1459,12 +1416,7 @@ function EditTextToolbar({
         onClick={() => onChange({ underline: !underline })}
       />
       {onCancel ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          onPress={() => onCancel()}
-          aria-label="Cancel edit"
-        >
+        <Button size="sm" variant="ghost" onPress={() => onCancel()} aria-label="Cancel edit">
           ✕
         </Button>
       ) : null}

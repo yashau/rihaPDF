@@ -8,10 +8,7 @@ import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const PDF = path.resolve(
-  root,
-  "test/fixtures/maldivian.pdf",
-);
+const PDF = path.resolve(root, "test/fixtures/maldivian.pdf");
 setTimeout(() => process.exit(2), 60_000).unref?.();
 
 const browser = await chromium.launch({ headless: true });
@@ -40,12 +37,8 @@ for (const f of result) {
   console.log(f.cmapText?.slice(0, 2000));
   console.log("--- parsed mappings:", f.parsedMappings?.length, "---");
   for (const m of f.parsedMappings ?? []) {
-    const cps = m.codePoints
-      .map((c) => "U+" + c.toString(16).padStart(4, "0"))
-      .join(" ");
-    console.log(
-      `  cid=0x${m.cid.toString(16).padStart(4, "0")} → ${cps}`,
-    );
+    const cps = m.codePoints.map((c) => "U+" + c.toString(16).padStart(4, "0")).join(" ");
+    console.log(`  cid=0x${m.cid.toString(16).padStart(4, "0")} → ${cps}`);
   }
 }
 await browser.close();

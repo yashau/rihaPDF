@@ -13,11 +13,7 @@
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
 import type { RenderedPage } from "./pdf";
-import {
-  parseContentStream,
-  serializeContentStream,
-  findTextShows,
-} from "./contentStream";
+import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 
 export type PageStripSpec = {
@@ -91,11 +87,7 @@ export async function buildPreviewBytes(
       const ey = Math.round(s.textMatrix[5]);
       // Allow 1pt slack each way for kerning / Office's optical-
       // alignment baseline jitter.
-      if (
-        allTargetYs.has(ey) ||
-        allTargetYs.has(ey - 1) ||
-        allTargetYs.has(ey + 1)
-      ) {
+      if (allTargetYs.has(ey) || allTargetYs.has(ey - 1) || allTargetYs.has(ey + 1)) {
         indicesToRemove.add(s.index);
       }
     }
@@ -112,11 +104,7 @@ export async function buildPreviewBytes(
     if (indicesToRemove.size === 0) continue;
 
     const newOps = ops.filter((_, i) => !indicesToRemove.has(i));
-    setPageContentBytes(
-      doc.context,
-      page.node,
-      serializeContentStream(newOps),
-    );
+    setPageContentBytes(doc.context, page.node, serializeContentStream(newOps));
   }
   return doc.save();
 }
@@ -142,6 +130,6 @@ export async function renderPagePreviewCanvas(
     await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     return canvas;
   } finally {
-    doc.destroy();
+    void doc.destroy();
   }
 }

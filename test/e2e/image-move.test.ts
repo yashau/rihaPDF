@@ -34,6 +34,7 @@ async function captureImages(pdfPath: string) {
   // from rewriting the dynamic import to a helper that doesn't exist
   // in the browser — see test/helpers/browser.ts:dynImport.
   return h.page.evaluate(async (b64) => {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const importer = new Function("p", "return import(p)") as (
       p: string,
     ) => Promise<typeof import("../../src/lib/sourceImages")>;
