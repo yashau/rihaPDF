@@ -30,6 +30,10 @@ export type EditValue = {
    *  underlying slot is reordered, App resolves this back to a fresh
    *  `targetPageIndex` before re-rendering. */
   targetSlotId?: string;
+  /** When true, this run is marked for deletion. Save strips its
+   *  Tj/TJ ops without drawing a replacement; PdfPage hides the
+   *  overlay entirely so the user can't re-grab a deleted run. */
+  deleted?: boolean;
 };
 
 /** Move + resize for one image instance, in viewport pixels (same axis
@@ -57,6 +61,9 @@ export type ImageMoveValue = {
   /** Stable identity of the target slot — populated by App.tsx for
    *  persisted moves only. See EditValue.targetSlotId. */
   targetSlotId?: string;
+  /** When true, this image is marked for deletion. Save strips its
+   *  q…Q block; PdfPage hides the overlay entirely. */
+  deleted?: boolean;
 };
 
 const DRAG_THRESHOLD_PX = 3;
@@ -125,6 +132,16 @@ type Props = {
   onTextInsertDelete: (id: string) => void;
   onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
   onImageInsertDelete: (id: string) => void;
+  /** ID of the source image currently selected on this page (null
+   *  means nothing on this page is selected). Drives the selected
+   *  outline state on `ImageOverlay`. */
+  selectedImageId: string | null;
+  /** ID of the inserted image currently selected on this page. */
+  selectedInsertedImageId: string | null;
+  /** Single-click on an image overlay → app marks it selected so
+   *  Delete/Backspace targets it. */
+  onSelectImage: (imageId: string) => void;
+  onSelectInsertedImage: (id: string) => void;
 };
 
 export function PdfPage({
@@ -137,6 +154,8 @@ export function PdfPage({
   previewCanvas,
   tool,
   editingId,
+  selectedImageId,
+  selectedInsertedImageId,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -145,6 +164,8 @@ export function PdfPage({
   onTextInsertDelete,
   onImageInsertChange,
   onImageInsertDelete,
+  onSelectImage,
+  onSelectInsertedImage,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const setEditingId = (next: string | null) => {
@@ -507,6 +528,10 @@ export function PdfPage({
         {page.textRuns.map((run) => {
           const isEditing = editingId === run.id;
           const editedValue = edits.get(run.id);
+          // Deleted runs have no overlay at all — the preview canvas
+          // already stripped them; with no overlay there's nothing to
+          // re-grab, which is the intent.
+          if (editedValue?.deleted) return null;
           const edited = editedValue !== undefined;
           const isDragging = drag?.runId === run.id;
           const isModified = edited || isDragging;
@@ -546,6 +571,16 @@ export function PdfPage({
                   setEditingId(null);
                 }}
                 onCancel={() => setEditingId(null)}
+                onDelete={() => {
+                  // Mark the source run for deletion: save strips its
+                  // Tj/TJ ops, no replacement is drawn. The overlay is
+                  // hidden via the deleted-flag short-circuit below.
+                  onEdit(run.id, {
+                    ...(editedValue ?? { text: run.text }),
+                    deleted: true,
+                  });
+                  setEditingId(null);
+                }}
               />
             );
           }
@@ -658,21 +693,30 @@ export function PdfPage({
             </span>
           );
         })}
-        {page.images.map((img) => (
-          <ImageOverlay
-            key={img.id}
-            img={img}
-            page={page}
-            persisted={imageMoves.get(img.id)}
-            isDragging={imageDrag?.imageId === img.id}
-            liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
-            liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
-            liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
-            liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
-            onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
-            onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
-          />
-        ))}
+        {page.images.map((img) => {
+          // A deleted source image hides its overlay so the user can't
+          // re-grab it; the preview-strip pipeline already removed
+          // it from the canvas.
+          const persisted = imageMoves.get(img.id);
+          if (persisted?.deleted) return null;
+          return (
+            <ImageOverlay
+              key={img.id}
+              img={img}
+              page={page}
+              persisted={persisted}
+              isDragging={imageDrag?.imageId === img.id}
+              isSelected={selectedImageId === img.id}
+              liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
+              liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
+              liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
+              liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
+              onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
+              onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
+              onSelect={() => onSelectImage(img.id)}
+            />
+          );
+        })}
         {/* Inserted (net-new) text boxes. These render the same way as
             edited runs do — drag to move, click to edit — but the save
             path treats them as fresh content rather than a rewrite. */}
@@ -691,14 +735,17 @@ export function PdfPage({
             onClose={() => setEditingId(null)}
           />
         ))}
-        {/* Inserted images — drag to move, double-click to delete. */}
+        {/* Inserted images — drag to move, click to select, Del key
+            to delete. Double-click is still a deletion shortcut. */}
         {insertedImages.map((ins) => (
           <InsertedImageOverlay
             key={ins.id}
             ins={ins}
             page={page}
+            isSelected={selectedInsertedImageId === ins.id}
             onChange={(patch) => onImageInsertChange(ins.id, patch)}
             onDelete={() => onImageInsertDelete(ins.id)}
+            onSelect={() => onSelectInsertedImage(ins.id)}
           />
         ))}
       </div>
@@ -722,17 +769,20 @@ function ImageOverlay({
   page,
   persisted,
   isDragging,
+  isSelected,
   liveDx,
   liveDy,
   liveDw,
   liveDh,
   onMouseDown,
   onResizeStart,
+  onSelect,
 }: {
   img: import("../lib/sourceImages").ImageInstance;
   page: RenderedPage;
   persisted: ImageMoveValue | undefined;
   isDragging: boolean;
+  isSelected: boolean;
   liveDx: number | null;
   liveDy: number | null;
   liveDw: number | null;
@@ -746,6 +796,7 @@ function ImageOverlay({
     e: React.MouseEvent,
     base: { dx: number; dy: number; dw: number; dh: number },
   ) => void;
+  onSelect: () => void;
 }) {
   // PDF user-space → viewport: x scales directly; y flips around the
   // page bottom. CTM origin (pdfX, pdfY) is the bottom-left corner in
@@ -789,13 +840,15 @@ function ImageOverlay({
         top: boxTop,
         width: boxW,
         height: boxH,
-        outline: movable
-          ? isDragging
-            ? "1px dashed rgba(60, 130, 255, 0.85)"
-            : isMoved
-              ? "1px solid rgba(60, 130, 255, 0.45)"
-              : "1px dashed rgba(60, 130, 255, 0)"
-          : "1px dashed rgba(160, 160, 160, 0.55)",
+        outline: isSelected
+          ? "2px solid rgba(220, 50, 50, 0.85)"
+          : movable
+            ? isDragging
+              ? "1px dashed rgba(60, 130, 255, 0.85)"
+              : isMoved
+                ? "1px solid rgba(60, 130, 255, 0.45)"
+                : "1px dashed rgba(60, 130, 255, 0)"
+            : "1px dashed rgba(160, 160, 160, 0.55)",
         backgroundImage: sprite ? `url(${sprite})` : undefined,
         backgroundSize: "100% 100%",
         backgroundRepeat: "no-repeat",
@@ -804,12 +857,18 @@ function ImageOverlay({
       }}
       title={
         movable
-          ? `Image ${img.resourceName} (drag to move, corners to resize)`
+          ? `Image ${img.resourceName} (drag to move, corners to resize, Del to delete)`
           : `Image ${img.resourceName} (un-movable)`
       }
       onMouseDown={(e) => {
         if (!movable) return;
         onMouseDown(e, baseFor());
+      }}
+      onClick={(e) => {
+        // Stop propagation so the window-level click-outside handler
+        // in App doesn't immediately deselect what we just selected.
+        e.stopPropagation();
+        if (movable) onSelect();
       }}
     >
       {movable ? (
@@ -1009,6 +1068,10 @@ function InsertedTextOverlay({
             if (ins.text === "") onDelete();
             onClose();
           }}
+          onDelete={() => {
+            onDelete();
+            onClose();
+          }}
         />
       ) : null}
       <div
@@ -1113,13 +1176,17 @@ function InsertedTextOverlay({
 function InsertedImageOverlay({
   ins,
   page,
+  isSelected,
   onChange,
   onDelete,
+  onSelect,
 }: {
   ins: ImageInsertion;
   page: RenderedPage;
+  isSelected: boolean;
   onChange: (patch: Partial<ImageInsertion>) => void;
   onDelete: () => void;
+  onSelect: () => void;
 }) {
   // Encode the chosen image as a base64 data URL once. We deliberately
   // avoid `URL.createObjectURL` here — its companion revoke needs to
@@ -1256,13 +1323,19 @@ function InsertedImageOverlay({
         backgroundImage: `url(${dataUrl})`,
         backgroundSize: "100% 100%",
         backgroundRepeat: "no-repeat",
-        outline: "1px dashed rgba(40, 130, 255, 0.6)",
+        outline: isSelected
+          ? "2px solid rgba(220, 50, 50, 0.85)"
+          : "1px dashed rgba(40, 130, 255, 0.6)",
         cursor: "grab",
         pointerEvents: "auto",
         zIndex: 20,
       }}
-      title={`Inserted image (drag corners to resize, double-click to delete)`}
+      title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
       onMouseDown={startDrag}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
       onDoubleClick={(e) => {
         e.stopPropagation();
         onDelete();
@@ -1332,6 +1405,7 @@ function EditField({
   initial,
   onCommit,
   onCancel,
+  onDelete,
 }: {
   run: TextRun;
   /** Viewport pixels per PDF point — used to convert between the
@@ -1341,6 +1415,7 @@ function EditField({
   initial: EditValue;
   onCommit: (value: EditValue) => void;
   onCancel: () => void;
+  onDelete?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
@@ -1421,6 +1496,7 @@ function EditField({
           })
         }
         onCancel={onCancel}
+        onDelete={onDelete}
       />
       <input
         ref={inputRef}
@@ -1507,6 +1583,7 @@ function EditTextToolbar({
   underline,
   onChange,
   onCancel,
+  onDelete,
 }: {
   /** Viewport-pixel position of the toolbar's top-left corner. */
   left: number;
@@ -1524,6 +1601,10 @@ function EditTextToolbar({
     underline?: boolean;
   }) => void;
   onCancel?: () => void;
+  /** When provided, renders a trash button. Source-run deletion sets
+   *  `deleted=true` on the stored EditValue; inserted-text deletion
+   *  removes the entry from its slot bucket. */
+  onDelete?: () => void;
 }) {
   return (
     <div
@@ -1609,6 +1690,17 @@ function EditTextToolbar({
         underline
         onClick={() => onChange({ underline: !underline })}
       />
+      {onDelete ? (
+        <Button
+          size="sm"
+          variant="danger-soft"
+          onPress={() => onDelete()}
+          aria-label="Delete text"
+          title="Delete (Del)"
+        >
+          🗑
+        </Button>
+      ) : null}
       {onCancel ? (
         <Button size="sm" variant="ghost" onPress={() => onCancel()} aria-label="Cancel edit">
           ✕

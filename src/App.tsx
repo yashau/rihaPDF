@@ -70,6 +70,16 @@ export default function App() {
    *  slotId so an insertion follows its slot through reorder. */
   const [insertedTexts, setInsertedTexts] = useState<Map<string, TextInsertion[]>>(new Map());
   const [insertedImages, setInsertedImages] = useState<Map<string, ImageInsertion[]>>(new Map());
+  /** Currently-selected object — set by single-click on an image
+   *  overlay; cleared by Escape, by clicking elsewhere, or by tool
+   *  changes. The keyboard delete shortcut targets this; the toolbar
+   *  trash button (where applicable) does too. Text editing has its
+   *  own focus model so text runs don't enter this state. */
+  const [selection, setSelection] = useState<
+    | { kind: "image"; slotId: string; imageId: string }
+    | { kind: "insertedImage"; slotId: string; id: string }
+    | null
+  >(null);
   /** Bytes for each loaded external PDF, keyed by sourceKey. The save
    *  pipeline reads these to copyPages from the right doc. */
   const [externalSources, setExternalSources] = useState<Map<string, ArrayBuffer>>(new Map());
@@ -169,6 +179,81 @@ export default function App() {
     });
   }, []);
 
+  const onSelectImage = useCallback((slotId: string, imageId: string) => {
+    setSelection({ kind: "image", slotId, imageId });
+  }, []);
+  const onSelectInsertedImage = useCallback((slotId: string, id: string) => {
+    setSelection({ kind: "insertedImage", slotId, id });
+  }, []);
+
+  /** Delete whatever's currently selected. For source images this means
+   *  flipping `deleted=true` on the stored ImageMoveValue (so save
+   *  strips the q…Q block); for inserted images we just drop the
+   *  entry from the slot's bucket. Selection is cleared either way. */
+  const onDeleteSelection = useCallback(() => {
+    setSelection((current) => {
+      if (!current) return null;
+      if (current.kind === "image") {
+        setImageMoves((prev) => {
+          const next = new Map(prev);
+          const pageMap = new Map<string, ImageMoveValue>(next.get(current.slotId) ?? []);
+          const existing = pageMap.get(current.imageId) ?? {};
+          pageMap.set(current.imageId, { ...existing, deleted: true });
+          next.set(current.slotId, pageMap);
+          return next;
+        });
+      } else if (current.kind === "insertedImage") {
+        setInsertedImages((prev) => {
+          const next = new Map(prev);
+          const arr = (next.get(current.slotId) ?? []).filter((m) => m.id !== current.id);
+          next.set(current.slotId, arr);
+          return next;
+        });
+      }
+      return null;
+    });
+  }, []);
+
+  // Window-level Delete / Backspace handler. The input-focus guard is
+  // critical: without it, every Backspace inside the EditField text
+  // input would also delete the selected image, which surprises users
+  // mid-edit.
+  useEffect(() => {
+    if (!selection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const active = document.activeElement;
+      if (active) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (active as HTMLElement).isContentEditable) {
+          return;
+        }
+      }
+      e.preventDefault();
+      onDeleteSelection();
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onEsc);
+    };
+  }, [selection, onDeleteSelection]);
+
+  // Click-outside handler: any window click that wasn't stop-propagated
+  // by an overlay falls through to here and clears selection. Overlay
+  // onClick callbacks call e.stopPropagation() so a click on a
+  // selected image keeps the selection.
+  useEffect(() => {
+    if (!selection) return;
+    const onClick = () => setSelection(null);
+    window.addEventListener("click", onClick);
+    return () => window.removeEventListener("click", onClick);
+  }, [selection]);
+
   const onImageMove = useCallback((slotId: string, imageId: string, value: ImageMoveValue) => {
     let stored: ImageMoveValue = value;
     if (value.targetPageIndex !== undefined) {
@@ -229,12 +314,16 @@ export default function App() {
       const si = sourceIndexFor(slotId);
       if (si == null) continue;
       for (const [id, v] of imgs) {
+        // Stored entries carry `targetSlotId` (cross-page) — the
+        // pre-storage `targetPageIndex` is stripped by onImageMove.
+        // Deletion always strips, even with no movement.
         if (
+          v.deleted ||
           (v.dx ?? 0) !== 0 ||
           (v.dy ?? 0) !== 0 ||
           (v.dw ?? 0) !== 0 ||
           (v.dh ?? 0) !== 0 ||
-          v.targetPageIndex !== undefined
+          v.targetSlotId !== undefined
         ) {
           addImage(si, id);
         }
@@ -524,6 +613,7 @@ export default function App() {
             targetPageIndex,
             targetPdfX: value.targetPdfX,
             targetPdfY: value.targetPdfY,
+            deleted: value.deleted,
           });
         }
       }
@@ -537,7 +627,11 @@ export default function App() {
           const dw = value.dw ?? 0;
           const dh = value.dh ?? 0;
           const isCrossPage = value.targetSlotId !== undefined;
-          if (!isCrossPage && dx === 0 && dy === 0 && dw === 0 && dh === 0) continue;
+          // Skip no-op entries (no movement, no resize, no cross-page,
+          // not deleted). A `deleted` value still needs to flow through
+          // even when dx/dy/dw/dh are all zero.
+          if (!isCrossPage && !value.deleted && dx === 0 && dy === 0 && dw === 0 && dh === 0)
+            continue;
           const targetPageIndex =
             value.targetSlotId !== undefined
               ? sourceIndexBySlotId.get(value.targetSlotId)
@@ -554,6 +648,7 @@ export default function App() {
             targetPdfY: value.targetPdfY,
             targetPdfWidth: value.targetPdfWidth,
             targetPdfHeight: value.targetPdfHeight,
+            deleted: value.deleted,
           });
         }
       }
@@ -861,6 +956,14 @@ export default function App() {
                     }
                   }
                 }
+                const selectedImageId =
+                  selection?.kind === "image" && selection.slotId === slot.id
+                    ? selection.imageId
+                    : null;
+                const selectedInsertedImageId =
+                  selection?.kind === "insertedImage" && selection.slotId === slot.id
+                    ? selection.id
+                    : null;
                 return (
                   <PageWithToolbar
                     key={slot.id}
@@ -873,6 +976,8 @@ export default function App() {
                     previewCanvas={previewCanvases.get(slot.sourceIndex) ?? null}
                     tool={tool}
                     editingId={editingByPage.get(slot.id) ?? null}
+                    selectedImageId={selectedImageId}
+                    selectedInsertedImageId={selectedInsertedImageId}
                     onEdit={(runId, value) => onEdit(slot.id, runId, value)}
                     onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
                     onEditingChange={(runId) => onEditingChange(slot.id, runId)}
@@ -881,6 +986,8 @@ export default function App() {
                     onTextInsertDelete={(id) => onTextInsertDelete(slot.id, id)}
                     onImageInsertChange={(id, patch) => onImageInsertChange(slot.id, id, patch)}
                     onImageInsertDelete={(id) => onImageInsertDelete(slot.id, id)}
+                    onSelectImage={(imageId) => onSelectImage(slot.id, imageId)}
+                    onSelectInsertedImage={(id) => onSelectInsertedImage(slot.id, id)}
                   />
                 );
               })}
@@ -1041,6 +1148,8 @@ function PageWithToolbar({
   previewCanvas,
   tool,
   editingId,
+  selectedImageId,
+  selectedInsertedImageId,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -1049,6 +1158,8 @@ function PageWithToolbar({
   onTextInsertDelete,
   onImageInsertChange,
   onImageInsertDelete,
+  onSelectImage,
+  onSelectInsertedImage,
 }: {
   page: RenderedPage;
   pageIndex: number;
@@ -1059,6 +1170,8 @@ function PageWithToolbar({
   previewCanvas: HTMLCanvasElement | null;
   tool: ToolMode;
   editingId: string | null;
+  selectedImageId: string | null;
+  selectedInsertedImageId: string | null;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
   onEditingChange: (runId: string | null) => void;
@@ -1067,6 +1180,8 @@ function PageWithToolbar({
   onTextInsertDelete: (id: string) => void;
   onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
   onImageInsertDelete: (id: string) => void;
+  onSelectImage: (imageId: string) => void;
+  onSelectInsertedImage: (id: string) => void;
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
@@ -1083,6 +1198,8 @@ function PageWithToolbar({
         previewCanvas={previewCanvas}
         tool={tool}
         editingId={editingId}
+        selectedImageId={selectedImageId}
+        selectedInsertedImageId={selectedInsertedImageId}
         onEdit={onEdit}
         onImageMove={onImageMove}
         onEditingChange={onEditingChange}
@@ -1091,6 +1208,8 @@ function PageWithToolbar({
         onTextInsertDelete={onTextInsertDelete}
         onImageInsertChange={onImageInsertChange}
         onImageInsertDelete={onImageInsertDelete}
+        onSelectImage={onSelectImage}
+        onSelectInsertedImage={onSelectInsertedImage}
       />
     </div>
   );

@@ -41,6 +41,13 @@ removed from the content stream, not just covered with a whiteout.
 - **Multi-page docs.** Per-page preview canvas rebuild on every edit;
   the strip-and-re-render path runs through pdf-lib + pdf.js so the
   HTML overlays never need to mask anything.
+- **Delete any object.** Click a source image or inserted image →
+  press `Del` / `Backspace` to remove it. Source text runs and
+  inserted text get a trash button on the floating edit toolbar that
+  does the same. Save strips deleted source text runs from the
+  content stream and removes deleted images' `q…Q` blocks; deleted
+  inserted items just don't reach save. The keyboard handler bails
+  out when an `<input>` is focused so it never hijacks text editing.
 - **Page sidebar with reorder, delete, insert blank, insert from PDF.**
   Left rail shows a thumbnail per page. Drag thumbs to reorder
   (`@dnd-kit`), hover to delete, click `+ Blank` to insert a fresh
@@ -193,6 +200,7 @@ pnpm test         # in another — runs every spec
 | `insert.test.ts`                   | drop text + image → both persist after save                                 |
 | `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                |
 | `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages  |
+| `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable    |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -202,6 +210,14 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Delete any object.** Source images and inserted images select
+      on click and delete on `Del` / `Backspace`. Source text runs and
+      inserted text get a trash button on the floating toolbar.
+      Internally a `deleted: boolean` flag rides on `EditValue` /
+      `ImageMoveValue`; save's existing strip path runs without the
+      replacement-draw half. The keyboard handler `return`s when an
+      `<input>` / `<textarea>` is focused so it doesn't hijack text
+      editing.
 - [x] **Page sidebar.** Slot model ([src/lib/slots.ts](src/lib/slots.ts))
       replaces the old append-only `pageOps`: every displayed page is
       a slot whose stable id keys all per-page state (edits, image

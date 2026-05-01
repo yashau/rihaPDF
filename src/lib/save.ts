@@ -67,6 +67,10 @@ export type Edit = {
   targetPdfX?: number;
   /** Baseline y on the target page in PDF user space (y-up). */
   targetPdfY?: number;
+  /** When true, strip the original Tj/TJ ops AND skip the replacement
+   *  draw entirely. `newText`, move offsets, and cross-page fields are
+   *  ignored — deletion removes the run from the saved PDF. */
+  deleted?: boolean;
 };
 
 /** Drag + resize offset for an image XObject placement. Save injects a
@@ -97,6 +101,9 @@ export type ImageMove = {
   targetPdfWidth?: number;
   /** Height on target page in PDF user space. */
   targetPdfHeight?: number;
+  /** When true, strip the entire q…Q block of this image's draw and
+   *  emit nothing. Move/resize/cross-page fields are ignored. */
+  deleted?: boolean;
 };
 
 /** Net-new text the user typed at a fresh position on the page. Saved
@@ -363,6 +370,14 @@ export async function applyEditsAndSave(
         });
       }
 
+      // Deletion: strip the matched ops, skip every draw / move /
+      // cross-page path. Move + cross-page state is meaningless when
+      // the run is being removed entirely.
+      if (edit.deleted) {
+        for (const s of matched) indicesToRemove.add(s.index);
+        continue;
+      }
+
       const isCrossPage = edit.targetPageIndex !== undefined && edit.targetPageIndex !== pageIndex;
 
       if (isCrossPage) {
@@ -445,6 +460,15 @@ export async function applyEditsAndSave(
     for (const move of pageImageMoves) {
       const img = rendered.images.find((i) => i.id === move.imageId);
       if (!img || img.qOpIndex == null) continue;
+
+      // Deletion: strip the q…Q block, no replacement / cm injection.
+      if (move.deleted) {
+        const matchingQ = findMatchingQ(ops, img.qOpIndex);
+        if (matchingQ != null) {
+          for (let k = img.qOpIndex; k <= matchingQ; k++) indicesToRemove.add(k);
+        }
+        continue;
+      }
 
       const isCrossPage = move.targetPageIndex !== undefined && move.targetPageIndex !== pageIndex;
 
