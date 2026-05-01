@@ -13,7 +13,19 @@
 // embedded fonts are cached per family across the doc so only the actually-
 // used fonts ship in the saved PDF.
 
-import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
+import {
+  PDFDict,
+  PDFDocument,
+  PDFFont,
+  PDFName,
+  PDFRef,
+  StandardFonts,
+  concatTransformationMatrix,
+  drawObject,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+} from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { RenderedPage, TextRun } from "./pdf";
 import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
@@ -45,6 +57,15 @@ export type Edit = {
    *  by (dx / scale, -dy / scale) in PDF user space (y-flipped). */
   dx?: number;
   dy?: number;
+  /** Cross-page move target. When set and != pageIndex, the run is
+   *  stripped from `pageIndex` (the origin) and re-drawn on the target
+   *  page at (targetPdfX, targetPdfY). Same-page moves use dx/dy and
+   *  leave these undefined. */
+  targetPageIndex?: number;
+  /** Baseline x on the target page in PDF user space (y-up). */
+  targetPdfX?: number;
+  /** Baseline y on the target page in PDF user space (y-up). */
+  targetPdfY?: number;
 };
 
 /** Drag + resize offset for an image XObject placement. Save injects a
@@ -62,6 +83,19 @@ export type ImageMove = {
   dy?: number;
   dw?: number;
   dh?: number;
+  /** Cross-page move target. When set and != pageIndex, the image is
+   *  stripped from origin (its q…Q block removed) and a fresh
+   *  q cm /Name Do Q is appended to the target page, replicating the
+   *  XObject reference into the target's resources. */
+  targetPageIndex?: number;
+  /** Bottom-left x on target page in PDF user space (y-up). */
+  targetPdfX?: number;
+  /** Bottom-left y on target page in PDF user space (y-up). */
+  targetPdfY?: number;
+  /** Width on target page in PDF user space. */
+  targetPdfWidth?: number;
+  /** Height on target page in PDF user space. */
+  targetPdfHeight?: number;
 };
 
 /** Net-new text the user typed at a fresh position on the page. Saved
@@ -93,6 +127,58 @@ export type ImageInsert = {
 export type PageOp =
   | { kind: "remove"; pageIndex: number }
   | { kind: "insertBlank"; afterPageIndex: number };
+
+/** Walk forward from a `q` op tracking nested q/Q depth and return the
+ *  index of the matching `Q`. Used by the cross-page image strip path
+ *  to remove the entire q…Q block of the moved image so its pixels
+ *  vanish from the origin page. */
+function findMatchingQ(ops: Array<{ op: string }>, qIndex: number): number | null {
+  if (ops[qIndex]?.op !== "q") return null;
+  let depth = 1;
+  for (let i = qIndex + 1; i < ops.length; i++) {
+    if (ops[i].op === "q") depth++;
+    else if (ops[i].op === "Q") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return null;
+}
+
+/** Look up the PDFRef for an XObject named `resName` on a page (walking
+ *  the page-tree via Parent so inherited Resources also work). Returns
+ *  null when the XObject is stored inline (no ref) — we register it as
+ *  a fresh ref before returning, since cross-page replication needs a
+ *  ref to put into the target page's resources. */
+function lookupPageXObjectRef(doc: PDFDocument, pageNode: PDFDict, resName: string): PDFRef | null {
+  let node: PDFDict | null = pageNode;
+  while (node) {
+    const resources = node.lookup(PDFName.of("Resources"));
+    if (resources instanceof PDFDict) {
+      const xo = resources.lookup(PDFName.of("XObject"));
+      if (xo instanceof PDFDict) {
+        const raw = xo.get(PDFName.of(resName));
+        if (raw instanceof PDFRef) return raw;
+        if (raw) {
+          // Inline object — register it so we can reference it from
+          // another page. (Should be very rare; XObjects are usually
+          // indirect.)
+          return doc.context.register(raw);
+        }
+      }
+    }
+    const parent: unknown = node.lookup(PDFName.of("Parent"));
+    if (parent instanceof PDFDict) {
+      node = parent;
+    } else if (parent instanceof PDFRef) {
+      const r = doc.context.lookup(parent);
+      node = r instanceof PDFDict ? r : null;
+    } else {
+      node = null;
+    }
+  }
+  return null;
+}
 
 export async function applyEditsAndSave(
   originalPdfBytes: ArrayBuffer,
@@ -174,6 +260,41 @@ export async function applyEditsAndSave(
   };
 
   const docPages = doc.getPages();
+  // Cross-page draws collected across the per-origin loop and emitted in
+  // a final phase, after every origin page has been stripped:
+  //   - drawPlans: one per text edit that needs a fresh drawText, tagged
+  //     with the page to draw on (origin for same-page edits, target for
+  //     cross-page moves).
+  //   - imageDrawPlans: one per cross-page image move — needs the origin
+  //     XObject ref replicated into the target page's resources, then a
+  //     `q cm /Name Do Q` block appended.
+  type DrawPlan = {
+    edit: Edit;
+    run: TextRun;
+    /** Page where drawText runs. */
+    targetPageIndex: number;
+    /** Box-left x in PDF user space on the target page. */
+    boxLeftPdf: number;
+    /** Baseline y in PDF user space on the target page (y-up). */
+    baselineYPdf: number;
+    /** Original run width in PDF pts — used as the box width for RTL
+     *  right-edge anchoring (text content is unchanged on a pure move,
+     *  but if the user also edited text, the new widthPt still
+     *  right-anchors against this original box-right). */
+    runPdfWidth: number;
+    runPdfHeight: number;
+  };
+  type ImageDrawPlan = {
+    move: ImageMove;
+    /** PDFRef of the source XObject on the origin page. */
+    xobjectRef: PDFRef;
+    targetPageIndex: number;
+    /** cm operands placing the unit square at (x, y, w, h) on target. */
+    cm: [number, number, number, number, number, number];
+  };
+  const drawPlans: DrawPlan[] = [];
+  const imageDrawPlans: ImageDrawPlan[] = [];
+
   for (const pageIndex of pagesToRewrite) {
     const pageEdits = editsByPage.get(pageIndex) ?? [];
     const pageImageMoves = imageMovesByPage.get(pageIndex) ?? [];
@@ -183,13 +304,17 @@ export async function applyEditsAndSave(
 
     // Pre-load all fonts this page needs and register them on the page so
     // the resource names exist before we emit operators referencing them.
+    // (Cross-page edits register their font on the TARGET page later via
+    // drawText's internal setFont call — handled in the post-loop phase.)
     const familiesUsed = Array.from(
       new Set(
-        pageEdits.map((e) => {
-          if (e.style?.fontFamily) return e.style.fontFamily;
-          const run = rendered.textRuns.find((r) => r.id === e.runId);
-          return run?.fontFamily ?? DEFAULT_FONT_FAMILY;
-        }),
+        pageEdits
+          .filter((e) => e.targetPageIndex === undefined || e.targetPageIndex === pageIndex)
+          .map((e) => {
+            if (e.style?.fontFamily) return e.style.fontFamily;
+            const run = rendered.textRuns.find((r) => r.id === e.runId);
+            return run?.fontFamily ?? DEFAULT_FONT_FAMILY;
+          }),
       ),
     );
     for (const family of familiesUsed) {
@@ -209,14 +334,6 @@ export async function applyEditsAndSave(
     /** For move-only edits: the indices of the Tj/TJ ops we need to
      *  reposition + the new text-matrix to insert before them. */
     const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> = [];
-    const editPlans: Array<{
-      edit: Edit;
-      run: TextRun;
-      runPdfX: number;
-      runPdfY: number;
-      runPdfWidth: number;
-      runPdfHeight: number;
-    }> = [];
 
     for (const edit of pageEdits) {
       const run = rendered.textRuns.find((r) => r.id === edit.runId);
@@ -245,6 +362,25 @@ export async function applyEditsAndSave(
         });
       }
 
+      const isCrossPage = edit.targetPageIndex !== undefined && edit.targetPageIndex !== pageIndex;
+
+      if (isCrossPage) {
+        // Cross-page: strip on origin, schedule drawText on target. The
+        // Tm-injection pixel-perfect path doesn't apply here because
+        // target page has no matching text matrix to translate from.
+        for (const s of matched) indicesToRemove.add(s.index);
+        drawPlans.push({
+          edit,
+          run,
+          targetPageIndex: edit.targetPageIndex!,
+          boxLeftPdf: edit.targetPdfX ?? 0,
+          baselineYPdf: edit.targetPdfY ?? 0,
+          runPdfWidth,
+          runPdfHeight,
+        });
+        continue;
+      }
+
       // Move-only path: text is unchanged AND there's no formatting
       // override AND we have a non-zero offset. Keep the original glyphs
       // so we get pixel-perfect rendering — just inject a new Tm before
@@ -269,18 +405,21 @@ export async function applyEditsAndSave(
       // both). Remove the matched ops and rerender below.
       for (const s of matched) indicesToRemove.add(s.index);
 
-      editPlans.push({
+      const moveX = (edit.dx ?? 0) / scale;
+      const moveY = -(edit.dy ?? 0) / scale;
+      drawPlans.push({
         edit,
         run,
-        runPdfX,
-        runPdfY,
+        targetPageIndex: pageIndex,
+        boxLeftPdf: runPdfX + moveX,
+        baselineYPdf: runPdfY + moveY,
         runPdfWidth,
         runPdfHeight,
       });
     }
 
     // Build the new op list:
-    //  1. Drop ops we marked for removal (full edits).
+    //  1. Drop ops we marked for removal (full edits + cross-page moves).
     //  2. For each move-only target, insert a fresh `Tm` op right before
     //     the original Tj/TJ that translates the text matrix to the new
     //     absolute position. The original glyphs follow unchanged so
@@ -289,8 +428,8 @@ export async function applyEditsAndSave(
     for (const m of moveOps) {
       moveByTjIndex.set(m.tjIndex, { newTx: m.newTx, newTy: m.newTy });
     }
-    // For each moved image, queue a translate `cm` to inject right
-    // after the image's opening `q`. That makes the move the
+    // For each SAME-page moved image, queue a translate `cm` to inject
+    // right after the image's opening `q`. That makes the move the
     // OUTERMOST transform in the chain — composing as
     // (existing image cms) × T_translate, which produces a clean
     // (origin + dx, origin + dy) under PDF's row-vector convention.
@@ -298,15 +437,42 @@ export async function applyEditsAndSave(
     // multiple cm ops in the block (pdf-lib emits 4: translate /
     // identity / scale / identity) because pre-multiplying onto the
     // last identity gets mixed by the preceding scale.
-    // Each entry holds the 6 operands of the outer cm to inject
-    // right after the image's q. The composed transform takes the
-    // unit-square corner `(u_pdf, v_pdf)` produced by the existing
-    // image chain and maps it to `(sx*u + ex, sy*v + ey)`.
+    // For CROSS-page moves, instead remove the entire q…Q block on
+    // origin and queue an imageDrawPlan that emits a fresh
+    // `q cm /Name Do Q` on the target page.
     const insertAfterQ = new Map<number, [number, number, number, number, number, number]>();
     for (const move of pageImageMoves) {
       const img = rendered.images.find((i) => i.id === move.imageId);
       if (!img || img.qOpIndex == null) continue;
-      // Convert viewport-pixel deltas to PDF user space.
+
+      const isCrossPage = move.targetPageIndex !== undefined && move.targetPageIndex !== pageIndex;
+
+      if (isCrossPage) {
+        // Origin: strip the whole q…Q block so the image vanishes from
+        // its source page. Walk forward tracking nested q/Q depth to
+        // find the matching Q.
+        const matchingQ = findMatchingQ(ops, img.qOpIndex);
+        if (matchingQ != null) {
+          for (let k = img.qOpIndex; k <= matchingQ; k++) indicesToRemove.add(k);
+        }
+        // Find the source XObject ref on the origin page so we can
+        // hand it to the target page later.
+        const ref = lookupPageXObjectRef(doc, page.node, img.resourceName);
+        if (!ref) continue; // can't replicate without a ref — skip move
+        const w = move.targetPdfWidth ?? img.pdfWidth;
+        const h = move.targetPdfHeight ?? img.pdfHeight;
+        const tx = move.targetPdfX ?? img.pdfX;
+        const ty = move.targetPdfY ?? img.pdfY;
+        imageDrawPlans.push({
+          move,
+          xobjectRef: ref,
+          targetPageIndex: move.targetPageIndex!,
+          cm: [w, 0, 0, h, tx, ty],
+        });
+        continue;
+      }
+
+      // Same-page: cm injection (existing path).
       const dxPdf = (move.dx ?? 0) / scale;
       const dyPdf = -(move.dy ?? 0) / scale;
       const dwPdf = (move.dw ?? 0) / scale;
@@ -372,76 +538,100 @@ export async function applyEditsAndSave(
       }
     }
     setPageContentBytes(doc.context, page.node, serializeContentStream(newOps));
+  }
 
-    // Append the replacement text via pdf-lib's drawText so its internal
-    // Unicode→CID encoding matches the font it embedded. (Bypassing it
-    // and writing raw CIDs from HarfBuzz fails because pdf-lib still
-    // renumbers glyphs in its embed pipeline; the saved file would map
-    // our CIDs to wrong glyphs.) For Thaana we lose proper GPOS mark
-    // positioning — combining marks rely on the font's hmtx zero-advance
-    // entry to stack on top of the base. NotoSansThaana / Faruma do
-    // ship those, so simple drawText still renders correctly visually
-    // for most Dhivehi text.
-    for (const plan of editPlans) {
-      const { edit, run, runPdfX, runPdfY, runPdfWidth, runPdfHeight } = plan;
-      const style = edit.style ?? {};
-      // Default the formatting to whatever the original run carried —
-      // the user can still override any of these via the toolbar but
-      // doing nothing should preserve the source's look.
-      const family = style.fontFamily ?? run.fontFamily ?? DEFAULT_FONT_FAMILY;
-      const fontSizePt = style.fontSize ?? runPdfHeight;
-      // `??` (not `||`) so an explicit `style.bold = false` overrides
-      // a `run.bold = true` source detection — that's the
-      // toggle-off-an-already-bold-run flow.
-      const bold = style.bold ?? run.bold;
-      const italic = style.italic ?? run.italic;
-      // For Latin StandardFonts (Helvetica / Times / Courier) getFont
-      // can pick the bold/italic variant. Thaana fonts in the registry
-      // don't ship paired variants so getFont silently falls back to
-      // the regular bytes — bold/italic on Dhivehi runs remains
-      // editor-preview only for now (documented limitation).
-      const { pdfFont } = await getFont(family, bold, italic);
+  // Cross-page image draws: replicate the source XObject onto each target
+  // page's resources and append a `q cm /Name Do Q` block. Done after the
+  // origin strip so the strip mutations are committed before we touch
+  // anything else on the target page.
+  for (const plan of imageDrawPlans) {
+    const targetPage = docPages[plan.targetPageIndex];
+    if (!targetPage) continue;
+    // newXObject auto-picks a non-conflicting name on the target page's
+    // Resources/XObject dict and returns the chosen PDFName.
+    const name = (
+      targetPage.node as unknown as {
+        newXObject: (tag: string, ref: PDFRef) => PDFName;
+      }
+    ).newXObject("RihaImg", plan.xobjectRef);
+    targetPage.pushOperators(
+      pushGraphicsState(),
+      concatTransformationMatrix(...plan.cm),
+      drawObject(name),
+      popGraphicsState(),
+    );
+  }
 
-      // Right-align RTL replacements at the original run's right edge so
-      // the first logical character lands where it used to. Use pdf-lib's
-      // own width calculation since that's what it'll draw. Then apply
-      // the user's drag-move offset on top.
-      const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(edit.newText);
-      const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
-      const moveX = (edit.dx ?? 0) / rendered.scale;
-      const moveY = -(edit.dy ?? 0) / rendered.scale;
-      const baseX = (isRtl ? runPdfX + runPdfWidth - widthPt : runPdfX) + moveX;
-      const drawY = runPdfY + moveY;
+  // Append the replacement text via pdf-lib's drawText so its internal
+  // Unicode→CID encoding matches the font it embedded. (Bypassing it
+  // and writing raw CIDs from HarfBuzz fails because pdf-lib still
+  // renumbers glyphs in its embed pipeline; the saved file would map
+  // our CIDs to wrong glyphs.) For Thaana we lose proper GPOS mark
+  // positioning — combining marks rely on the font's hmtx zero-advance
+  // entry to stack on top of the base. NotoSansThaana / Faruma do
+  // ship those, so simple drawText still renders correctly visually
+  // for most Dhivehi text.
+  for (const plan of drawPlans) {
+    const { edit, run, targetPageIndex, boxLeftPdf, baselineYPdf, runPdfWidth, runPdfHeight } =
+      plan;
+    const targetPage = docPages[targetPageIndex];
+    if (!targetPage) continue;
+    const style = edit.style ?? {};
+    // Default the formatting to whatever the original run carried —
+    // the user can still override any of these via the toolbar but
+    // doing nothing should preserve the source's look.
+    const family = style.fontFamily ?? run.fontFamily ?? DEFAULT_FONT_FAMILY;
+    const fontSizePt = style.fontSize ?? runPdfHeight;
+    // `??` (not `||`) so an explicit `style.bold = false` overrides
+    // a `run.bold = true` source detection — that's the
+    // toggle-off-an-already-bold-run flow.
+    const bold = style.bold ?? run.bold;
+    const italic = style.italic ?? run.italic;
+    // For Latin StandardFonts (Helvetica / Times / Courier) getFont
+    // can pick the bold/italic variant. Thaana fonts in the registry
+    // don't ship paired variants so getFont silently falls back to
+    // the regular bytes — bold/italic on Dhivehi runs remains
+    // editor-preview only for now (documented limitation).
+    const { pdfFont } = await getFont(family, bold, italic);
 
-      // Use pdf-lib's drawText for the actual glyph rendering — it owns
-      // the Unicode → CID encoding pipeline and handcrafted Tj operands
-      // misrender (the embedded font's CIDToGIDMap doesn't match raw
-      // encodeText output for subset:false fonts). Bold is simulated
-      // with a second drawText call offset by ~5% of the font size, the
-      // same trick web browsers use for synthetic bold. Italic in the
-      // saved PDF needs a sheared Tm before Tj — deferred until we have
-      // a working raw-ops path; for now it's editor-preview only.
-      page.drawText(edit.newText, {
-        x: baseX,
-        y: drawY,
-        size: fontSizePt,
-        font: pdfFont,
+    // Right-align RTL replacements at the original run's right edge so
+    // the first logical character lands where it used to. boxLeftPdf
+    // already incorporates same-page (dx/scale) or cross-page (target
+    // box-left) positioning — RTL just shifts the draw start so the
+    // right edge of the new text matches the box-right.
+    const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(edit.newText);
+    const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
+    const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
+    const drawY = baselineYPdf;
+
+    // Use pdf-lib's drawText for the actual glyph rendering — it owns
+    // the Unicode → CID encoding pipeline and handcrafted Tj operands
+    // misrender (the embedded font's CIDToGIDMap doesn't match raw
+    // encodeText output for subset:false fonts). Bold is simulated
+    // with a second drawText call offset by ~5% of the font size, the
+    // same trick web browsers use for synthetic bold. Italic in the
+    // saved PDF needs a sheared Tm before Tj — deferred until we have
+    // a working raw-ops path; for now it's editor-preview only.
+    targetPage.drawText(edit.newText, {
+      x: baseX,
+      y: drawY,
+      size: fontSizePt,
+      font: pdfFont,
+      color: rgb(0, 0, 0),
+    });
+    // bold/italic are now baked into the font choice via getFont
+    // above (Latin StandardFonts only). For Thaana we keep using the
+    // regular variant — synthetic double-draw broke text extraction
+    // and the registry doesn't ship paired variants.
+
+    if (style.underline) {
+      const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
+      targetPage.drawLine({
+        start: { x: baseX, y: underlineY },
+        end: { x: baseX + widthPt, y: underlineY },
+        thickness: Math.max(0.5, fontSizePt * 0.05),
         color: rgb(0, 0, 0),
       });
-      // bold/italic are now baked into the font choice via getFont
-      // above (Latin StandardFonts only). For Thaana we keep using the
-      // regular variant — synthetic double-draw broke text extraction
-      // and the registry doesn't ship paired variants.
-
-      if (style.underline) {
-        const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
-        page.drawLine({
-          start: { x: baseX, y: underlineY },
-          end: { x: baseX + widthPt, y: underlineY },
-          thickness: Math.max(0.5, fontSizePt * 0.05),
-          color: rgb(0, 0, 0),
-        });
-      }
     }
   }
 

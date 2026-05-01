@@ -166,7 +166,11 @@ export default function App() {
       if (editing) runIds.add(editing);
       const imageIds = new Set<string>(
         Array.from(imageMoves.get(pi) ?? new Map<string, ImageMoveValue>()).flatMap(([id, v]) =>
-          (v.dx ?? 0) !== 0 || (v.dy ?? 0) !== 0 || (v.dw ?? 0) !== 0 || (v.dh ?? 0) !== 0
+          (v.dx ?? 0) !== 0 ||
+          (v.dy ?? 0) !== 0 ||
+          (v.dw ?? 0) !== 0 ||
+          (v.dh ?? 0) !== 0 ||
+          v.targetPageIndex !== undefined
             ? [id]
             : [],
         ),
@@ -254,8 +258,10 @@ export default function App() {
         const id = `p${pageIndex + 1}-ni${Date.now().toString(36)}`;
         // Drop with a sensible initial size: scale to fit ~200pt wide
         // while preserving aspect ratio, capped to the picture's
-        // natural pixel dimensions.
-        const targetW = Math.min(pendingImage.naturalWidth, 200);
+        // natural pixel dimensions but never smaller than 30pt — a
+        // 1×1 source PNG would otherwise produce a sub-pixel overlay
+        // the user can't grab.
+        const targetW = Math.min(Math.max(pendingImage.naturalWidth, 30), 200);
         const aspect = pendingImage.naturalHeight / pendingImage.naturalWidth;
         const w = targetW;
         const h = targetW * aspect;
@@ -282,13 +288,30 @@ export default function App() {
     [tool, pendingImage],
   );
 
-  /** Update an inserted text box (text/style/position changes). */
+  /** Update an inserted text box (text/style/position changes). When
+   *  `patch.pageIndex` differs from the current key, the entry is moved
+   *  between page buckets — this is how a cross-page drag lands. */
   const onTextInsertChange = useCallback(
     (pageIndex: number, id: string, patch: Partial<TextInsertion>) => {
       setInsertedTexts((prev) => {
         const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t));
-        next.set(pageIndex, arr);
+        const fromArr = next.get(pageIndex) ?? [];
+        const item = fromArr.find((t) => t.id === id);
+        if (!item) return prev;
+        const targetPage = patch.pageIndex ?? pageIndex;
+        const updated: TextInsertion = { ...item, ...patch };
+        if (targetPage !== pageIndex) {
+          next.set(
+            pageIndex,
+            fromArr.filter((t) => t.id !== id),
+          );
+          next.set(targetPage, [...(next.get(targetPage) ?? []), updated]);
+        } else {
+          next.set(
+            pageIndex,
+            fromArr.map((t) => (t.id === id ? updated : t)),
+          );
+        }
         return next;
       });
     },
@@ -306,8 +329,23 @@ export default function App() {
     (pageIndex: number, id: string, patch: Partial<ImageInsertion>) => {
       setInsertedImages((prev) => {
         const next = new Map(prev);
-        const arr = (next.get(pageIndex) ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m));
-        next.set(pageIndex, arr);
+        const fromArr = next.get(pageIndex) ?? [];
+        const item = fromArr.find((m) => m.id === id);
+        if (!item) return prev;
+        const targetPage = patch.pageIndex ?? pageIndex;
+        const updated: ImageInsertion = { ...item, ...patch };
+        if (targetPage !== pageIndex) {
+          next.set(
+            pageIndex,
+            fromArr.filter((m) => m.id !== id),
+          );
+          next.set(targetPage, [...(next.get(targetPage) ?? []), updated]);
+        } else {
+          next.set(
+            pageIndex,
+            fromArr.map((m) => (m.id === id ? updated : m)),
+          );
+        }
         return next;
       });
     },
@@ -346,6 +384,9 @@ export default function App() {
             style: value.style,
             dx: value.dx,
             dy: value.dy,
+            targetPageIndex: value.targetPageIndex,
+            targetPdfX: value.targetPdfX,
+            targetPdfY: value.targetPdfY,
           });
         }
       }
@@ -356,7 +397,8 @@ export default function App() {
           const dy = value.dy ?? 0;
           const dw = value.dw ?? 0;
           const dh = value.dh ?? 0;
-          if (dx === 0 && dy === 0 && dw === 0 && dh === 0) continue;
+          const isCrossPage = value.targetPageIndex !== undefined;
+          if (!isCrossPage && dx === 0 && dy === 0 && dw === 0 && dh === 0) continue;
           flatImageMoves.push({
             pageIndex,
             imageId,
@@ -364,6 +406,11 @@ export default function App() {
             dy,
             dw,
             dh,
+            targetPageIndex: value.targetPageIndex,
+            targetPdfX: value.targetPdfX,
+            targetPdfY: value.targetPdfY,
+            targetPdfWidth: value.targetPdfWidth,
+            targetPdfHeight: value.targetPdfHeight,
           });
         }
       }

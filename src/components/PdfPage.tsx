@@ -9,11 +9,22 @@ import { FONTS } from "../lib/fonts";
 export type EditValue = {
   text: string;
   style?: EditStyle;
-  /** Move offset from the original run position, in viewport pixels.
-   *  Positive dx → right, positive dy → down. Saved by translating the
-   *  drawn text by (dx / scale, -dy / scale) in PDF user space. */
+  /** Move offset from the original run position, in viewport pixels
+   *  (origin-page-relative). Positive dx → right, positive dy → down.
+   *  Used both for SAME-page save (translates drawn text by (dx/scale,
+   *  -dy/scale) in PDF user space) and for rendering the HTML overlay
+   *  during/after a cross-page move (the overlay still lives in its
+   *  origin page's container and overflows visually onto the target
+   *  page — z-index keeps it on top). */
   dx?: number;
   dy?: number;
+  /** Cross-page move target. When set and != originPageIndex, save
+   *  strips the run from origin and re-draws it on the target page at
+   *  (targetPdfX, targetPdfY); rendering still uses dx/dy to position
+   *  the HTML overlay relative to its origin container. */
+  targetPageIndex?: number;
+  targetPdfX?: number;
+  targetPdfY?: number;
 };
 
 /** Move + resize for one image instance, in viewport pixels (same axis
@@ -29,11 +40,54 @@ export type ImageMoveValue = {
   dy?: number;
   dw?: number;
   dh?: number;
+  /** Cross-page move target. Same model as EditValue: dx/dy still
+   *  position the visual overlay relative to the origin container,
+   *  while save uses (targetPdfX/Y/W/H) to draw on the target page
+   *  and strips the original q…Q block from the origin. */
+  targetPageIndex?: number;
+  targetPdfX?: number;
+  targetPdfY?: number;
+  targetPdfWidth?: number;
+  targetPdfHeight?: number;
 };
 
 const DRAG_THRESHOLD_PX = 3;
 
 type ResizeCorner = "tl" | "tr" | "bl" | "br";
+
+/** Cross-page hit-test: given a viewport (clientX, clientY) point, find
+ *  which page container is under it and return its index/scale/size.
+ *  Iterates `[data-page-index]` elements and returns the first whose
+ *  bounding rect contains the point. Returns null when the cursor is
+ *  outside any page (e.g. in the header or between pages). */
+function findPageAtPoint(
+  clientX: number,
+  clientY: number,
+): {
+  pageIndex: number;
+  scale: number;
+  viewWidth: number;
+  viewHeight: number;
+  rect: DOMRect;
+} | null {
+  const els = document.querySelectorAll<HTMLElement>("[data-page-index]");
+  for (const el of Array.from(els)) {
+    const r = el.getBoundingClientRect();
+    if (clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom) {
+      const idx = parseInt(el.dataset.pageIndex ?? "", 10);
+      const scale = parseFloat(el.dataset.pageScale ?? "");
+      if (Number.isNaN(idx) || Number.isNaN(scale)) continue;
+      return {
+        pageIndex: idx,
+        scale,
+        viewWidth: r.width,
+        viewHeight: r.height,
+        rect: r,
+      };
+    }
+  }
+  return null;
+}
 
 type Props = {
   page: RenderedPage;
@@ -142,6 +196,7 @@ export function PdfPage({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
+    const originRect = containerRef.current?.getBoundingClientRect() ?? null;
     setDrag({ runId, startX, startY, dx: base.dx, dy: base.dy });
 
     const onMove = (ev: MouseEvent) => {
@@ -168,7 +223,35 @@ export function PdfPage({
       const run = page.textRuns.find((r) => r.id === runId);
       if (!run) return;
       const existing = edits.get(runId) ?? { text: run.text };
-      onEdit(runId, { ...existing, dx: totalDx, dy: totalDy });
+      // Cross-page detection: if the cursor landed on a different page
+      // than this run's origin, persist absolute target-page baseline
+      // coords too. Save uses them to strip-on-origin + draw-on-target.
+      const hit = originRect ? findPageAtPoint(ev.clientX, ev.clientY) : null;
+      if (hit && originRect && hit.pageIndex !== pageIndex) {
+        const screenBaselineX = originRect.left + run.bounds.left + totalDx;
+        const screenBaselineY = originRect.top + run.baselineY + totalDy;
+        const targetViewX = screenBaselineX - hit.rect.left;
+        const targetViewY = screenBaselineY - hit.rect.top;
+        const targetPdfX = targetViewX / hit.scale;
+        const targetPdfY = (hit.viewHeight - targetViewY) / hit.scale;
+        onEdit(runId, {
+          ...existing,
+          dx: totalDx,
+          dy: totalDy,
+          targetPageIndex: hit.pageIndex,
+          targetPdfX,
+          targetPdfY,
+        });
+      } else {
+        onEdit(runId, {
+          ...existing,
+          dx: totalDx,
+          dy: totalDy,
+          targetPageIndex: undefined,
+          targetPdfX: undefined,
+          targetPdfY: undefined,
+        });
+      }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -187,6 +270,7 @@ export function PdfPage({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
+    const originRect = containerRef.current?.getBoundingClientRect() ?? null;
     setImageDrag({
       imageId,
       startX,
@@ -214,12 +298,58 @@ export function PdfPage({
         Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
       setImageDrag(null);
       if (!moved) return;
-      onImageMove(imageId, {
-        dx: totalDx,
-        dy: totalDy,
-        dw: base.dw,
-        dh: base.dh,
-      });
+      const img = page.images.find((i) => i.id === imageId);
+      // Cross-page detection: if the drop landed on a different page,
+      // compute target-page bottom-left + size in PDF user space so
+      // save can replicate the XObject reference there.
+      const hit = originRect && img ? findPageAtPoint(ev.clientX, ev.clientY) : null;
+      if (hit && originRect && img && hit.pageIndex !== pageIndex) {
+        const origLeft = img.pdfX * page.scale;
+        const origTopView = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
+        const dwPdf = base.dw / page.scale;
+        const dhPdf = base.dh / page.scale;
+        const newW = img.pdfWidth + dwPdf;
+        const newH = img.pdfHeight + dhPdf;
+        // Effective box top on origin page after move + resize (matches
+        // ImageOverlay's boxTop = top + dy - dh).
+        const screenLeft = originRect.left + origLeft + totalDx;
+        const screenTopBox = originRect.top + origTopView + totalDy - base.dh;
+        const targetViewLeft = screenLeft - hit.rect.left;
+        const targetViewTopBox = screenTopBox - hit.rect.top;
+        const newWView = newW * hit.scale;
+        const newHView = newH * hit.scale;
+        const targetPdfX = targetViewLeft / hit.scale;
+        // Bottom-left in PDF y-up = (viewHeight - viewBottom) / scale.
+        const targetViewBottom = targetViewTopBox + newHView;
+        const targetPdfY = (hit.viewHeight - targetViewBottom) / hit.scale;
+        // newWView / hit.scale = newW; symmetric — but go through view
+        // pixels so any scale mismatch between origin/target is handled.
+        const targetPdfWidth = newWView / hit.scale;
+        const targetPdfHeight = newHView / hit.scale;
+        onImageMove(imageId, {
+          dx: totalDx,
+          dy: totalDy,
+          dw: base.dw,
+          dh: base.dh,
+          targetPageIndex: hit.pageIndex,
+          targetPdfX,
+          targetPdfY,
+          targetPdfWidth,
+          targetPdfHeight,
+        });
+      } else {
+        onImageMove(imageId, {
+          dx: totalDx,
+          dy: totalDy,
+          dw: base.dw,
+          dh: base.dh,
+          targetPageIndex: undefined,
+          targetPdfX: undefined,
+          targetPdfY: undefined,
+          targetPdfWidth: undefined,
+          targetPdfHeight: undefined,
+        });
+      }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -330,6 +460,9 @@ export function PdfPage({
       className="relative inline-block shadow-md"
       style={{ width: page.viewWidth, height: page.viewHeight }}
       data-page-index={pageIndex}
+      data-page-scale={page.scale}
+      data-view-width={page.viewWidth}
+      data-view-height={page.viewHeight}
     >
       <div data-canvas-slot />
       {tool !== "select" ? (
@@ -812,10 +945,37 @@ function InsertedTextOverlay({
         pdfY: d.baseY - dyView / page.scale,
       });
     };
-    const onUp = () => {
+    const onUp = (ev: MouseEvent) => {
+      const d = dragRef.current;
       dragRef.current = null;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      // Cross-page drop: re-key onto the target page in App. Convert
+      // the overlay's screen position to the target page's PDF coords
+      // (baseline x; baseline y is fontSizePx ABOVE the box top).
+      if (!d) return;
+      const hit = findPageAtPoint(ev.clientX, ev.clientY);
+      if (!hit || hit.pageIndex === ins.pageIndex) return;
+      const originRect = document
+        .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
+        ?.getBoundingClientRect();
+      if (!originRect) return;
+      const dxView = ev.clientX - d.startX;
+      const dyView = ev.clientY - d.startY;
+      const pdfXOrigin = d.baseX + dxView / page.scale;
+      const pdfYOrigin = d.baseY - dyView / page.scale;
+      const overlayScreenLeft = originRect.left + pdfXOrigin * page.scale;
+      const overlayScreenTopBox =
+        originRect.top + page.viewHeight - pdfYOrigin * page.scale - fontSizePx;
+      const targetFontSizePx = ins.fontSize * hit.scale;
+      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.scale;
+      const targetPdfY =
+        (hit.viewHeight - (overlayScreenTopBox - hit.rect.top) - targetFontSizePx) / hit.scale;
+      onChange({
+        pageIndex: hit.pageIndex,
+        pdfX: targetPdfX,
+        pdfY: targetPdfY,
+      });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -987,9 +1147,35 @@ function InsertedImageOverlay({
         pdfY: baseY - dyView / page.scale,
       });
     };
-    const onUp = () => {
+    const onUp = (ev: MouseEvent) => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      // Cross-page drop: re-key onto the target page in App.
+      const hit = findPageAtPoint(ev.clientX, ev.clientY);
+      if (!hit || hit.pageIndex === ins.pageIndex) return;
+      const originRect = document
+        .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
+        ?.getBoundingClientRect();
+      if (!originRect) return;
+      const dxView = ev.clientX - startX;
+      const dyView = ev.clientY - startY;
+      const pdfXOrigin = baseX + dxView / page.scale;
+      const pdfYOrigin = baseY - dyView / page.scale;
+      // ins.pdfY is the BOTTOM of the box; the overlay's screen top is
+      // originRect.top + (page.viewHeight - (pdfY + pdfHeight) * scale).
+      const overlayScreenLeft = originRect.left + pdfXOrigin * page.scale;
+      const overlayScreenTopBox =
+        originRect.top + page.viewHeight - (pdfYOrigin + ins.pdfHeight) * page.scale;
+      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.scale;
+      const heightView = ins.pdfHeight * hit.scale;
+      // Bottom-left in PDF y-up = (viewHeight - viewBottom) / scale.
+      const targetViewBottom = overlayScreenTopBox - hit.rect.top + heightView;
+      const targetPdfY = (hit.viewHeight - targetViewBottom) / hit.scale;
+      onChange({
+        pageIndex: hit.pageIndex,
+        pdfX: targetPdfX,
+        pdfY: targetPdfY,
+      });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

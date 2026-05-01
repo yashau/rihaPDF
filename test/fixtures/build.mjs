@@ -54,3 +54,42 @@ page.drawImage(blue, { x: 100, y: 400, width: 150, height: 80 });
 const out = path.join(__dirname, "with-images.pdf");
 fs.writeFileSync(out, await doc.save());
 console.log("wrote", out, fs.statSync(out).size, "bytes");
+
+// Two-page fixture for cross-page move tests. Page 1 carries one image
+// + one text label; page 2 is blank-ish (a single label so the cross-
+// page text test has SOMETHING to find on page 2 if it needs context).
+// The cross-page tests drag content from page 1 to page 2 and verify
+// the saved PDF reflects the move.
+{
+  const doc2 = await PDFDocument.create();
+  const helv2 = await doc2.embedFont(StandardFonts.Helvetica);
+  const red2 = await doc2.embedPng(RED_PNG);
+  const blue2 = await doc2.embedPng(BLUE_PNG);
+
+  const p1 = doc2.addPage([595, 842]);
+  p1.drawText("CROSS_PAGE_FIXTURE_P1", {
+    x: 50,
+    y: 800,
+    size: 14,
+    font: helv2,
+    color: rgb(0, 0, 0),
+  });
+  // One image on page 1 — the cross-page image test drags it to page 2.
+  p1.drawImage(red2, { x: 100, y: 500, width: 180, height: 100 });
+
+  const p2 = doc2.addPage([595, 842]);
+  p2.drawText("CROSS_PAGE_FIXTURE_P2", {
+    x: 50,
+    y: 800,
+    size: 14,
+    font: helv2,
+    color: rgb(0, 0, 0),
+  });
+  // One image on page 2 too so cross-page image asserts can distinguish
+  // a moved image from native-on-page-2 by ID rather than by position.
+  p2.drawImage(blue2, { x: 350, y: 500, width: 120, height: 80 });
+
+  const out2 = path.join(__dirname, "with-images-multipage.pdf");
+  fs.writeFileSync(out2, await doc2.save());
+  console.log("wrote", out2, fs.statSync(out2).size, "bytes");
+}

@@ -23,6 +23,10 @@ export const FIXTURE = {
   /** Synthetic A4 page with two known-position PNG images, generated
    *  by test/fixtures/build.mjs. Used for image-move + preview-strip. */
   withImages: path.join(FIXTURES, "with-images.pdf"),
+  /** Two-page synthetic fixture: page 1 has a red image + a label,
+   *  page 2 has a blue image + its own label. Used for cross-page
+   *  move tests so each page has distinct, identifiable content. */
+  withImagesMultipage: path.join(FIXTURES, "with-images-multipage.pdf"),
 };
 
 export const APP_URL = "http://localhost:5173/";
