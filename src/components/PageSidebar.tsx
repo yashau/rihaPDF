@@ -148,7 +148,7 @@ export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }
   const sourcesLoaded = sources.size > 0;
 
   return (
-    <aside className="flex-shrink-0 w-52 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2">
+    <aside className="flex-shrink-0 w-56 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]">
       <div className="flex flex-col gap-2 px-3 mb-2">
         <span className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Pages
@@ -201,6 +201,10 @@ export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }
                       : null
                   }
                   onRemove={() => removeSlot(slot.id)}
+                  onActivate={() => {
+                    const el = document.getElementById(`page-slot-${slot.id}`);
+                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
                 />
               </div>
             ))}
@@ -234,11 +238,13 @@ function SortableSlotThumb({
   displayIndex,
   dataUrl,
   onRemove,
+  onActivate,
 }: {
   slot: PageSlot;
   displayIndex: number;
   dataUrl: string | null;
   onRemove: () => void;
+  onActivate: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: slot.id,
@@ -254,7 +260,8 @@ function SortableSlotThumb({
       style={style}
       {...attributes}
       {...listeners}
-      className="group relative bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded shadow-sm overflow-hidden cursor-grab active:cursor-grabbing touch-none"
+      onClick={onActivate}
+      className="group relative bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded shadow-sm overflow-hidden cursor-pointer active:cursor-grabbing touch-none"
     >
       <div className="absolute top-1 left-1 z-10 bg-zinc-700/75 dark:bg-zinc-950/75 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
         {displayIndex + 1}

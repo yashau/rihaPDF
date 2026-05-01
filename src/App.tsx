@@ -886,7 +886,8 @@ export default function App() {
                   return (
                     <div
                       key={slot.id}
-                      className="bg-white dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 rounded shadow-sm flex items-center justify-center text-zinc-300 dark:text-zinc-500 text-sm"
+                      id={`page-slot-${slot.id}`}
+                      className="bg-white dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 rounded shadow-sm flex items-center justify-center text-zinc-300 dark:text-zinc-500 text-sm scroll-mt-6"
                       style={{
                         width: slot.size[0] * RENDER_SCALE,
                         height: slot.size[1] * RENDER_SCALE,
@@ -972,6 +973,7 @@ export default function App() {
                 return (
                   <PageWithToolbar
                     key={slot.id}
+                    slotId={slot.id}
                     page={page}
                     pageIndex={idx}
                     sourceKey={slot.sourceKey}
@@ -1097,6 +1099,7 @@ function AboutModal({
 }
 
 function PageWithToolbar({
+  slotId,
   page,
   pageIndex,
   sourceKey,
@@ -1120,6 +1123,7 @@ function PageWithToolbar({
   onSelectImage,
   onSelectInsertedImage,
 }: {
+  slotId: string;
   page: RenderedPage;
   pageIndex: number;
   sourceKey: string;
@@ -1144,7 +1148,7 @@ function PageWithToolbar({
   onSelectInsertedImage: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6">
       <div className="flex gap-2 items-center text-sm">
         <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>
