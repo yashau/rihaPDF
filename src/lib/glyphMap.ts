@@ -161,28 +161,55 @@ function firstCodePointFromHex(hex: string): number | null {
   return parseInt(hex, 16);
 }
 
-/** Detect Word's "fili gap" CMap bug: a CID mapped to U+0020 whose
- *  immediate neighbour CIDs map to consecutive Thaana fili codepoints.
- *  In the Office output we've seen, only a single CID inside an otherwise
- *  contiguous fili block gets corrupted (always aabaafili U+07A7 — the
- *  one mapped via a 2-element bfrange array `[<07A6> <0020>]`). The
- *  surrounding CIDs in the same content stream are still mapped correctly
- *  by the next `bfrange`, so we can derive the missing codepoint by
- *  interpolating: prev_cp + (cid - prev_cid). */
+/** Detect a "fili gap" CMap bug: a CID mapped to U+0020 whose neighbour
+ *  CIDs reveal that the gap should be a Thaana fili.
+ *
+ *  Two known shapes:
+ *
+ *    A. **Inside the block** (Office / Word export). A single CID in an
+ *       otherwise contiguous fili block is corrupted — typically
+ *       aabaafili (U+07A7), written as the `<0020>` slot in a 2-element
+ *       bfrange array `[<07A6> <0020>]`. Both neighbours exist and are
+ *       fili: prev_cp + 2 === next_cp, so the gap = prev_cp + 1.
+ *
+ *    B. **At the block boundary** (other non-Office producers — e.g.
+ *       maldivian2.pdf). The corrupted CID is the *last* in the fili
+ *       run; its `prev` is in the fili range but `next` doesn't exist
+ *       (or isn't fili) because the bfrange ended. We can still infer
+ *       the gap from `prev` alone: if prev is U+07A6..U+07AF, the
+ *       successor is the next fili codepoint, prev_cp + 1.
+ *       Symmetrically, if `next` exists and `prev` is missing/non-fili,
+ *       and next is U+07A7..U+07B0, the gap is next_cp - 1.
+ *
+ *  In every case we constrain the inferred codepoint to the fili block
+ *  U+07A6..U+07B0 — that prevents Latin-space CIDs from being silently
+ *  rewritten to a non-fili codepoint just because a Thaana CID happens
+ *  to sit next to them in CID space. */
 function patchBrokenFiliMappings(map: Map<number, number>): void {
-  const inThaana = (c: number | undefined): boolean =>
-    c != null && c !== 0x20 && c >= 0x0780 && c <= 0x07b1;
+  const FILI_LO = 0x07a6;
+  const FILI_HI = 0x07b0;
+  const inFili = (c: number | undefined): c is number =>
+    c != null && c >= FILI_LO && c <= FILI_HI;
   // Snapshot keys — we mutate during iteration.
   const cids = Array.from(map.keys()).sort((a, b) => a - b);
   for (const cid of cids) {
     if (map.get(cid) !== 0x20) continue;
     const prev = map.get(cid - 1);
     const next = map.get(cid + 1);
-    if (!inThaana(prev) || !inThaana(next)) continue;
-    // Sequential pattern: prev_cp + 2 === next_cp implies the gap is
-    // exactly prev_cp + 1.
-    if ((next as number) - (prev as number) !== 2) continue;
-    map.set(cid, (prev as number) + 1);
+    let inferred: number | null = null;
+    if (inFili(prev) && inFili(next) && next - prev === 2) {
+      // Shape A: middle of the block.
+      inferred = prev + 1;
+    } else if (inFili(prev) && prev < FILI_HI) {
+      // Shape B (right boundary): successor in the block.
+      inferred = prev + 1;
+    } else if (inFili(next) && next > FILI_LO) {
+      // Shape B (left boundary): predecessor in the block.
+      inferred = next - 1;
+    }
+    if (inferred == null) continue;
+    if (inferred < FILI_LO || inferred > FILI_HI) continue;
+    map.set(cid, inferred);
   }
 }
 

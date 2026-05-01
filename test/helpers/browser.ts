@@ -20,6 +20,15 @@ export const FIXTURE = {
   /** Real Maldivian government doc with broken-aabaafili ToUnicode —
    *  the canonical Thaana-extraction + edit/move test bed. */
   maldivian: path.join(FIXTURES, "maldivian.pdf"),
+  /** Second real Maldivian government doc — NOT office-generated.
+   *  14 pages, mixed Thaana/English content, 3 source images on
+   *  pages 0/11/12. Its Faruma `/ToUnicode` maps the sukun CID
+   *  (last entry of the fili block) to U+0020 — boundary-shape of
+   *  the fili-gap bug that `glyphMap.patchBrokenFiliMappings`
+   *  recovers. Tests against this fixture skip assertions that
+   *  depend on source-detected bold metadata, since the producer
+   *  doesn't reliably emit it. */
+  maldivian2: path.join(FIXTURES, "maldivian2.pdf"),
   /** Synthetic A4 page with two known-position PNG images, generated
    *  by test/fixtures/build.mjs. Used for image-move + preview-strip. */
   withImages: path.join(FIXTURES, "with-images.pdf"),

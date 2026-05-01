@@ -1,0 +1,72 @@
+// Same regression coverage as edit-text-includes-punct.test.ts but on
+// maldivian2.pdf — when a run carrying mixed text + punctuation +
+// digits is opened in the editor, the input must show every visible
+// piece of the run (no punctuation dropped into a separate, unreached
+// run by the run-builder).
+//
+// maldivian2 page 1 carries the registration URL
+//   https://forms.office.com/r/Bx2mdhMvuj
+// which combines colon, slashes, dots, mixed case ASCII, and digits —
+// a strong cross-section of punctuation in one run. We open it and
+// expect the editor to expose the whole URL.
+
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import fs from "fs";
+import {
+  FIXTURE,
+  SCREENSHOTS,
+  loadFixture,
+  setupBrowser,
+  tearDown,
+  type Harness,
+} from "../helpers/browser";
+
+let h: Harness;
+
+beforeAll(async () => {
+  fs.mkdirSync(SCREENSHOTS, { recursive: true });
+  h = await setupBrowser();
+});
+
+afterAll(async () => {
+  if (h) await tearDown(h);
+});
+
+describe("paragraph edit boxes carry adjacent punctuation (maldivian2)", () => {
+  test("opening the registration-URL run shows colon, slashes, dots, digits", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: 14 });
+    await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    const target = await h.page.evaluate(() => {
+      const host = document.querySelector('[data-page-index="1"]');
+      if (!host) return null;
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const text = el.textContent || "";
+        if (text.includes("forms.office.com")) {
+          const r = el.getBoundingClientRect();
+          return {
+            id: el.getAttribute("data-run-id")!,
+            cx: r.x + r.width / 2,
+            cy: r.y + r.height / 2,
+            text,
+          };
+        }
+      }
+      return null;
+    });
+    expect(
+      target,
+      "couldn't find a run carrying the registration URL on page 2 of maldivian2.pdf",
+    ).not.toBeNull();
+
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    await h.page.waitForTimeout(300);
+    const editorValue = await h.page.locator("input[data-editor]").first().inputValue();
+
+    expect(editorValue, `edit box content: "${editorValue}"`).toContain("https");
+    expect(editorValue, `edit box content: "${editorValue}"`).toContain("forms.office.com");
+    expect(editorValue, `edit box content: "${editorValue}"`).toMatch(/:\/\//);
+    expect(editorValue, `edit box content: "${editorValue}"`).toContain("Bx2mdhMvuj");
+  });
+});
