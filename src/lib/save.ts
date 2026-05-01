@@ -54,6 +54,12 @@ export type EditStyle = {
   italic?: boolean;
   /** Underline drawn as a thin horizontal line under the text. */
   underline?: boolean;
+  /** Explicit text direction. When `undefined` (the default), the
+   *  draw / overlay paths auto-detect from the codepoints — Thaana
+   *  / Hebrew / Arabic → "rtl", Latin → "ltr". Set explicitly when
+   *  auto-detection misclassifies (e.g. an all-digit run that should
+   *  render RTL inside a Dhivehi paragraph). */
+  dir?: "rtl" | "ltr";
 };
 
 export type Edit = {
@@ -451,7 +457,11 @@ export async function applyEditsAndSave(
     const italic = !!ins.style?.italic;
     const pdfFont = await ctx.getFont(family, bold, italic);
     const fontSizePt = ins.fontSize;
-    const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(ins.text);
+    // Explicit `style.dir` wins; otherwise auto-detect from the text's
+    // strong codepoints. RTL right-aligns the baseline so glyphs grow
+    // leftward from `pdfX`; LTR draws from `pdfX` rightward.
+    const isRtl =
+      ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const widthPt = pdfFont.widthOfTextAtSize(ins.text, fontSizePt);
     const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
     page.drawText(ins.text, {
@@ -837,7 +847,8 @@ async function emitTextDraw(
   const italic = style.italic ?? run.italic;
   const pdfFont = await ctx.getFont(family, bold, italic);
 
-  const isRtl = /[֐-׿؀-ۿހ-޿]/u.test(edit.newText);
+  // Explicit `style.dir` wins; otherwise auto-detect.
+  const isRtl = style.dir === "rtl" || (style.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(edit.newText));
   const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
   const drawY = baselineYPdf;

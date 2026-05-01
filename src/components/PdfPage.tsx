@@ -1,6 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, ToggleButton as HeroToggleButton } from "@heroui/react";
-import { Bold, Italic, Trash2, Underline, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowLeftRight,
+  ArrowRight,
+  Bold,
+  Italic,
+  Trash2,
+  Underline,
+  X,
+} from "lucide-react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
@@ -903,7 +912,7 @@ export function PdfPage({
                   }}
                 >
                   <span
-                    dir="auto"
+                    dir={style.dir ?? "auto"}
                     style={{
                       fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
                       fontSize: `${style.fontSize ?? run.height}px`,
@@ -1316,6 +1325,8 @@ function InsertedTextOverlay({
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    /** `null` clears an explicit dir back to auto-detect. */
+    dir?: "rtl" | "ltr" | null;
   }) => {
     // fontSize lives outside `style` (it's a top-level field on the
     // insertion since it's also used to derive the box height); split
@@ -1325,6 +1336,11 @@ function InsertedTextOverlay({
     if (patch.bold !== undefined) nextStyle.bold = patch.bold;
     if (patch.italic !== undefined) nextStyle.italic = patch.italic;
     if (patch.underline !== undefined) nextStyle.underline = patch.underline;
+    if (patch.dir !== undefined) {
+      // null = clear back to auto; "rtl"/"ltr" = explicit override.
+      if (patch.dir === null) delete nextStyle.dir;
+      else nextStyle.dir = patch.dir;
+    }
     const insPatch: Partial<TextInsertion> = { style: nextStyle };
     if (patch.fontSize !== undefined) insPatch.fontSize = patch.fontSize;
     onChange(insPatch);
@@ -1394,6 +1410,7 @@ function InsertedTextOverlay({
           bold={bold}
           italic={italic}
           underline={underline}
+          dir={style.dir}
           onChange={(patch) => {
             // Toolbar already reports fontSize in PDF points — store
             // it directly on the insertion, no scale conversion.
@@ -1464,7 +1481,10 @@ function InsertedTextOverlay({
           <input
             ref={inputRef}
             type="text"
-            dir="auto"
+            // Explicit `style.dir` overrides the codepoint-based
+            // auto-detection. `dir="auto"` is the browser's own
+            // detector — used when the user hasn't picked a side.
+            dir={style.dir ?? "auto"}
             value={ins.text}
             style={{
               width: "100%",
@@ -1503,7 +1523,7 @@ function InsertedTextOverlay({
           />
         ) : (
           <span
-            dir="auto"
+            dir={style.dir ?? "auto"}
             style={{
               fontFamily: `"${family}"`,
               fontSize: `${fontSizePx}px`,
@@ -1903,6 +1923,7 @@ function EditField({
         bold={effectiveBold}
         italic={effectiveItalic}
         underline={!!style.underline}
+        dir={style.dir}
         onChange={(patch) =>
           setStyle((s) => {
             const next: EditStyle = { ...s };
@@ -1912,6 +1933,11 @@ function EditField({
             if (patch.bold !== undefined) next.bold = patch.bold;
             if (patch.italic !== undefined) next.italic = patch.italic;
             if (patch.underline !== undefined) next.underline = patch.underline;
+            if (patch.dir !== undefined) {
+              // null = clear back to auto-detect; "rtl"/"ltr" = override.
+              if (patch.dir === null) delete next.dir;
+              else next.dir = patch.dir;
+            }
             return next;
           })
         }
@@ -1921,7 +1947,10 @@ function EditField({
       <input
         ref={inputRef}
         value={text}
-        dir="auto"
+        // Explicit `style.dir` overrides auto-detection (set via the
+        // toolbar's direction button); falls back to "auto" so the
+        // browser picks based on the text's strong codepoints.
+        dir={style.dir ?? "auto"}
         data-run-id={run.id}
         data-editor
         style={{
@@ -1978,7 +2007,8 @@ function hasStyle(s: EditStyle): boolean {
     s.fontSize !== undefined ||
     s.bold !== undefined ||
     s.italic !== undefined ||
-    s.underline !== undefined
+    s.underline !== undefined ||
+    s.dir !== undefined
   );
 }
 
@@ -2064,6 +2094,7 @@ function EditTextToolbar({
   bold,
   italic,
   underline,
+  dir,
   onChange,
   onCancel,
   onDelete,
@@ -2076,12 +2107,16 @@ function EditTextToolbar({
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  /** Explicit text direction. `undefined` = auto-detect from text. */
+  dir: "rtl" | "ltr" | undefined;
   onChange: (patch: {
     fontFamily?: string;
     fontSize?: number;
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    /** `null` clears an explicit direction back to auto-detect. */
+    dir?: "rtl" | "ltr" | null;
   }) => void;
   onCancel?: () => void;
   /** When provided, renders a trash button. Source-run deletion sets
@@ -2231,6 +2266,43 @@ function EditTextToolbar({
         onChange={(v) => onChange({ underline: v })}
         icon={<Underline size={14} />}
       />
+      {/* Direction button — cycles auto → rtl → ltr → auto. Lets the
+          user override the codepoint-based auto-detection used by the
+          overlay (`dir="auto"`) and the save path. Useful when the
+          string is a mix or all-digits that the auto-detector
+          misclassifies (a digit-only run inside a Dhivehi paragraph
+          that should stay RTL, for example). */}
+      <Button
+        isIconOnly
+        size="sm"
+        variant={dir === undefined ? "ghost" : "primary"}
+        // Pass `null` to clear back to auto so the receiver can
+        // distinguish "no change" (key missing from patch) from
+        // "explicitly clear".
+        onPress={() => {
+          const next = dir === undefined ? "rtl" : dir === "rtl" ? "ltr" : null;
+          onChange({ dir: next });
+        }}
+        aria-label={
+          dir === "rtl"
+            ? "Direction: right-to-left (click for left-to-right)"
+            : dir === "ltr"
+              ? "Direction: left-to-right (click for auto)"
+              : "Direction: auto (click for right-to-left)"
+        }
+        // HeroUI ToggleButton suppresses focus shift via onMouseDown
+        // preventDefault — we need the same so clicking direction
+        // doesn't blur the editor input mid-edit.
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        {dir === "rtl" ? (
+          <ArrowLeft size={14} />
+        ) : dir === "ltr" ? (
+          <ArrowRight size={14} />
+        ) : (
+          <ArrowLeftRight size={14} />
+        )}
+      </Button>
       {onDelete ? (
         <Button
           isIconOnly
