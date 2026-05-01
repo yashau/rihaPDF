@@ -82,7 +82,7 @@ export async function loadFixture(
   options: { expectedPages?: number } = {},
 ): Promise<void> {
   const { expectedPages } = options;
-  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(fixturePath);
+  await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(fixturePath);
   await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
   // Poll the page count: it should grow as renderPage finishes for
   // each page, then plateau. Treat 1.5s of unchanged count as "done"

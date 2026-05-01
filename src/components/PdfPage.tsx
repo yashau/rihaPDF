@@ -18,13 +18,18 @@ export type EditValue = {
    *  page — z-index keeps it on top). */
   dx?: number;
   dy?: number;
-  /** Cross-page move target. When set and != originPageIndex, save
-   *  strips the run from origin and re-draws it on the target page at
-   *  (targetPdfX, targetPdfY); rendering still uses dx/dy to position
-   *  the HTML overlay relative to its origin container. */
+  /** Cross-page move target as a CURRENT slot index. PdfPage emits
+   *  this from its drag-end hit-test and consumes it for rendering;
+   *  App.tsx converts to/from `targetSlotId` on the way in/out so the
+   *  target survives reorder. */
   targetPageIndex?: number;
   targetPdfX?: number;
   targetPdfY?: number;
+  /** Stable identity of the target slot — populated by App.tsx for
+   *  persisted edits (PdfPage never sets or reads this). When the
+   *  underlying slot is reordered, App resolves this back to a fresh
+   *  `targetPageIndex` before re-rendering. */
+  targetSlotId?: string;
 };
 
 /** Move + resize for one image instance, in viewport pixels (same axis
@@ -49,6 +54,9 @@ export type ImageMoveValue = {
   targetPdfY?: number;
   targetPdfWidth?: number;
   targetPdfHeight?: number;
+  /** Stable identity of the target slot — populated by App.tsx for
+   *  persisted moves only. See EditValue.targetSlotId. */
+  targetSlotId?: string;
 };
 
 const DRAG_THRESHOLD_PX = 3;

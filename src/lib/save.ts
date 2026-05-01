@@ -31,6 +31,7 @@ import type { RenderedPage, TextRun } from "./pdf";
 import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
+import type { PageSlot } from "./slots";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -124,10 +125,6 @@ export type ImageInsert = {
   format: "png" | "jpeg";
 };
 
-export type PageOp =
-  | { kind: "remove"; pageIndex: number }
-  | { kind: "insertBlank"; afterPageIndex: number };
-
 /** Walk forward from a `q` op tracking nested q/Q depth and return the
  *  index of the matching `Q`. Used by the cross-page image strip path
  *  to remove the entire q…Q block of the moved image so its pixels
@@ -184,10 +181,14 @@ export async function applyEditsAndSave(
   originalPdfBytes: ArrayBuffer,
   pages: RenderedPage[],
   edits: Edit[],
-  pageOps: PageOp[],
+  slots: PageSlot[],
   imageMoves: ImageMove[] = [],
   textInserts: TextInsert[] = [],
   imageInserts: ImageInsert[] = [],
+  /** Bytes for each loaded "insert from PDF" doc, keyed by sourceKey.
+   *  Save copies external pages out of these into the output via
+   *  pdf-lib's copyPages — fonts/images/resources come along. */
+  externalSources: Map<string, ArrayBuffer> = new Map(),
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalPdfBytes);
   doc.registerFontkit(fontkit);
@@ -696,26 +697,66 @@ export async function applyEditsAndSave(
     });
   }
 
-  // Page operations applied last; sort removals high-to-low so they don't
-  // shift later indices.
-  const sortedOps = [...pageOps].sort((a, b) => {
-    const ai = a.kind === "remove" ? a.pageIndex : a.afterPageIndex;
-    const bi = b.kind === "remove" ? b.pageIndex : b.afterPageIndex;
-    return bi - ai;
-  });
-  for (const op of sortedOps) {
-    if (op.kind === "remove") {
-      doc.removePage(op.pageIndex);
-    } else {
-      const ref = docPages[op.afterPageIndex];
-      const size = ref
-        ? ([ref.getWidth(), ref.getHeight()] as [number, number])
-        : ([595.28, 841.89] as [number, number]);
-      doc.insertPage(op.afterPageIndex + 1, size);
+  // Emit the output document by walking `slots[]` in order. The
+  // editing pipeline above mutated `doc` in place (content streams,
+  // drawText/drawImage, cross-page draws), so the source pages now
+  // carry every requested edit. We copy the originals referenced by
+  // slots into a fresh `output` doc — copyPages preserves embedded
+  // fonts, images, XObjects and other resources — then append blank
+  // slots at their slot positions. This naturally handles reorder,
+  // removal (sources not referenced by any slot are skipped) and
+  // insert (blank slots become fresh pages).
+  const output = await PDFDocument.create();
+  output.registerFontkit(fontkit);
+  // Pre-batch copyPages calls per source doc — copyPages handles a list
+  // of indices in one shot, preserving cross-resource references when
+  // multiple pages share fonts/images.
+  const originalSourceIndices: number[] = [];
+  for (const slot of slots) {
+    if (slot.kind === "original") originalSourceIndices.push(slot.sourceIndex);
+  }
+  const originalCopied =
+    originalSourceIndices.length > 0 ? await output.copyPages(doc, originalSourceIndices) : [];
+  // For each external source, lazy-load the doc once and copyPages all
+  // requested indices in one batch.
+  const externalCopiedBySourceKey = new Map<string, Awaited<ReturnType<typeof output.copyPages>>>();
+  const externalIndicesBySourceKey = new Map<string, number[]>();
+  for (const slot of slots) {
+    if (slot.kind !== "external") continue;
+    const arr = externalIndicesBySourceKey.get(slot.sourceKey) ?? [];
+    arr.push(slot.sourcePageIndex);
+    externalIndicesBySourceKey.set(slot.sourceKey, arr);
+  }
+  for (const [sourceKey, indices] of externalIndicesBySourceKey) {
+    const bytes = externalSources.get(sourceKey);
+    if (!bytes) {
+      // No bytes registered for this slot's source — skip silently.
+      // (Should never happen during normal use; defensive in case the
+      // app forgets to seed externalSources before saving.)
+      continue;
+    }
+    const extDoc = await PDFDocument.load(bytes);
+    const copied = await output.copyPages(extDoc, indices);
+    externalCopiedBySourceKey.set(sourceKey, copied);
+  }
+  // Walk slots, draining from each kind's copied list in slot order.
+  let originalCursor = 0;
+  const externalCursorBySourceKey = new Map<string, number>();
+  for (const slot of slots) {
+    if (slot.kind === "original") {
+      output.addPage(originalCopied[originalCursor]);
+      originalCursor += 1;
+    } else if (slot.kind === "blank") {
+      output.addPage(slot.size);
+    } else if (slot.kind === "external") {
+      const copied = externalCopiedBySourceKey.get(slot.sourceKey);
+      if (!copied) continue;
+      const cursor = externalCursorBySourceKey.get(slot.sourceKey) ?? 0;
+      output.addPage(copied[cursor]);
+      externalCursorBySourceKey.set(slot.sourceKey, cursor + 1);
     }
   }
-
-  return doc.save();
+  return output.save();
 }
 
 export function downloadBlob(bytes: Uint8Array, filename: string) {

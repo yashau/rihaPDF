@@ -12,12 +12,14 @@ import {
   type Edit,
   type ImageInsert,
   type ImageMove,
-  type PageOp,
   type TextInsert,
 } from "./lib/save";
 import { buildPreviewBytes, renderPagePreviewCanvas, type PageStripSpec } from "./lib/preview";
 import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
+import { PageSidebar } from "./components/PageSidebar";
+import { externalSlot, slotsFromPages, type PageSlot } from "./lib/slots";
+import { loadExternalPdf } from "./lib/externalPdf";
 
 export type ToolMode = "select" | "addText" | "addImage";
 
@@ -27,36 +29,54 @@ export default function App() {
   const [filename, setFilename] = useState<string | null>(null);
   const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
-  /** Map<pageIndex, Map<runId, EditValue>> */
-  const [edits, setEdits] = useState<Map<number, Map<string, EditValue>>>(new Map());
-  /** Map<pageIndex, Map<imageId, ImageMoveValue>> — drag offsets per
+  /** Ordered list of displayed pages. Each slot points back at a source
+   *  page (`kind: "original"`) or is a fresh blank (`kind: "blank"`).
+   *  Slot identity (`id`) is the stable key used to index per-page state
+   *  so an entry follows its page through reorder. */
+  const [slots, setSlots] = useState<PageSlot[]>([]);
+  /** Map<slotId, Map<runId, EditValue>> */
+  const [edits, setEdits] = useState<Map<string, Map<string, EditValue>>>(new Map());
+  /** Map<slotId, Map<imageId, ImageMoveValue>> — drag offsets per
    *  image, identical shape to edits but for image XObject placements. */
-  const [imageMoves, setImageMoves] = useState<Map<number, Map<string, ImageMoveValue>>>(new Map());
-  const [pageOps, setPageOps] = useState<PageOp[]>([]);
+  const [imageMoves, setImageMoves] = useState<Map<string, Map<string, ImageMoveValue>>>(new Map());
   const [busy, setBusy] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /** Per-page replacement canvases produced by the live preview pipeline.
-   *  When present, PdfPage paints `previewCanvases.get(pageIndex)`
-   *  instead of the original `page.canvas` — that's how the original
-   *  glyphs / images are actually removed from the render rather than
-   *  covered with a white box. */
+  /** Per-source-page replacement canvases produced by the live preview
+   *  pipeline. Keyed by SOURCE page index (not slotId) because the
+   *  strip operates on the original PDF — multiple slots referencing
+   *  the same source share the same preview canvas. */
   const [previewCanvases, setPreviewCanvases] = useState<Map<number, HTMLCanvasElement>>(new Map());
   /** Monotonic generation counter used to discard stale preview-rebuild
    *  results when the user keeps editing during the rebuild. */
   const previewGenRef = useRef(0);
-  /** Map<pageIndex, currently-open runId> — populated by PdfPage's
+  /** Mirror of `slots` so callbacks that need slotIndex→slotId lookups
+   *  (cross-page insertion drags land via slot index from PdfPage's
+   *  hit-test) don't re-create on every slot mutation. */
+  const slotsRef = useRef<PageSlot[]>([]);
+  useEffect(() => {
+    slotsRef.current = slots;
+  }, [slots]);
+  /** Map<slotId, currently-open runId> — populated by PdfPage's
    *  onEditingChange. Folded into the preview-strip spec so an open
    *  editor immediately hides the original glyph behind it. */
-  const [editingByPage, setEditingByPage] = useState<Map<number, string>>(new Map());
+  const [editingByPage, setEditingByPage] = useState<Map<string, string>>(new Map());
   /** Tool mode for click-to-place actions ("select" = no insertion;
    *  "addText" = next click on a page drops a new text box; "addImage"
    *  = next click drops the pending image at that position). */
   const [tool, setTool] = useState<ToolMode>("select");
-  /** Per-page net-new text/image insertions — separate from edits
-   *  because they don't reference an existing run/image. */
-  const [insertedTexts, setInsertedTexts] = useState<Map<number, TextInsertion[]>>(new Map());
-  const [insertedImages, setInsertedImages] = useState<Map<number, ImageInsertion[]>>(new Map());
+  /** Per-slot net-new text/image insertions — separate from edits
+   *  because they don't reference an existing run/image. Keyed by
+   *  slotId so an insertion follows its slot through reorder. */
+  const [insertedTexts, setInsertedTexts] = useState<Map<string, TextInsertion[]>>(new Map());
+  const [insertedImages, setInsertedImages] = useState<Map<string, ImageInsertion[]>>(new Map());
+  /** Bytes for each loaded external PDF, keyed by sourceKey. The save
+   *  pipeline reads these to copyPages from the right doc. */
+  const [externalSources, setExternalSources] = useState<Map<string, ArrayBuffer>>(new Map());
+  /** Per-source rendered pages used to display external slots in the
+   *  main view + to power their sidebar thumbnails. Read-only for v1
+   *  so we only need the canvas — no fonts/glyph maps. */
+  const [externalRendered, setExternalRendered] = useState<Map<string, RenderedPage[]>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -99,6 +119,7 @@ export default function App() {
       setFilename(file.name);
       setOriginalBytes(forSave);
       setPages(rendered);
+      setSlots(slotsFromPages(rendered));
       // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
       // probe can inspect what the strip pipeline thinks each run owns
       // without re-running the whole extractor in the browser.
@@ -111,10 +132,11 @@ export default function App() {
       );
       setEdits(new Map());
       setImageMoves(new Map());
-      setPageOps([]);
       setPreviewCanvases(new Map());
       setInsertedTexts(new Map());
       setInsertedImages(new Map());
+      setExternalSources(new Map());
+      setExternalRendered(new Map());
       setTool("select");
       setPendingImage(null);
     } finally {
@@ -122,22 +144,48 @@ export default function App() {
     }
   }, []);
 
-  const onEdit = useCallback((pageIndex: number, runId: string, value: EditValue) => {
+  const onEdit = useCallback((slotId: string, runId: string, value: EditValue) => {
+    // Convert PdfPage's drop-time `targetPageIndex` (current slot
+    // index) to the stable `targetSlotId` so the cross-page target
+    // survives reorder. PdfPage never reads `targetSlotId`; App
+    // re-derives `targetPageIndex` per render before passing back.
+    let stored: EditValue = value;
+    if (value.targetPageIndex !== undefined) {
+      const targetSlot = slotsRef.current[value.targetPageIndex];
+      stored = {
+        ...value,
+        targetPageIndex: undefined,
+        targetSlotId: targetSlot?.id,
+      };
+    } else {
+      stored = { ...value, targetSlotId: undefined };
+    }
     setEdits((prev) => {
       const next = new Map(prev);
-      const pageMap = new Map<string, EditValue>(next.get(pageIndex) ?? []);
-      pageMap.set(runId, value);
-      next.set(pageIndex, pageMap);
+      const pageMap = new Map<string, EditValue>(next.get(slotId) ?? []);
+      pageMap.set(runId, stored);
+      next.set(slotId, pageMap);
       return next;
     });
   }, []);
 
-  const onImageMove = useCallback((pageIndex: number, imageId: string, value: ImageMoveValue) => {
+  const onImageMove = useCallback((slotId: string, imageId: string, value: ImageMoveValue) => {
+    let stored: ImageMoveValue = value;
+    if (value.targetPageIndex !== undefined) {
+      const targetSlot = slotsRef.current[value.targetPageIndex];
+      stored = {
+        ...value,
+        targetPageIndex: undefined,
+        targetSlotId: targetSlot?.id,
+      };
+    } else {
+      stored = { ...value, targetSlotId: undefined };
+    }
     setImageMoves((prev) => {
       const next = new Map(prev);
-      const pageMap = new Map<string, ImageMoveValue>(next.get(pageIndex) ?? []);
-      pageMap.set(imageId, value);
-      next.set(pageIndex, pageMap);
+      const pageMap = new Map<string, ImageMoveValue>(next.get(slotId) ?? []);
+      pageMap.set(imageId, stored);
+      next.set(slotId, pageMap);
       return next;
     });
   }, []);
@@ -151,32 +199,62 @@ export default function App() {
   // dozen overlapping renders.
   useEffect(() => {
     if (!originalBytes || pages.length === 0) return;
-    const specs: PageStripSpec[] = [];
-    const affected = new Set<number>([
-      ...edits.keys(),
-      ...imageMoves.keys(),
-      ...editingByPage.keys(),
-    ]);
-    for (const pi of affected) {
-      const runIds = new Set(edits.get(pi)?.keys() ?? []);
-      // Currently-open editor counts as "needs strip" too — we want
-      // the original to vanish the moment the input appears, not only
-      // after commit.
-      const editing = editingByPage.get(pi);
-      if (editing) runIds.add(editing);
-      const imageIds = new Set<string>(
-        Array.from(imageMoves.get(pi) ?? new Map<string, ImageMoveValue>()).flatMap(([id, v]) =>
+    // Group slot-keyed strip work by source-page index so each source
+    // page is stripped at most once even if multiple slots reference
+    // it. (Phase 1 has 1:1 slot↔source mapping but the grouping is
+    // also future-proof for duplicate slots.)
+    const slotById = new Map<string, PageSlot>(slots.map((s) => [s.id, s]));
+    const sourceIndexFor = (slotId: string): number | null => {
+      const slot = slotById.get(slotId);
+      return slot && slot.kind === "original" ? slot.sourceIndex : null;
+    };
+    const runIdsBySource = new Map<number, Set<string>>();
+    const imageIdsBySource = new Map<number, Set<string>>();
+    const addRun = (sourceIndex: number, runId: string) => {
+      const set = runIdsBySource.get(sourceIndex) ?? new Set<string>();
+      set.add(runId);
+      runIdsBySource.set(sourceIndex, set);
+    };
+    const addImage = (sourceIndex: number, imageId: string) => {
+      const set = imageIdsBySource.get(sourceIndex) ?? new Set<string>();
+      set.add(imageId);
+      imageIdsBySource.set(sourceIndex, set);
+    };
+    for (const [slotId, runs] of edits) {
+      const si = sourceIndexFor(slotId);
+      if (si == null) continue;
+      for (const runId of runs.keys()) addRun(si, runId);
+    }
+    for (const [slotId, imgs] of imageMoves) {
+      const si = sourceIndexFor(slotId);
+      if (si == null) continue;
+      for (const [id, v] of imgs) {
+        if (
           (v.dx ?? 0) !== 0 ||
           (v.dy ?? 0) !== 0 ||
           (v.dw ?? 0) !== 0 ||
           (v.dh ?? 0) !== 0 ||
           v.targetPageIndex !== undefined
-            ? [id]
-            : [],
-        ),
-      );
+        ) {
+          addImage(si, id);
+        }
+      }
+    }
+    for (const [slotId, runId] of editingByPage) {
+      const si = sourceIndexFor(slotId);
+      if (si == null) continue;
+      // Currently-open editor counts as "needs strip" too — we want
+      // the original to vanish the moment the input appears, not only
+      // after commit.
+      addRun(si, runId);
+    }
+    const specs: PageStripSpec[] = [];
+    const affectedSources = new Set<number>([...runIdsBySource.keys(), ...imageIdsBySource.keys()]);
+    for (const sourceIndex of affectedSources) {
+      const runIds = runIdsBySource.get(sourceIndex) ?? new Set<string>();
+      const imageIds = imageIdsBySource.get(sourceIndex) ?? new Set<string>();
       if (runIds.size === 0 && imageIds.size === 0) continue;
-      specs.push({ pageIndex: pi, runIds, imageIds });
+      specs.push({ pageIndex: sourceIndex, runIds, imageIds });
     }
     if (specs.length === 0) {
       // Nothing left modified — drop any cached preview canvases so the
@@ -212,21 +290,24 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [originalBytes, pages, edits, imageMoves, editingByPage]);
+  }, [originalBytes, pages, slots, edits, imageMoves, editingByPage]);
 
-  const onEditingChange = useCallback((pageIndex: number, runId: string | null) => {
+  const onEditingChange = useCallback((slotId: string, runId: string | null) => {
     setEditingByPage((prev) => {
       const next = new Map(prev);
-      if (runId) next.set(pageIndex, runId);
-      else next.delete(pageIndex);
+      if (runId) next.set(slotId, runId);
+      else next.delete(slotId);
       return next;
     });
   }, []);
 
   /** Handle a click on a page when a tool mode is active — drops a new
-   *  text/image insertion at the click position (PDF user space). */
+   *  text/image insertion at the click position (PDF user space). The
+   *  insertion is bucketed by slotId (so it follows reorder) but its
+   *  internal `pageIndex` field is the current slot index, used by the
+   *  save pipeline to address pdf-lib's docPages array. */
   const onCanvasClick = useCallback(
-    (pageIndex: number, pdfX: number, pdfY: number) => {
+    (slotId: string, pageIndex: number, pdfX: number, pdfY: number) => {
       if (tool === "addText") {
         const id = `p${pageIndex + 1}-t${Date.now().toString(36)}`;
         // Default font size: 12pt — tweakable via the editor toolbar.
@@ -241,15 +322,15 @@ export default function App() {
         };
         setInsertedTexts((prev) => {
           const next = new Map(prev);
-          const arr = [...(next.get(pageIndex) ?? []), ins];
-          next.set(pageIndex, arr);
+          const arr = [...(next.get(slotId) ?? []), ins];
+          next.set(slotId, arr);
           return next;
         });
         setTool("select");
         // Open the editor for the brand-new text box automatically.
         setEditingByPage((prev) => {
           const next = new Map(prev);
-          next.set(pageIndex, id);
+          next.set(slotId, id);
           return next;
         });
         return;
@@ -277,8 +358,8 @@ export default function App() {
         };
         setInsertedImages((prev) => {
           const next = new Map(prev);
-          const arr = [...(next.get(pageIndex) ?? []), ins];
-          next.set(pageIndex, arr);
+          const arr = [...(next.get(slotId) ?? []), ins];
+          next.set(slotId, arr);
           return next;
         });
         setPendingImage(null);
@@ -289,26 +370,33 @@ export default function App() {
   );
 
   /** Update an inserted text box (text/style/position changes). When
-   *  `patch.pageIndex` differs from the current key, the entry is moved
-   *  between page buckets — this is how a cross-page drag lands. */
+   *  `patch.pageIndex` (the destination slot index) differs from the
+   *  source slot, the entry is moved between slot buckets — this is
+   *  how a cross-page drag lands. */
   const onTextInsertChange = useCallback(
-    (pageIndex: number, id: string, patch: Partial<TextInsertion>) => {
+    (sourceSlotId: string, id: string, patch: Partial<TextInsertion>) => {
       setInsertedTexts((prev) => {
         const next = new Map(prev);
-        const fromArr = next.get(pageIndex) ?? [];
+        const fromArr = next.get(sourceSlotId) ?? [];
         const item = fromArr.find((t) => t.id === id);
         if (!item) return prev;
-        const targetPage = patch.pageIndex ?? pageIndex;
+        // patch.pageIndex (when present) is the destination slot index
+        // returned by PdfPage's cross-page hit-test. Resolve to slotId
+        // via the current slots array so reorder doesn't strand it.
+        const targetSlotId =
+          patch.pageIndex !== undefined && patch.pageIndex !== item.pageIndex
+            ? (slotsRef.current[patch.pageIndex]?.id ?? sourceSlotId)
+            : sourceSlotId;
         const updated: TextInsertion = { ...item, ...patch };
-        if (targetPage !== pageIndex) {
+        if (targetSlotId !== sourceSlotId) {
           next.set(
-            pageIndex,
+            sourceSlotId,
             fromArr.filter((t) => t.id !== id),
           );
-          next.set(targetPage, [...(next.get(targetPage) ?? []), updated]);
+          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
         } else {
           next.set(
-            pageIndex,
+            sourceSlotId,
             fromArr.map((t) => (t.id === id ? updated : t)),
           );
         }
@@ -317,32 +405,35 @@ export default function App() {
     },
     [],
   );
-  const onTextInsertDelete = useCallback((pageIndex: number, id: string) => {
+  const onTextInsertDelete = useCallback((slotId: string, id: string) => {
     setInsertedTexts((prev) => {
       const next = new Map(prev);
-      const arr = (next.get(pageIndex) ?? []).filter((t) => t.id !== id);
-      next.set(pageIndex, arr);
+      const arr = (next.get(slotId) ?? []).filter((t) => t.id !== id);
+      next.set(slotId, arr);
       return next;
     });
   }, []);
   const onImageInsertChange = useCallback(
-    (pageIndex: number, id: string, patch: Partial<ImageInsertion>) => {
+    (sourceSlotId: string, id: string, patch: Partial<ImageInsertion>) => {
       setInsertedImages((prev) => {
         const next = new Map(prev);
-        const fromArr = next.get(pageIndex) ?? [];
+        const fromArr = next.get(sourceSlotId) ?? [];
         const item = fromArr.find((m) => m.id === id);
         if (!item) return prev;
-        const targetPage = patch.pageIndex ?? pageIndex;
+        const targetSlotId =
+          patch.pageIndex !== undefined && patch.pageIndex !== item.pageIndex
+            ? (slotsRef.current[patch.pageIndex]?.id ?? sourceSlotId)
+            : sourceSlotId;
         const updated: ImageInsertion = { ...item, ...patch };
-        if (targetPage !== pageIndex) {
+        if (targetSlotId !== sourceSlotId) {
           next.set(
-            pageIndex,
+            sourceSlotId,
             fromArr.filter((m) => m.id !== id),
           );
-          next.set(targetPage, [...(next.get(targetPage) ?? []), updated]);
+          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
         } else {
           next.set(
-            pageIndex,
+            sourceSlotId,
             fromArr.map((m) => (m.id === id ? updated : m)),
           );
         }
@@ -351,13 +442,42 @@ export default function App() {
     },
     [],
   );
-  const onImageInsertDelete = useCallback((pageIndex: number, id: string) => {
+  const onImageInsertDelete = useCallback((slotId: string, id: string) => {
     setInsertedImages((prev) => {
       const next = new Map(prev);
-      const arr = (next.get(pageIndex) ?? []).filter((m) => m.id !== id);
-      next.set(pageIndex, arr);
+      const arr = (next.get(slotId) ?? []).filter((m) => m.id !== id);
+      next.set(slotId, arr);
       return next;
     });
+  }, []);
+
+  /** "+ From PDF" handler: load one or more external PDFs, render
+   *  every page, and append slots in pick order. External slots are
+   *  read-only (v1) — display + reorder + delete, no text editing.
+   *  Save copies them out of each external doc via pdf-lib's copyPages.
+   *  Files are processed sequentially so the busy flag and slot order
+   *  stay coherent even when several files land at once. */
+  const onAddExternalPdfs = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setBusy(true);
+    try {
+      for (const file of files) {
+        const { bytes, rendered, sourceKey } = await loadExternalPdf(file, RENDER_SCALE);
+        setExternalSources((prev) => {
+          const next = new Map(prev);
+          next.set(sourceKey, bytes);
+          return next;
+        });
+        setExternalRendered((prev) => {
+          const next = new Map(prev);
+          next.set(sourceKey, rendered);
+          return next;
+        });
+        setSlots((prev) => [...prev, ...rendered.map((_, i) => externalSlot(sourceKey, i))]);
+      }
+    } finally {
+      setBusy(false);
+    }
   }, []);
 
   const onPickImageFile = useCallback(async (file: File) => {
@@ -374,9 +494,26 @@ export default function App() {
     if (!originalBytes || !filename) return;
     setBusy(true);
     try {
+      // Translate slotId-keyed state back to source-page-index keys
+      // for the legacy save pipeline. Phase 1 has slots 1:1 with
+      // pages so every slot maps to its source; blanks (none yet
+      // in Phase 1) carry no per-slot edits and would be skipped.
+      const sourceIndexBySlotId = new Map<string, number>();
+      for (const slot of slots) {
+        if (slot.kind === "original") sourceIndexBySlotId.set(slot.id, slot.sourceIndex);
+      }
       const flatEdits: Edit[] = [];
-      for (const [pageIndex, runs] of edits) {
+      for (const [slotId, runs] of edits) {
+        const pageIndex = sourceIndexBySlotId.get(slotId);
+        if (pageIndex == null) continue;
         for (const [runId, value] of runs) {
+          // Cross-page target: prefer the stable targetSlotId
+          // (populated by onEdit) over the legacy targetPageIndex
+          // shape. Resolve to the target's CURRENT source-page index.
+          const targetPageIndex =
+            value.targetSlotId !== undefined
+              ? sourceIndexBySlotId.get(value.targetSlotId)
+              : undefined;
           flatEdits.push({
             pageIndex,
             runId,
@@ -384,21 +521,27 @@ export default function App() {
             style: value.style,
             dx: value.dx,
             dy: value.dy,
-            targetPageIndex: value.targetPageIndex,
+            targetPageIndex,
             targetPdfX: value.targetPdfX,
             targetPdfY: value.targetPdfY,
           });
         }
       }
       const flatImageMoves: ImageMove[] = [];
-      for (const [pageIndex, imgs] of imageMoves) {
+      for (const [slotId, imgs] of imageMoves) {
+        const pageIndex = sourceIndexBySlotId.get(slotId);
+        if (pageIndex == null) continue;
         for (const [imageId, value] of imgs) {
           const dx = value.dx ?? 0;
           const dy = value.dy ?? 0;
           const dw = value.dw ?? 0;
           const dh = value.dh ?? 0;
-          const isCrossPage = value.targetPageIndex !== undefined;
+          const isCrossPage = value.targetSlotId !== undefined;
           if (!isCrossPage && dx === 0 && dy === 0 && dw === 0 && dh === 0) continue;
+          const targetPageIndex =
+            value.targetSlotId !== undefined
+              ? sourceIndexBySlotId.get(value.targetSlotId)
+              : undefined;
           flatImageMoves.push({
             pageIndex,
             imageId,
@@ -406,7 +549,7 @@ export default function App() {
             dy,
             dw,
             dh,
-            targetPageIndex: value.targetPageIndex,
+            targetPageIndex,
             targetPdfX: value.targetPdfX,
             targetPdfY: value.targetPdfY,
             targetPdfWidth: value.targetPdfWidth,
@@ -415,11 +558,13 @@ export default function App() {
         }
       }
       const flatTextInserts: TextInsert[] = [];
-      for (const arr of insertedTexts.values()) {
+      for (const [slotId, arr] of insertedTexts) {
+        const pageIndex = sourceIndexBySlotId.get(slotId);
+        if (pageIndex == null) continue;
         for (const t of arr) {
           if (!t.text || t.text.trim().length === 0) continue;
           flatTextInserts.push({
-            pageIndex: t.pageIndex,
+            pageIndex,
             pdfX: t.pdfX,
             pdfY: t.pdfY,
             fontSize: t.fontSize,
@@ -429,10 +574,12 @@ export default function App() {
         }
       }
       const flatImageInserts: ImageInsert[] = [];
-      for (const arr of insertedImages.values()) {
+      for (const [slotId, arr] of insertedImages) {
+        const pageIndex = sourceIndexBySlotId.get(slotId);
+        if (pageIndex == null) continue;
         for (const i of arr) {
           flatImageInserts.push({
-            pageIndex: i.pageIndex,
+            pageIndex,
             pdfX: i.pdfX,
             pdfY: i.pdfY,
             pdfWidth: i.pdfWidth,
@@ -446,17 +593,28 @@ export default function App() {
         originalBytes,
         pages,
         flatEdits,
-        pageOps,
+        slots,
         flatImageMoves,
         flatTextInserts,
         flatImageInserts,
+        externalSources,
       );
       const baseName = filename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
     } finally {
       setBusy(false);
     }
-  }, [originalBytes, filename, edits, imageMoves, pageOps, pages, insertedTexts, insertedImages]);
+  }, [
+    originalBytes,
+    filename,
+    slots,
+    edits,
+    imageMoves,
+    pages,
+    insertedTexts,
+    insertedImages,
+    externalSources,
+  ]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
   const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
@@ -468,6 +626,25 @@ export default function App() {
     (sum, arr) => sum + arr.length,
     0,
   );
+  // Count structural changes vs the initial 1:1 slots/pages state:
+  // sources missing from `slots` are deletions; "blank" slots are
+  // inserts. Reorder isn't counted as a structural change for Save's
+  // dirty bit because reordering the same set of pages still produces
+  // a different output and warrants saving on its own.
+  const slotOriginalCount = slots.reduce((n, s) => n + (s.kind === "original" ? 1 : 0), 0);
+  const blankSlotCount = slots.reduce((n, s) => n + (s.kind === "blank" ? 1 : 0), 0);
+  const externalSlotCount = slots.reduce((n, s) => n + (s.kind === "external" ? 1 : 0), 0);
+  const removedSourceCount = Math.max(0, pages.length - slotOriginalCount);
+  // Real reorder = the surviving originals appear out of source order.
+  // Deleting page 0 leaves [1, 2, ...] which is still ascending and
+  // shouldn't be flagged.
+  const origSourceOrder: number[] = [];
+  for (const s of slots) {
+    if (s.kind === "original") origSourceOrder.push(s.sourceIndex);
+  }
+  const slotsReordered = origSourceOrder.some((si, i) => i > 0 && si < origSourceOrder[i - 1]);
+  const structuralOpCount =
+    removedSourceCount + blankSlotCount + externalSlotCount + (slotsReordered ? 1 : 0);
 
   return (
     <div className="flex flex-col h-screen bg-zinc-100">
@@ -486,6 +663,7 @@ export default function App() {
           type="file"
           accept="application/pdf"
           className="hidden"
+          data-testid="open-pdf-input"
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) void handleFile(f);
@@ -502,7 +680,7 @@ export default function App() {
             busy ||
             totalEdits +
               totalImageMoves +
-              pageOps.length +
+              structuralOpCount +
               totalInsertedTexts +
               totalInsertedImages ===
               0
@@ -519,7 +697,10 @@ export default function App() {
           {totalInsertedImages
             ? `, +${totalInsertedImages} image${totalInsertedImages === 1 ? "" : "s"}`
             : ""}
-          {pageOps.length ? `, ${pageOps.length} page op` : ""})
+          {removedSourceCount ? `, -${removedSourceCount} page` : ""}
+          {blankSlotCount ? `, +${blankSlotCount} blank` : ""}
+          {externalSlotCount ? `, +${externalSlotCount} from PDF` : ""}
+          {slotsReordered ? ", reordered" : ""})
         </Button>
         <div className="flex items-center gap-1 ml-2 border-l pl-3">
           <Button
@@ -579,39 +760,134 @@ export default function App() {
               : (filename ?? "No file loaded")}
         </span>
       </header>
-      <main className="flex-1 overflow-auto px-6 py-6">
-        {pages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-zinc-400">
-            Open a PDF to begin. Double-click any text fragment to edit it.
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-6">
-            {pages.map((page, idx) => (
-              <PageWithToolbar
-                key={`${filename}-${idx}`}
-                page={page}
-                pageIndex={idx}
-                edits={edits.get(idx) ?? new Map()}
-                imageMoves={imageMoves.get(idx) ?? new Map()}
-                insertedTexts={insertedTexts.get(idx) ?? []}
-                insertedImages={insertedImages.get(idx) ?? []}
-                previewCanvas={previewCanvases.get(idx) ?? null}
-                tool={tool}
-                editingId={editingByPage.get(idx) ?? null}
-                onEdit={(runId, value) => onEdit(idx, runId, value)}
-                onImageMove={(imageId, value) => onImageMove(idx, imageId, value)}
-                onEditingChange={(runId) => onEditingChange(idx, runId)}
-                onCanvasClick={(pdfX, pdfY) => onCanvasClick(idx, pdfX, pdfY)}
-                onTextInsertChange={(id, patch) => onTextInsertChange(idx, id, patch)}
-                onTextInsertDelete={(id) => onTextInsertDelete(idx, id)}
-                onImageInsertChange={(id, patch) => onImageInsertChange(idx, id, patch)}
-                onImageInsertDelete={(id) => onImageInsertDelete(idx, id)}
-                onPageOp={(op) => setPageOps((prev) => [...prev, op])}
-              />
-            ))}
-          </div>
+      <div className="flex flex-1 overflow-hidden">
+        {slots.length > 0 && (
+          <PageSidebar
+            slots={slots}
+            pages={pages}
+            originalBytes={originalBytes}
+            externalRendered={externalRendered}
+            onSlotsChange={setSlots}
+            onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
+          />
         )}
-      </main>
+        <main className="flex-1 overflow-auto px-6 py-6">
+          {slots.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-zinc-400">
+              Open a PDF to begin. Double-click any text fragment to edit it.
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-6">
+              {slots.map((slot, idx) => {
+                if (slot.kind === "blank") {
+                  return (
+                    <div
+                      key={slot.id}
+                      className="bg-white border border-dashed border-zinc-300 rounded shadow-sm flex items-center justify-center text-zinc-300 text-sm"
+                      style={{
+                        width: slot.size[0] * RENDER_SCALE,
+                        height: slot.size[1] * RENDER_SCALE,
+                      }}
+                    >
+                      (blank)
+                    </div>
+                  );
+                }
+                if (slot.kind === "external") {
+                  const rp = externalRendered.get(slot.sourceKey)?.[slot.sourcePageIndex];
+                  if (!rp) return null;
+                  return <ExternalPageView key={slot.id} page={rp} displayIndex={idx} />;
+                }
+                const page = pages[slot.sourceIndex];
+                if (!page) return null;
+                // Re-derive cross-page targetPageIndex from the stable
+                // targetSlotId so reorder doesn't strand overlays.
+                // Stored entries with no cross-page state pass through.
+                const slotIndexById = (id: string | undefined) => {
+                  if (!id) return -1;
+                  return slots.findIndex((s) => s.id === id);
+                };
+                const editsForSlot = new Map<string, EditValue>();
+                const storedEdits = edits.get(slot.id);
+                if (storedEdits) {
+                  for (const [runId, v] of storedEdits) {
+                    if (v.targetSlotId) {
+                      const i = slotIndexById(v.targetSlotId);
+                      if (i >= 0) {
+                        editsForSlot.set(runId, {
+                          ...v,
+                          targetPageIndex: i,
+                          targetSlotId: undefined,
+                        });
+                      } else {
+                        editsForSlot.set(runId, {
+                          ...v,
+                          targetPageIndex: undefined,
+                          targetSlotId: undefined,
+                          targetPdfX: undefined,
+                          targetPdfY: undefined,
+                        });
+                      }
+                    } else {
+                      editsForSlot.set(runId, v);
+                    }
+                  }
+                }
+                const imageMovesForSlot = new Map<string, ImageMoveValue>();
+                const storedMoves = imageMoves.get(slot.id);
+                if (storedMoves) {
+                  for (const [imageId, v] of storedMoves) {
+                    if (v.targetSlotId) {
+                      const i = slotIndexById(v.targetSlotId);
+                      if (i >= 0) {
+                        imageMovesForSlot.set(imageId, {
+                          ...v,
+                          targetPageIndex: i,
+                          targetSlotId: undefined,
+                        });
+                      } else {
+                        imageMovesForSlot.set(imageId, {
+                          ...v,
+                          targetPageIndex: undefined,
+                          targetSlotId: undefined,
+                          targetPdfX: undefined,
+                          targetPdfY: undefined,
+                          targetPdfWidth: undefined,
+                          targetPdfHeight: undefined,
+                        });
+                      }
+                    } else {
+                      imageMovesForSlot.set(imageId, v);
+                    }
+                  }
+                }
+                return (
+                  <PageWithToolbar
+                    key={slot.id}
+                    page={page}
+                    pageIndex={idx}
+                    edits={editsForSlot}
+                    imageMoves={imageMovesForSlot}
+                    insertedTexts={insertedTexts.get(slot.id) ?? []}
+                    insertedImages={insertedImages.get(slot.id) ?? []}
+                    previewCanvas={previewCanvases.get(slot.sourceIndex) ?? null}
+                    tool={tool}
+                    editingId={editingByPage.get(slot.id) ?? null}
+                    onEdit={(runId, value) => onEdit(slot.id, runId, value)}
+                    onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
+                    onEditingChange={(runId) => onEditingChange(slot.id, runId)}
+                    onCanvasClick={(pdfX, pdfY) => onCanvasClick(slot.id, idx, pdfX, pdfY)}
+                    onTextInsertChange={(id, patch) => onTextInsertChange(slot.id, id, patch)}
+                    onTextInsertDelete={(id) => onTextInsertDelete(slot.id, id)}
+                    onImageInsertChange={(id, patch) => onImageInsertChange(slot.id, id, patch)}
+                    onImageInsertDelete={(id) => onImageInsertDelete(slot.id, id)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </main>
+      </div>
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
     </div>
   );
@@ -688,7 +964,6 @@ function AboutModal({ onClose }: { onClose: () => void }) {
               <li>React 19 + TypeScript + Vite</li>
               <li>Tailwind CSS + HeroUI</li>
               <li>pdf-lib (write) and pdfjs-dist (render)</li>
-              <li>bidi-js for bidirectional text</li>
               <li>Runs entirely in the browser — no server, no upload</li>
             </ul>
           </section>
@@ -720,6 +995,42 @@ function AboutModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Read-only view for an "insert from PDF" slot. Mounts the rendered
+ *  canvas and shows a "Read-only" badge — no edits / inserts / cross-
+ *  page targets. Without `data-page-index` the cross-page hit-test
+ *  also can't pick this as a drop target, so external pages stay
+ *  immutable in v1. */
+function ExternalPageView({ page, displayIndex }: { page: RenderedPage; displayIndex: number }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  /* eslint-disable-next-line react-hooks/immutability */
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    node.replaceChildren();
+    /* eslint-disable react-hooks/immutability */
+    page.canvas.style.display = "block";
+    page.canvas.style.width = `${page.viewWidth}px`;
+    page.canvas.style.height = `${page.viewHeight}px`;
+    /* eslint-enable react-hooks/immutability */
+    node.appendChild(page.canvas);
+  }, [page]);
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex gap-2 items-center text-sm">
+        <span className="text-zinc-500">Page {displayIndex + 1}</span>
+        <span className="text-[10px] uppercase tracking-wide bg-amber-500/90 text-white px-1.5 py-0.5 rounded">
+          Read-only
+        </span>
+      </div>
+      <div
+        ref={ref}
+        className="relative border border-zinc-300 shadow-sm bg-white"
+        style={{ width: page.viewWidth, height: page.viewHeight }}
+      />
+    </div>
+  );
+}
+
 function PageWithToolbar({
   page,
   pageIndex,
@@ -738,7 +1049,6 @@ function PageWithToolbar({
   onTextInsertDelete,
   onImageInsertChange,
   onImageInsertDelete,
-  onPageOp,
 }: {
   page: RenderedPage;
   pageIndex: number;
@@ -757,26 +1067,11 @@ function PageWithToolbar({
   onTextInsertDelete: (id: string) => void;
   onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
   onImageInsertDelete: (id: string) => void;
-  onPageOp: (op: PageOp) => void;
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex gap-2 items-center text-sm">
         <span className="text-zinc-500">Page {pageIndex + 1}</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          onPress={() => onPageOp({ kind: "insertBlank", afterPageIndex: pageIndex })}
-        >
-          + Blank after
-        </Button>
-        <Button
-          size="sm"
-          variant="danger-soft"
-          onPress={() => onPageOp({ kind: "remove", pageIndex })}
-        >
-          Remove
-        </Button>
       </div>
       <PdfPage
         page={page}

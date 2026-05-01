@@ -41,6 +41,14 @@ removed from the content stream, not just covered with a whiteout.
 - **Multi-page docs.** Per-page preview canvas rebuild on every edit;
   the strip-and-re-render path runs through pdf-lib + pdf.js so the
   HTML overlays never need to mask anything.
+- **Page sidebar with reorder, delete, insert blank, insert from PDF.**
+  Left rail shows a thumbnail per page. Drag thumbs to reorder
+  (`@dnd-kit`), hover to delete, click `+ Blank` to insert a fresh
+  page anywhere, click `+ From PDF` to merge pages from any other PDF
+  (read-only in v1: display + reorder + delete, no text editing).
+  Save walks the slot list and rebuilds the output via
+  `PDFDocument.copyPages` so reorder + insert + delete all compose
+  cleanly with edits applied to the originals.
 - **Live full-pixel font fallback.** 38 bundled Dhivehi families plus
   Noto Sans Thaana ship as `@font-face` (`local()` first → user's
   installed copy wins). The save path embeds whichever family the
@@ -53,6 +61,7 @@ removed from the content stream, not just covered with a whiteout.
 - **pdf-lib** — page operations + font embedding + saving (also handles
   the Thaana save path via `drawText`; see _Thaana shaping_ below)
 - **HeroUI v3 + Tailwind v4** — component library / styling
+- **@dnd-kit** — sortable thumbnails in the page sidebar
 - **38 bundled Dhivehi fonts + Noto Sans Thaana** — every common Thaana
   font is shipped via `@font-face`, with `local()` first so a user's
   OS-installed copy wins.
@@ -193,6 +202,16 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Page sidebar.** Slot model ([src/lib/slots.ts](src/lib/slots.ts))
+      replaces the old append-only `pageOps`: every displayed page is
+      a slot whose stable id keys all per-page state (edits, image
+      moves, insertions). Reorder / delete / insert-blank /
+      insert-from-PDF all mutate the slot list directly and the main
+      view rerenders live. The save pipeline walks `slots[]` and
+      rebuilds output via `PDFDocument.copyPages` from the original
+      doc plus any external "insert from PDF" docs, so reorder
+      composes cleanly with text/image edits applied to the source
+      pages.
 - [x] **Cross-page move.** Drag any movable thing — source text run,
       source image, inserted text box, inserted image — across the
       page boundary. Save strips on the origin page (q…Q removal for
@@ -260,7 +279,12 @@ dev-server-on-localhost:5173 assumption.
 
 ### Document-level
 
-- [ ] **Page reorder UI** (drag thumbnails to reorder, drop to merge).
+- [ ] **Editable inserted-PDF pages.** External pages from `+ From PDF`
+      are read-only in v1 (display + reorder + delete only). Making
+      them editable means running the same font / glyph-map / image
+      extraction pipeline on the inserted source bytes that
+      [src/App.tsx](src/App.tsx)'s `handleFile` runs on the primary
+      doc.
 - [ ] **Annotations** — rect, highlight, freehand.
 - [ ] **Form fields** (text + checkbox).
 
