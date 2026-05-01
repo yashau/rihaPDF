@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
+import { FilePlus2, Plus, Trash2 } from "lucide-react";
 import type React from "react";
 import {
   DndContext,
@@ -183,7 +184,8 @@ export function PageSidebar({
             isDisabled={!originalBytes}
             onPress={() => insertBlankAt(slots.length)}
           >
-            + Blank
+            <Plus size={14} aria-hidden />
+            Blank
           </Button>
           <Button
             size="sm"
@@ -191,7 +193,8 @@ export function PageSidebar({
             isDisabled={!originalBytes}
             onPress={() => externalFileInputRef.current?.click()}
           >
-            + From PDF
+            <FilePlus2 size={14} aria-hidden />
+            From PDF
           </Button>
           <input
             ref={externalFileInputRef}
@@ -293,7 +296,7 @@ function SortableSlotThumb({
           aria-label={`Delete page ${displayIndex + 1}`}
           onPress={onRemove}
         >
-          ×
+          <Trash2 size={14} />
         </Button>
       </div>
       {slot.kind === "blank" ? (

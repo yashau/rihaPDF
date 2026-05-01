@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Modal } from "@heroui/react";
+import { Check, FolderOpen, Image as ImageIcon, MousePointer2, Save, Type } from "lucide-react";
 import { loadPdf, renderPage } from "./lib/pdf";
 import type { RenderedPage } from "./lib/pdf";
 import { extractPageFontShows } from "./lib/sourceFonts";
@@ -766,6 +767,7 @@ export default function App() {
           }}
         />
         <Button variant="primary" isDisabled={busy} onPress={() => fileInputRef.current?.click()}>
+          <FolderOpen size={16} aria-hidden />
           Open PDF
         </Button>
         <Button
@@ -782,6 +784,7 @@ export default function App() {
           }
           onPress={() => void onSave()}
         >
+          <Save size={16} aria-hidden />
           Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
           {totalImageMoves
             ? `, ${totalImageMoves} image move${totalImageMoves === 1 ? "" : "s"}`
@@ -807,6 +810,7 @@ export default function App() {
               setPendingImage(null);
             }}
           >
+            <MousePointer2 size={14} aria-hidden />
             Select
           </Button>
           <Button
@@ -818,7 +822,7 @@ export default function App() {
               setPendingImage(null);
             }}
           >
-            + Text
+            <Type size={14} aria-hidden />+ Text
           </Button>
           <Button
             size="sm"
@@ -833,7 +837,8 @@ export default function App() {
               }
             }}
           >
-            + Image{pendingImage ? " ✓" : ""}
+            <ImageIcon size={14} aria-hidden />+ Image
+            {pendingImage ? <Check size={14} aria-label="image queued" /> : null}
           </Button>
           <input
             ref={imageFileInputRef}
@@ -995,110 +1000,93 @@ export default function App() {
           )}
         </main>
       </div>
-      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      <AboutModal isOpen={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   );
 }
 
-function AboutModal({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
+function AboutModal({
+  isOpen,
+  onOpenChange,
+}: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="about-heading"
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl max-w-lg w-[92vw] max-h-[85vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center px-6 pt-4 pb-2 border-b">
-          <h2 id="about-heading" className="text-xl font-semibold">
-            rihaPDF
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="ml-auto text-zinc-500 hover:text-zinc-900 cursor-pointer text-2xl leading-none"
-          >
-            ×
-          </button>
-        </div>
+    <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+      <Modal.Backdrop>
+        <Modal.Container size="md">
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>rihaPDF</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
+            <Modal.Body className="space-y-5 text-sm text-zinc-800">
+              <section className="flex flex-col items-center text-center gap-3">
+                <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
+                <p>
+                  Browser-based PDF editor focused on Dhivehi / Thaana documents. Click any text run
+                  on a page, type a replacement, save. The saved PDF contains real, selectable,
+                  searchable text — original glyphs are surgically removed and replaced with new
+                  ones rendered in the correct font. rihaPDF is{" "}
+                  <a
+                    href="https://github.com/yashau/rihaPDF"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    open source
+                  </a>{" "}
+                  and contributions are welcome.
+                </p>
+              </section>
 
-        <div className="px-6 py-5 space-y-5 text-sm text-zinc-800">
-          <section className="flex flex-col items-center text-center gap-3">
-            <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
-            <p>
-              Browser-based PDF editor focused on Dhivehi / Thaana documents. Click any text run on
-              a page, type a replacement, save. The saved PDF contains real, selectable, searchable
-              text — original glyphs are surgically removed and replaced with new ones rendered in
-              the correct font. rihaPDF is{" "}
-              <a
-                href="https://github.com/yashau/rihaPDF"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-600 hover:underline"
-              >
-                open source
-              </a>{" "}
-              and contributions are welcome.
-            </p>
-          </section>
+              <section>
+                <h3 className="font-semibold text-zinc-900 mb-1">Features</h3>
+                <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+                  <li>Edit existing text runs in place</li>
+                  <li>Insert new text and images anywhere on a page</li>
+                  <li>Move and resize inserted images; move text and image runs</li>
+                  <li>Saved PDFs keep real, selectable, searchable text</li>
+                </ul>
+              </section>
 
-          <section>
-            <h3 className="font-semibold text-zinc-900 mb-1">Features</h3>
-            <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
-              <li>Edit existing text runs in place</li>
-              <li>Insert new text and images anywhere on a page</li>
-              <li>Move and resize inserted images; move text and image runs</li>
-              <li>Saved PDFs keep real, selectable, searchable text</li>
-            </ul>
-          </section>
+              <section>
+                <h3 className="font-semibold text-zinc-900 mb-1">Built with</h3>
+                <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+                  <li>React 19 + TypeScript + Vite</li>
+                  <li>Tailwind CSS + HeroUI</li>
+                  <li>pdf-lib (write) and pdfjs-dist (render)</li>
+                  <li>Runs entirely in the browser — no server, no upload</li>
+                </ul>
+              </section>
 
-          <section>
-            <h3 className="font-semibold text-zinc-900 mb-1">Built with</h3>
-            <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
-              <li>React 19 + TypeScript + Vite</li>
-              <li>Tailwind CSS + HeroUI</li>
-              <li>pdf-lib (write) and pdfjs-dist (render)</li>
-              <li>Runs entirely in the browser — no server, no upload</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="font-semibold text-zinc-900 mb-1">Author</h3>
-            <p className="text-zinc-700">Ibrahim Yashau</p>
-            <ul className="mt-1 space-y-0.5">
-              <li>
-                <a
-                  href="https://yashau.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-600 hover:underline"
-                >
-                  yashau.com
-                </a>
-              </li>
-              <li>
-                <a href="mailto:ibrahim@yashau.com" className="text-blue-600 hover:underline">
-                  ibrahim@yashau.com
-                </a>
-              </li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </div>
+              <section>
+                <h3 className="font-semibold text-zinc-900 mb-1">Author</h3>
+                <p className="text-zinc-700">Ibrahim Yashau</p>
+                <ul className="mt-1 space-y-0.5">
+                  <li>
+                    <a
+                      href="https://yashau.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      yashau.com
+                    </a>
+                  </li>
+                  <li>
+                    <a href="mailto:ibrahim@yashau.com" className="text-blue-600 hover:underline">
+                      ibrahim@yashau.com
+                    </a>
+                  </li>
+                </ul>
+              </section>
+            </Modal.Body>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
   );
 }
 

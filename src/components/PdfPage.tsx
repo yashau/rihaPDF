@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, ToggleButton as HeroToggleButton } from "@heroui/react";
+import { Bold, Italic, Trash2, Underline, X } from "lucide-react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
 import type { EditStyle } from "../lib/save";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
@@ -1672,79 +1673,74 @@ function EditTextToolbar({
           if (Number.isFinite(v)) onChange({ fontSize: v });
         }}
       />
-      <ToggleButton
-        label="B"
-        active={bold}
-        weight="bold"
-        onClick={() => onChange({ bold: !bold })}
+      <StyleToggle
+        label="Bold"
+        isSelected={bold}
+        onChange={(v) => onChange({ bold: v })}
+        icon={<Bold size={14} strokeWidth={2.5} />}
       />
-      <ToggleButton
-        label="I"
-        active={italic}
-        italic
-        onClick={() => onChange({ italic: !italic })}
+      <StyleToggle
+        label="Italic"
+        isSelected={italic}
+        onChange={(v) => onChange({ italic: v })}
+        icon={<Italic size={14} />}
       />
-      <ToggleButton
-        label="U"
-        active={underline}
-        underline
-        onClick={() => onChange({ underline: !underline })}
+      <StyleToggle
+        label="Underline"
+        isSelected={underline}
+        onChange={(v) => onChange({ underline: v })}
+        icon={<Underline size={14} />}
       />
       {onDelete ? (
         <Button
+          isIconOnly
           size="sm"
           variant="danger-soft"
           onPress={() => onDelete()}
-          aria-label="Delete text"
-          title="Delete (Del)"
+          aria-label="Delete text (Del)"
         >
-          🗑
+          <Trash2 size={14} />
         </Button>
       ) : null}
       {onCancel ? (
-        <Button size="sm" variant="ghost" onPress={() => onCancel()} aria-label="Cancel edit">
-          ✕
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          onPress={() => onCancel()}
+          aria-label="Cancel edit"
+        >
+          <X size={14} />
         </Button>
       ) : null}
     </div>
   );
 }
 
-function ToggleButton({
+/** Wrapper around HeroUI's ToggleButton that suppresses focus-shift on
+ *  mousedown — the editor's input must keep focus when the user clicks
+ *  B/I/U, otherwise typing breaks mid-style. */
+function StyleToggle({
   label,
-  active,
-  weight,
-  italic,
-  underline,
-  onClick,
+  isSelected,
+  onChange,
+  icon,
 }: {
   label: string;
-  active: boolean;
-  weight?: "bold";
-  italic?: boolean;
-  underline?: boolean;
-  onClick: () => void;
+  isSelected: boolean;
+  onChange: (v: boolean) => void;
+  icon: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <HeroToggleButton
+      isIconOnly
+      size="sm"
+      isSelected={isSelected}
+      onChange={onChange}
+      aria-label={label}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      aria-pressed={active}
-      style={{
-        width: 26,
-        height: 26,
-        border: "1px solid rgba(0,0,0,0.15)",
-        borderRadius: 4,
-        background: active ? "rgb(219, 234, 254)" : "white",
-        cursor: "pointer",
-        fontWeight: weight === "bold" ? 700 : 500,
-        fontStyle: italic ? "italic" : "normal",
-        textDecoration: underline ? "underline" : "none",
-        fontSize: 12,
-      }}
     >
-      {label}
-    </button>
+      {icon}
+    </HeroToggleButton>
   );
 }

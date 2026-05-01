@@ -119,7 +119,7 @@ describe("deletion", () => {
     await firstRun.click();
     await h.page.waitForTimeout(150);
     // Trash button has aria-label "Delete text".
-    const trash = h.page.locator('button[aria-label="Delete text"]');
+    const trash = h.page.locator('button[aria-label^="Delete text"]');
     await trash.waitFor({ state: "visible" });
     await trash.click();
     await h.page.waitForTimeout(150);
@@ -154,7 +154,7 @@ describe("deletion", () => {
     const insertedInput = h.page.locator("[data-text-insert-id] input").first();
     await insertedInput.fill(SENTINEL);
     // Don't press Enter (closes); click the trash button.
-    const trash = h.page.locator('button[aria-label="Delete text"]');
+    const trash = h.page.locator('button[aria-label^="Delete text"]');
     await trash.waitFor({ state: "visible" });
     await trash.click();
     await h.page.waitForTimeout(150);
