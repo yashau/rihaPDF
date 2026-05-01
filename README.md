@@ -50,13 +50,20 @@ removed from the content stream, not just covered with a whiteout.
 
 - **Vite + React + TypeScript** — UI shell
 - **pdf.js** — page rendering + text extraction
-- **pdf-lib** — page operations + font embedding + saving
-- **harfbuzzjs** — Thaana shaping (used to compute layout widths)
-- **bidi-js** — kept for future BiDi-aware reordering work
+- **pdf-lib** — page operations + font embedding + saving (also handles
+  the Thaana save path via `drawText`; see _Thaana shaping_ below)
 - **HeroUI v3 + Tailwind v4** — component library / styling
 - **38 bundled Dhivehi fonts + Noto Sans Thaana** — every common Thaana
   font is shipped via `@font-face`, with `local()` first so a user's
   OS-installed copy wins.
+
+`harfbuzzjs` and `bidi-js` are listed in `package.json` as scaffolding
+for the future raw-operator save path (see TODO → _HarfBuzz-shaped
+output_). Neither is imported by the live code today —
+[src/lib/shape.ts](src/lib/shape.ts) wraps harfbuzzjs but has no
+callers. Saved PDFs use pdf-lib's `drawText`, which means no GPOS mark
+positioning and no BiDi reordering at save time. See _Thaana shaping_
+under Known limitations for what this means in practice.
 
 ## Quick start
 
@@ -125,15 +132,21 @@ expose its parser publicly, so we read the raw bytes via
 
 ## Known limitations
 
-- **Thaana shaping in saved PDFs is approximate.** pdf-lib's drawText
-  encodes Unicode → CID via the font's cmap but doesn't apply GPOS mark
-  positioning. Most bundled Dhivehi fonts have zero-advance combining
-  marks in `hmtx`, so fili stack acceptably — but precise positioning
-  (used by HarfBuzz) isn't applied. The full fix is to bypass pdf-lib's
-  drawText and emit raw Tj operators with HarfBuzz-shaped glyph IDs;
-  blocked on pdf-lib remapping glyph IDs even with `subset: false`.
-- **Italic carries to editor preview only** — saved PDF italic needs raw
-  operator emission (Tm with shear matrix); deferred.
+- **Thaana shaping in saved PDFs is approximate.** pdf-lib's `drawText`
+  encodes Unicode → CID via the font's cmap but doesn't apply GPOS
+  mark-to-base positioning, GSUB substitutions, or BiDi reordering.
+  Most bundled Dhivehi fonts ship zero-advance combining marks in
+  `hmtx`, so fili stack on the preceding base and saved output looks
+  correct on typical text — but fili can sit at a fixed offset from the
+  cursor instead of being anchored to the base consonant's GPOS anchor,
+  which is visible on wider consonants and stacked-fili clusters. The
+  fix is the raw-operator emit path described in the TODO; it is
+  blocked on pdf-lib renumbering glyph IDs during embed even with
+  `subset: false`, so HarfBuzz-shaped CIDs cannot be written through
+  `drawText`.
+- **Italic carries to editor preview only** — saved PDF italic needs
+  raw-operator emission (a `Tm` with a shear matrix); same code path as
+  the HarfBuzz work above, deferred together.
 
 ## Scripts
 
