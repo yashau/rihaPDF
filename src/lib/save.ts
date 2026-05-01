@@ -55,14 +55,21 @@ export type Edit = {
   dy?: number;
 };
 
-/** Drag offset for an image XObject placement. The save path looks up
- *  the matching `cm` op via the ImageInstance's `cmOpIndex` and adds
- *  (dx / scale, -dy / scale) to its translation operands [4] and [5]. */
+/** Drag + resize offset for an image XObject placement. Save injects a
+ *  fresh outermost `cm` right after the image's `q`. dx/dy/dw/dh are
+ *  in viewport pixels (same axis convention as ImageMoveValue):
+ *    dx > 0 → bottom-left moves right
+ *    dy > 0 → bottom-left moves DOWN in viewport (= -dy in PDF y-up)
+ *    dw > 0 → wider; dh > 0 → taller
+ *  (When dw == dh == 0 the cm reduces to a pure translate, matching
+ *  the original move-only behavior.) */
 export type ImageMove = {
   pageIndex: number;
   imageId: string;
   dx?: number;
   dy?: number;
+  dw?: number;
+  dh?: number;
 };
 
 /** Net-new text the user typed at a fresh position on the page. Saved
@@ -314,22 +321,39 @@ export async function applyEditsAndSave(
     // multiple cm ops in the block (pdf-lib emits 4: translate /
     // identity / scale / identity) because pre-multiplying onto the
     // last identity gets mixed by the preceding scale.
+    // Each entry holds the 6 operands of the outer cm to inject
+    // right after the image's q. The composed transform takes the
+    // unit-square corner `(u_pdf, v_pdf)` produced by the existing
+    // image chain and maps it to `(sx*u + ex, sy*v + ey)`.
     const insertAfterQ = new Map<
       number,
-      { dxPdf: number; dyPdf: number }
+      [number, number, number, number, number, number]
     >();
     for (const move of pageImageMoves) {
       const img = rendered.images.find((i) => i.id === move.imageId);
       if (!img || img.qOpIndex == null) continue;
+      // Convert viewport-pixel deltas to PDF user space.
       const dxPdf = (move.dx ?? 0) / scale;
       const dyPdf = -(move.dy ?? 0) / scale;
-      // If two moves target the same q (shouldn't happen — each
-      // image has its own q-block) sum them.
-      const prev = insertAfterQ.get(img.qOpIndex);
-      insertAfterQ.set(img.qOpIndex, {
-        dxPdf: (prev?.dxPdf ?? 0) + dxPdf,
-        dyPdf: (prev?.dyPdf ?? 0) + dyPdf,
-      });
+      const dwPdf = (move.dw ?? 0) / scale;
+      const dhPdf = (move.dh ?? 0) / scale;
+      const oldW = img.pdfWidth;
+      const oldH = img.pdfHeight;
+      const newW = oldW + dwPdf;
+      const newH = oldH + dhPdf;
+      const oldX = img.pdfX;
+      const oldY = img.pdfY;
+      const newX = oldX + dxPdf;
+      const newY = oldY + dyPdf;
+      // Avoid div-by-zero when the source image was already 0×0
+      // (shouldn't happen — sourceImages skips those — but guard anyway).
+      const sx = oldW > 1e-6 ? newW / oldW : 1;
+      const sy = oldH > 1e-6 ? newH / oldH : 1;
+      // ex/ey solve `oldX * sx + ex = newX` (and same for y) so the
+      // bottom-left lands at (newX, newY) under the prepended cm.
+      const ex = newX - oldX * sx;
+      const ey = newY - oldY * sy;
+      insertAfterQ.set(img.qOpIndex, [sx, 0, 0, sy, ex, ey]);
     }
 
     const newOps: typeof ops = [];
@@ -365,22 +389,11 @@ export async function applyEditsAndSave(
       if (imgMove && ops[i].op === "q") {
         newOps.push({
           op: "cm",
-          operands: [
-            { kind: "number", value: 1, raw: "1" },
-            { kind: "number", value: 0, raw: "0" },
-            { kind: "number", value: 0, raw: "0" },
-            { kind: "number", value: 1, raw: "1" },
-            {
-              kind: "number",
-              value: imgMove.dxPdf,
-              raw: imgMove.dxPdf.toFixed(3),
-            },
-            {
-              kind: "number",
-              value: imgMove.dyPdf,
-              raw: imgMove.dyPdf.toFixed(3),
-            },
-          ],
+          operands: imgMove.map((v) => ({
+            kind: "number" as const,
+            value: v,
+            raw: v.toFixed(3),
+          })),
         });
       }
     }

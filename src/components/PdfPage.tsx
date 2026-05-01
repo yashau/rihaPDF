@@ -19,15 +19,24 @@ export type EditValue = {
   dy?: number;
 };
 
-/** Move offset for one image instance, in viewport pixels (same axis
- *  convention as EditValue). Saved by adding (dx/scale, -dy/scale) to
- *  the matching cm op's translation operands. */
+/** Move + resize for one image instance, in viewport pixels (same axis
+ *  convention as EditValue). Save injects a fresh outermost cm right
+ *  after the image's q so the image's effective bbox becomes
+ *  (originalX + dx_pdf, originalY + dy_pdf, originalW + dw_pdf,
+ *  originalH + dh_pdf). dx/dy are the bottom-left translation; dw/dh
+ *  grow the box without moving the bottom-left. The viewport-pixel
+ *  axis convention: dx,dw>0 → wider/right, dy>0 → down (subtracted
+ *  from PDF y), dh>0 → taller. */
 export type ImageMoveValue = {
   dx?: number;
   dy?: number;
+  dw?: number;
+  dh?: number;
 };
 
 const DRAG_THRESHOLD_PX = 3;
+
+type ResizeCorner = "tl" | "tr" | "bl" | "br";
 
 type Props = {
   page: RenderedPage;
@@ -90,9 +99,20 @@ export function PdfPage({
     | null
   >(null);
   /** Same idea for images. Separate state because image drags don't
-   *  have the click-suppression / edit handoff that text runs do. */
+   *  have the click-suppression / edit handoff that text runs do.
+   *  Carries a resize corner when the gesture is a corner drag — null
+   *  means whole-image translate. */
   const [imageDrag, setImageDrag] = useState<
-    | { imageId: string; startX: number; startY: number; dx: number; dy: number }
+    | {
+        imageId: string;
+        startX: number;
+        startY: number;
+        dx: number;
+        dy: number;
+        dw: number;
+        dh: number;
+        corner: ResizeCorner | null;
+      }
     | null
   >(null);
   /** Set to the runId during a drag and cleared a tick after mouseup, used
@@ -165,18 +185,29 @@ export function PdfPage({
     window.addEventListener("mouseup", onUp);
   };
 
-  /** Start a drag on an image overlay. Mirrors startDrag for runs but
-   *  commits to the parent's onImageMove rather than onEdit. */
+  /** Start a translate drag on an image overlay. Mirrors startDrag for
+   *  runs but commits to the parent's onImageMove rather than onEdit.
+   *  Width/height deltas (dw/dh) are passed through unchanged so the
+   *  user's earlier resize survives a subsequent move. */
   const startImageDrag = (
     imageId: string,
     e: React.MouseEvent,
-    base: { dx: number; dy: number },
+    base: { dx: number; dy: number; dw: number; dh: number },
   ) => {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    setImageDrag({ imageId, startX, startY, dx: base.dx, dy: base.dy });
+    setImageDrag({
+      imageId,
+      startX,
+      startY,
+      dx: base.dx,
+      dy: base.dy,
+      dw: base.dw,
+      dh: base.dh,
+      corner: null,
+    });
     const onMove = (ev: MouseEvent) => {
       const newDx = base.dx + (ev.clientX - startX);
       const newDy = base.dy + (ev.clientY - startY);
@@ -196,7 +227,101 @@ export function PdfPage({
         Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
       setImageDrag(null);
       if (!moved) return;
-      onImageMove(imageId, { dx: totalDx, dy: totalDy });
+      onImageMove(imageId, {
+        dx: totalDx,
+        dy: totalDy,
+        dw: base.dw,
+        dh: base.dh,
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  /** Start a resize drag from one of the 4 image corners. Anchors the
+   *  opposite corner so the box grows/shrinks toward the cursor.
+   *  dx/dy are viewport-pixel translations of the bottom-left (same
+   *  convention as the move drag); dw/dh are viewport-pixel growth
+   *  deltas — dh > 0 means image is taller. App.tsx converts to PDF
+   *  units when emitting the cm op. */
+  const startImageResize = (
+    imageId: string,
+    img: import("../lib/sourceImages").ImageInstance,
+    corner: ResizeCorner,
+    e: React.MouseEvent,
+    base: { dx: number; dy: number; dw: number; dh: number },
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    setImageDrag({
+      imageId,
+      startX,
+      startY,
+      dx: base.dx,
+      dy: base.dy,
+      dw: base.dw,
+      dh: base.dh,
+      corner,
+    });
+    const origW = img.pdfWidth * page.scale;
+    const origH = img.pdfHeight * page.scale;
+    const MIN_VIEW = 10 * page.scale;
+    // (dx, dy, dw, dh) live in viewport pixels:
+    //   dx, dy  → bottom-left translation (dy positive = downward).
+    //   dw, dh  → growth of the box's width / height.
+    // Per-corner increment from a cursor (dxV, dyV) — derived by
+    // requiring that the OPPOSITE corner stays at its base viewport
+    // position. See the table in the source comment.
+    const onMove = (ev: MouseEvent) => {
+      const dxV = ev.clientX - startX;
+      const dyV = ev.clientY - startY;
+      // Step 1: unclamped width/height growth.
+      let nDw = base.dw;
+      let nDh = base.dh;
+      switch (corner) {
+        case "br": nDw = base.dw + dxV; nDh = base.dh + dyV; break;
+        case "tr": nDw = base.dw + dxV; nDh = base.dh - dyV; break;
+        case "tl": nDw = base.dw - dxV; nDh = base.dh - dyV; break;
+        case "bl": nDw = base.dw - dxV; nDh = base.dh + dyV; break;
+      }
+      // Step 2: clamp size so the viewport bbox stays ≥ MIN_VIEW.
+      if (origW + nDw < MIN_VIEW) nDw = MIN_VIEW - origW;
+      if (origH + nDh < MIN_VIEW) nDh = MIN_VIEW - origH;
+      // Step 3: derive translation from the clamped size to keep the
+      // anchored corner pinned. The relations come from
+      //   anchor.left_x   stays → nDx = base.dx                (br, tr)
+      //   anchor.right_x  stays → nDx = base.dx + (base.dw - nDw) (tl, bl)
+      //   anchor.bottom_y stays → nDy = base.dy                  (tr, tl)
+      //   anchor.top_y    stays → nDy = base.dy + (nDh - base.dh)(br, bl)
+      let nDx = base.dx;
+      let nDy = base.dy;
+      if (corner === "tl" || corner === "bl") {
+        nDx = base.dx + (base.dw - nDw);
+      }
+      if (corner === "br" || corner === "bl") {
+        nDy = base.dy + (nDh - base.dh);
+      }
+      setImageDrag((prev) =>
+        prev && prev.imageId === imageId
+          ? { ...prev, dx: nDx, dy: nDy, dw: nDw, dh: nDh }
+          : prev,
+      );
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setImageDrag((prev) => {
+        if (!prev || prev.imageId !== imageId) return prev;
+        onImageMove(imageId, {
+          dx: prev.dx,
+          dy: prev.dy,
+          dw: prev.dw,
+          dh: prev.dh,
+        });
+        return null;
+      });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -408,7 +533,12 @@ export function PdfPage({
             isDragging={imageDrag?.imageId === img.id}
             liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
             liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
+            liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
+            liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
             onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
+            onResizeStart={(corner, e, base) =>
+              startImageResize(img.id, img, corner, e, base)
+            }
           />
         ))}
         {/* Inserted (net-new) text boxes. These render the same way as
@@ -462,7 +592,10 @@ function ImageOverlay({
   isDragging,
   liveDx,
   liveDy,
+  liveDw,
+  liveDh,
   onMouseDown,
+  onResizeStart,
 }: {
   img: import("../lib/sourceImages").ImageInstance;
   page: RenderedPage;
@@ -470,9 +603,16 @@ function ImageOverlay({
   isDragging: boolean;
   liveDx: number | null;
   liveDy: number | null;
+  liveDw: number | null;
+  liveDh: number | null;
   onMouseDown: (
     e: React.MouseEvent,
-    base: { dx: number; dy: number },
+    base: { dx: number; dy: number; dw: number; dh: number },
+  ) => void;
+  onResizeStart: (
+    corner: ResizeCorner,
+    e: React.MouseEvent,
+    base: { dx: number; dy: number; dw: number; dh: number },
   ) => void;
 }) {
   // PDF user-space → viewport: x scales directly; y flips around the
@@ -484,26 +624,39 @@ function ImageOverlay({
   const h = img.pdfHeight * page.scale;
   const dx = (liveDx ?? persisted?.dx) ?? 0;
   const dy = (liveDy ?? persisted?.dy) ?? 0;
-  const isMoved = dx !== 0 || dy !== 0;
+  const dw = (liveDw ?? persisted?.dw) ?? 0;
+  const dh = (liveDh ?? persisted?.dh) ?? 0;
+  const isMoved = dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0;
   const movable = img.qOpIndex != null;
 
   // Crop the image's pixels from the ORIGINAL page canvas (not the
   // preview, which has the image stripped) so we can paint them at the
-  // moved position. Done lazily — only when first moved.
+  // moved position. Done lazily — only when first moved. Sprite source
+  // is always the original size; we stretch via background-size.
   const sprite = useMemo(() => {
     if (!isMoved) return null;
     return cropCanvasToDataUrl(page.canvas, left, top, w, h);
   }, [isMoved, page.canvas, left, top, w, h]);
+
+  // Effective viewport box after move + resize. dx/dy translate the
+  // bottom-left; dh shifts the top-edge upward so the box grows toward
+  // the user's cursor regardless of corner direction.
+  const boxLeft = left + dx;
+  const boxTop = top + dy - dh;
+  const boxW = w + dw;
+  const boxH = h + dh;
+
+  const baseFor = () => ({ dx, dy, dw, dh });
 
   return (
     <div
       data-image-id={img.id}
       style={{
         position: "absolute",
-        left: left + dx,
-        top: top + dy,
-        width: w,
-        height: h,
+        left: boxLeft,
+        top: boxTop,
+        width: boxW,
+        height: boxH,
         outline: movable
           ? isDragging
             ? "1px dashed rgba(60, 130, 255, 0.85)"
@@ -523,14 +676,35 @@ function ImageOverlay({
       }}
       title={
         movable
-          ? `Image ${img.resourceName} (drag to move)`
+          ? `Image ${img.resourceName} (drag to move, corners to resize)`
           : `Image ${img.resourceName} (un-movable)`
       }
       onMouseDown={(e) => {
         if (!movable) return;
-        onMouseDown(e, { dx, dy });
+        onMouseDown(e, baseFor());
       }}
-    />
+    >
+      {movable ? (
+        <>
+          <ResizeHandle
+            position="tl"
+            onMouseDown={(e) => onResizeStart("tl", e, baseFor())}
+          />
+          <ResizeHandle
+            position="tr"
+            onMouseDown={(e) => onResizeStart("tr", e, baseFor())}
+          />
+          <ResizeHandle
+            position="bl"
+            onMouseDown={(e) => onResizeStart("bl", e, baseFor())}
+          />
+          <ResizeHandle
+            position="br"
+            onMouseDown={(e) => onResizeStart("br", e, baseFor())}
+          />
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -813,7 +987,6 @@ function InsertedImageOverlay({
   onChange: (patch: Partial<ImageInsertion>) => void;
   onDelete: () => void;
 }) {
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   // Encode the chosen image as a base64 data URL once. We deliberately
   // avoid `URL.createObjectURL` here — its companion revoke needs to
   // run on a true unmount, but React 19 StrictMode does a synthetic
@@ -836,24 +1009,76 @@ function InsertedImageOverlay({
   const startDrag = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      baseX: ins.pdfX,
-      baseY: ins.pdfY,
-    };
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const baseX = ins.pdfX;
+    const baseY = ins.pdfY;
     const onMove = (ev: MouseEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      const dxView = ev.clientX - d.startX;
-      const dyView = ev.clientY - d.startY;
+      const dxView = ev.clientX - startX;
+      const dyView = ev.clientY - startY;
       onChange({
-        pdfX: d.baseX + dxView / page.scale,
-        pdfY: d.baseY - dyView / page.scale,
+        pdfX: baseX + dxView / page.scale,
+        pdfY: baseY - dyView / page.scale,
       });
     };
     const onUp = () => {
-      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Resize from any of the 4 corners. Math is in PDF user space (y-up):
+  // ins.pdfY is the BOTTOM of the box, ins.pdfY+pdfHeight is the top.
+  // Each handle anchors the OPPOSITE corner so the box grows/shrinks
+  // toward the dragged corner.
+  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const base = {
+      x: ins.pdfX,
+      y: ins.pdfY,
+      w: ins.pdfWidth,
+      h: ins.pdfHeight,
+    };
+    const MIN = 10;
+    const onMove = (ev: MouseEvent) => {
+      const dxPdf = (ev.clientX - startX) / page.scale;
+      // Viewport y is y-down, PDF is y-up — drag DOWN means -dyPdf.
+      const dyPdf = -(ev.clientY - startY) / page.scale;
+      let { x, y } = base;
+      let nw = base.w;
+      let nh = base.h;
+      switch (corner) {
+        case "br": // anchor TL: x stays, y+h stays
+          nw = Math.max(MIN, base.w + dxPdf);
+          nh = Math.max(MIN, base.h - dyPdf);
+          y = base.y + base.h - nh;
+          break;
+        case "tr": // anchor BL: x stays, y stays
+          nw = Math.max(MIN, base.w + dxPdf);
+          nh = Math.max(MIN, base.h + dyPdf);
+          break;
+        case "tl": // anchor BR: x+w stays, y stays
+          nw = Math.max(MIN, base.w - dxPdf);
+          nh = Math.max(MIN, base.h + dyPdf);
+          x = base.x + base.w - nw;
+          break;
+        case "bl": // anchor TR: x+w stays, y+h stays
+          nw = Math.max(MIN, base.w - dxPdf);
+          nh = Math.max(MIN, base.h - dyPdf);
+          x = base.x + base.w - nw;
+          y = base.y + base.h - nh;
+          break;
+      }
+      onChange({ pdfX: x, pdfY: y, pdfWidth: nw, pdfHeight: nh });
+    };
+    const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -878,12 +1103,67 @@ function InsertedImageOverlay({
         pointerEvents: "auto",
         zIndex: 20,
       }}
-      title={`Inserted image (double-click to delete)`}
+      title={`Inserted image (drag corners to resize, double-click to delete)`}
       onMouseDown={startDrag}
       onDoubleClick={(e) => {
         e.stopPropagation();
         onDelete();
       }}
+    >
+      <ResizeHandle position="tl" onMouseDown={startResize("tl")} />
+      <ResizeHandle position="tr" onMouseDown={startResize("tr")} />
+      <ResizeHandle position="bl" onMouseDown={startResize("bl")} />
+      <ResizeHandle position="br" onMouseDown={startResize("br")} />
+    </div>
+  );
+}
+
+/** Square corner handle for resizing image overlays. Sits flush against
+ *  the corner INSIDE the box so it's never clipped by the page-level
+ *  container's bounds (matters for images near the page edge). The
+ *  square overlaps the drag-to-move surface, but its higher z-index
+ *  and earlier mousedown hit-test wins out when the cursor is on it. */
+function ResizeHandle({
+  position,
+  onMouseDown,
+}: {
+  position: "tl" | "tr" | "bl" | "br";
+  onMouseDown: (e: React.MouseEvent) => void;
+}) {
+  const SIZE = 10;
+  const style: React.CSSProperties = {
+    position: "absolute",
+    width: SIZE,
+    height: SIZE,
+    background: "white",
+    border: "1px solid rgba(40, 130, 255, 0.9)",
+    boxSizing: "border-box",
+    pointerEvents: "auto",
+    zIndex: 21,
+  };
+  if (position === "tl") {
+    style.left = 0;
+    style.top = 0;
+    style.cursor = "nwse-resize";
+  } else if (position === "tr") {
+    style.right = 0;
+    style.top = 0;
+    style.cursor = "nesw-resize";
+  } else if (position === "bl") {
+    style.left = 0;
+    style.bottom = 0;
+    style.cursor = "nesw-resize";
+  } else {
+    style.right = 0;
+    style.bottom = 0;
+    style.cursor = "nwse-resize";
+  }
+  return (
+    <div
+      data-resize-handle={position}
+      style={style}
+      onMouseDown={onMouseDown}
+      onDoubleClick={(e) => e.stopPropagation()}
     />
   );
 }

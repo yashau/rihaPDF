@@ -30,7 +30,7 @@ describe("edit-existing-run formatting", () => {
   test("toggling bold on an existing run flips the input weight + persists", async () => {
     // Use the Maldivian PDF — it carries real source-detected bold
     // metadata on at least one run.
-    await loadFixture(h.page, FIXTURE.maldivian);
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
 
     // Grab every run with its data-bold attribute (for diagnostic
     // when we pick a target).
@@ -170,11 +170,14 @@ describe("edit-existing-run formatting", () => {
     // Click outside to close the editor and re-open it. The bold-OFF
     // override has to persist across editor close/open — this is the
     // case where a hasStyle()-style strip would silently drop the
-    // override and bring back run.bold.
+    // override and bring back run.bold. The 200ms post-close wait was
+    // racing the editor's exit animation on slower hosts; bump it so
+    // the InsertedText overlay is fully back to its stable click-to-
+    // open state before we re-click.
     await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
-    await h.page.waitForTimeout(200);
+    await h.page.waitForTimeout(500);
     await h.page.locator("[data-text-insert-id]").first().click();
-    await h.page.waitForTimeout(200);
+    await h.page.waitForTimeout(300);
     const reopenedWeight = await h.page.evaluate(
       () =>
         getComputedStyle(

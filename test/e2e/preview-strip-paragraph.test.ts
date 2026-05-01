@@ -44,7 +44,7 @@ type RunInfo = {
 
 describe("preview strip on agenda item 6 paragraph runs", () => {
   test("dragging any line in section 6 / 6.1 / 6.2 leaves no ink at the original position", async () => {
-    await loadFixture(h.page, FIXTURE.maldivian);
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
     await h.page.waitForTimeout(200);
 
@@ -67,7 +67,7 @@ describe("preview strip on agenda item 6 paragraph runs", () => {
       if (reason) failures.push(reason);
       // Reload between attempts so previous edit + preview state
       // doesn't bleed into the next run.
-      await loadFixture(h.page, FIXTURE.maldivian);
+      await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
       await h.page
         .locator('[data-page-index="1"]')
         .scrollIntoViewIfNeeded();

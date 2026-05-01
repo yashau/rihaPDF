@@ -30,7 +30,7 @@ afterAll(async () => {
 
 describe("paragraph edit boxes carry adjacent punctuation", () => {
   test("opening the 6.1 line-2 run shows the parens, slash, and digits", async () => {
-    await loadFixture(h.page, FIXTURE.maldivian);
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
     await h.page.waitForTimeout(200);
 

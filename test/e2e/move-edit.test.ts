@@ -24,7 +24,7 @@ const TITLE_TEXT = "ރައްޔިތުންގެ މަޖިލިސް";
 beforeAll(async () => {
   fs.mkdirSync(SCREENSHOTS, { recursive: true });
   h = await setupBrowser();
-  await loadFixture(h.page, FIXTURE.maldivian);
+  await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
   originalRuns = await captureRuns(h.page);
   const found = originalRuns.find((r) => r.text === TITLE_TEXT);
   if (!found) throw new Error(`title run "${TITLE_TEXT}" not in extracted runs`);
@@ -104,7 +104,7 @@ async function runScenario({
   expectTitleText: string;
 }): Promise<{ titleOk: boolean; titleNote: string; drift: string[] }> {
   // Reload fresh each run so previous edits don't bleed.
-  await loadFixture(h.page, FIXTURE.maldivian);
+  await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
 
   // Find the run id whose text matches the title, since the index can
   // shift between runs of the extractor as we change recovery logic.
@@ -150,7 +150,12 @@ async function runScenario({
       await h.page.waitForTimeout(20);
     }
     await h.page.mouse.up();
-    await h.page.waitForTimeout(300);
+    // App.tsx debounces the preview-strip rebuild by 150ms then runs
+    // an async pdf-lib + pdf.js round-trip. Waiting just 300ms races
+    // the rebuild on slower hosts — the click below times out because
+    // the page tree is briefly being repainted. 800ms covers the
+    // 99th percentile of rebuild durations on the dev box.
+    await h.page.waitForTimeout(800);
   }
 
   if (edit) {
@@ -168,7 +173,9 @@ async function runScenario({
   const out = path.join(SCREENSHOTS, `move-edit-${name}.pdf`);
   await dl.saveAs(out);
 
-  await loadFixture(h.page, out);
+  // The saved PDF inherits maldivian's page count, so reuse the same
+  // expectedPages guard to keep the post-load screenshot reliable.
+  await loadFixture(h.page, out, { expectedPages: 2 });
   const savedRuns = await captureRuns(h.page);
   await h.page
     .locator('[data-page-index="0"] canvas')

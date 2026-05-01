@@ -193,7 +193,12 @@ export default function App() {
       if (editing) runIds.add(editing);
       const imageIds = new Set(
         Array.from(imageMoves.get(pi) ?? new Map()).flatMap(([id, v]) =>
-          (v.dx ?? 0) !== 0 || (v.dy ?? 0) !== 0 ? [id] : [],
+          (v.dx ?? 0) !== 0 ||
+          (v.dy ?? 0) !== 0 ||
+          (v.dw ?? 0) !== 0 ||
+          (v.dh ?? 0) !== 0
+            ? [id]
+            : [],
         ),
       );
       if (runIds.size === 0 && imageIds.size === 0) continue;
@@ -395,12 +400,18 @@ export default function App() {
       const flatImageMoves: ImageMove[] = [];
       for (const [pageIndex, imgs] of imageMoves) {
         for (const [imageId, value] of imgs) {
-          if ((value.dx ?? 0) === 0 && (value.dy ?? 0) === 0) continue;
+          const dx = value.dx ?? 0;
+          const dy = value.dy ?? 0;
+          const dw = value.dw ?? 0;
+          const dh = value.dh ?? 0;
+          if (dx === 0 && dy === 0 && dw === 0 && dh === 0) continue;
           flatImageMoves.push({
             pageIndex,
             imageId,
-            dx: value.dx,
-            dy: value.dy,
+            dx,
+            dy,
+            dw,
+            dh,
           });
         }
       }
