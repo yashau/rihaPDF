@@ -1,0 +1,181 @@
+// Mobile (390×844) interaction smoke test. Verifies that on a touch-
+// capable phone-sized viewport:
+//   - Tap-to-edit on a text run opens the EditField (synthesised
+//     click after pointerup, no 300ms delay courtesy of touch-action:
+//     manipulation).
+//   - The mobile EditTextToolbar is fixed-bottom (position: fixed at
+//     the visual viewport's bottom).
+//   - A touch drag on a run (pointerdown → pointermove → pointerup)
+//     produces a persisted dx/dy via the `useDragGesture` hook.
+//
+// Playwright's touchscreen API only exposes single taps, so the drag
+// case dispatches synthetic pointer events on the run overlay.
+
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import fs from "fs";
+import {
+  FIXTURE,
+  SCREENSHOTS,
+  loadFixture,
+  setupBrowser,
+  tearDown,
+  type Harness,
+} from "../helpers/browser";
+
+let h: Harness;
+
+beforeAll(async () => {
+  fs.mkdirSync(SCREENSHOTS, { recursive: true });
+  h = await setupBrowser({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+  });
+});
+
+afterAll(async () => {
+  if (h) await tearDown(h);
+});
+
+async function findFirstNonEmptyRun(): Promise<{
+  id: string;
+  cx: number;
+  cy: number;
+  text: string;
+} | null> {
+  return h.page.evaluate(() => {
+    const overlays = document.querySelectorAll("[data-run-id]");
+    for (const el of overlays) {
+      const text = (el.textContent || "").trim();
+      if (!text) continue;
+      const r = el.getBoundingClientRect();
+      // Skip runs whose overlay is offscreen or zero-sized (e.g. orphan).
+      if (r.width < 8 || r.height < 8) continue;
+      return {
+        id: el.getAttribute("data-run-id") ?? "",
+        cx: r.x + r.width / 2,
+        cy: r.y + r.height / 2,
+        text,
+      };
+    }
+    return null;
+  });
+}
+
+describe("mobile interaction (390×844, hasTouch)", () => {
+  test("tap on a run opens the edit field", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    const target = await findFirstNonEmptyRun();
+    expect(target, "expected at least one non-empty run on page 1").not.toBeNull();
+    // page.touchscreen.tap fires a touchstart → touchend → click,
+    // which the browser turns into pointerdown → pointerup → click on
+    // the target. Our overlay's onClick opens the editor.
+    await h.page.touchscreen.tap(target!.cx, target!.cy);
+    await h.page.waitForTimeout(300);
+    expect(
+      await h.page.locator("input[data-editor]").first().isVisible(),
+      "edit input should appear after tap",
+    ).toBe(true);
+    // The mobile toolbar should be fixed-bottom — assert position:fixed
+    // by reading the computed style.
+    const toolbarPos = await h.page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("[data-edit-toolbar]");
+      if (!el) return null;
+      return getComputedStyle(el).position;
+    });
+    expect(toolbarPos).toBe("fixed");
+  });
+
+  test("tap-to-edit, type, Enter commits", async () => {
+    // Continues from previous test's loaded fixture / open editor —
+    // the input should still be focused.
+    const input = h.page.locator("input[data-editor]").first();
+    await input.fill("ޓެސްޓު");
+    await input.press("Enter");
+    await h.page.waitForTimeout(200);
+    // Editor closes; the edited overlay is now visible with new text.
+    const editedText = await h.page.evaluate(() => {
+      const overlays = document.querySelectorAll("[data-run-id]");
+      for (const el of overlays) {
+        const t = (el.textContent || "").trim();
+        if (t === "ޓެސްޓު") return t;
+      }
+      return null;
+    });
+    expect(editedText).toBe("ޓެސްޓު");
+  });
+
+  test("touch drag on a run persists a dx/dy offset", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    const target = await findFirstNonEmptyRun();
+    expect(target).not.toBeNull();
+    const beforeRect = await h.page.evaluate((id) => {
+      const el = document.querySelector<HTMLElement>(`[data-run-id="${id}"]`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    }, target!.id);
+    expect(beforeRect).not.toBeNull();
+    // Dispatch a touch-drag as a sequence of pointer events. Playwright's
+    // touchscreen helper only exposes tap, so we synthesise the move
+    // chain ourselves. The hook listens on `window.pointermove` /
+    // `pointerup`, so we dispatch on the window for those phases.
+    const DXV = 30; // screen pixels — well over the 10px touch threshold
+    const DYV = 18;
+    await h.page.evaluate(
+      ({ runId, sx, sy, dx, dy }) => {
+        const el = document.querySelector<HTMLElement>(`[data-run-id="${runId}"]`);
+        if (!el) throw new Error(`no overlay for ${runId}`);
+        const fire = (
+          ev: EventTarget,
+          type: string,
+          x: number,
+          y: number,
+          extra: PointerEventInit = {},
+        ) => {
+          ev.dispatchEvent(
+            new PointerEvent(type, {
+              clientX: x,
+              clientY: y,
+              pointerType: "touch",
+              pointerId: 1,
+              isPrimary: true,
+              bubbles: true,
+              cancelable: true,
+              ...extra,
+            }),
+          );
+        };
+        fire(el, "pointerdown", sx, sy);
+        const STEPS = 8;
+        for (let i = 1; i <= STEPS; i++) {
+          fire(window, "pointermove", sx + (dx * i) / STEPS, sy + (dy * i) / STEPS);
+        }
+        fire(window, "pointerup", sx + dx, sy + dy);
+      },
+      { runId: target!.id, sx: target!.cx, sy: target!.cy, dx: DXV, dy: DYV },
+    );
+    await h.page.waitForTimeout(300);
+    // The overlay should now sit at a different screen position — the
+    // dx/dy got persisted into App's edits map and the overlay re-
+    // renders at (bounds.left + dx) in natural px which projects to
+    // a shifted screen rect.
+    const afterRect = await h.page.evaluate((id) => {
+      const el = document.querySelector<HTMLElement>(`[data-run-id="${id}"]`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    }, target!.id);
+    expect(afterRect).not.toBeNull();
+    const dxScreen = afterRect!.x - beforeRect!.x;
+    const dyScreen = afterRect!.y - beforeRect!.y;
+    // Direction should match the gesture and total magnitude should
+    // be non-trivial. Exact value depends on displayScale (mobile
+    // fit-to-width is < 1 so we expect dxScreen ≈ DXV).
+    expect(dxScreen).toBeGreaterThan(5);
+    expect(dyScreen).toBeGreaterThan(2);
+  });
+});

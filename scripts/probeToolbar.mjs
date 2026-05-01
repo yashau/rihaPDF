@@ -56,7 +56,11 @@ for (const sc of SCEN) {
     if (counts.ready !== lastReady) {
       lastReady = counts.ready;
       stableSince = Date.now();
-    } else if (counts.ready > 0 && counts.ready === counts.total && Date.now() - stableSince >= 1500) {
+    } else if (
+      counts.ready > 0 &&
+      counts.ready === counts.total &&
+      Date.now() - stableSince >= 1500
+    ) {
       break;
     }
     await page.waitForTimeout(200);

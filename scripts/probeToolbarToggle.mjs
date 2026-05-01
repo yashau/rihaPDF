@@ -27,7 +27,8 @@ await page.emulateMedia({ colorScheme: "light" });
 await page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
 await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(PDF);
 await page.waitForSelector("[data-page-index]", { timeout: 30_000 });
-let lastReady = -1, stableSince = Date.now();
+let lastReady = -1,
+  stableSince = Date.now();
 const DEADLINE = Date.now() + 30_000;
 while (Date.now() < DEADLINE) {
   const counts = await page.evaluate(() => {
@@ -39,7 +40,11 @@ while (Date.now() < DEADLINE) {
   if (counts.ready !== lastReady) {
     lastReady = counts.ready;
     stableSince = Date.now();
-  } else if (counts.ready > 0 && counts.ready === counts.total && Date.now() - stableSince >= 1500) {
+  } else if (
+    counts.ready > 0 &&
+    counts.ready === counts.total &&
+    Date.now() - stableSince >= 1500
+  ) {
     break;
   }
   await page.waitForTimeout(200);

@@ -54,10 +54,15 @@ export type Harness = {
 
 export async function setupBrowser(opts?: {
   viewport?: { width: number; height: number };
+  /** Enable touch input on the context — required for `page.touchscreen.tap()`
+   *  and for the app to detect a touch-capable browser at first paint.
+   *  Mobile-layout tests pass `true`; desktop tests omit it (default false). */
+  hasTouch?: boolean;
 }): Promise<Harness> {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: opts?.viewport ?? { width: 1500, height: 1900 },
+    hasTouch: opts?.hasTouch,
     acceptDownloads: true,
   });
   const page = await context.newPage();

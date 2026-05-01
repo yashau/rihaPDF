@@ -13,6 +13,25 @@
    by src/lib/fonts.ts so adding a new font is a one-line edit there
    instead of duplicating CSS + a TS list. */
 
+/* Safe-area insets surfaced as CSS vars so any layout that needs to
+   ride above the iOS home indicator / notch (the mobile fixed-bottom
+   EditTextToolbar, future bottom-anchored chrome) can pull them
+   without re-typing the env() fallback chain at every call site. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Suppress iOS Safari's blue tap-highlight flash on tappable elements.
+   The HeroUI / Tailwind hover styles already give clear feedback; the
+   flash is just visual noise, especially on the page-canvas overlays
+   where a finger drag would otherwise trigger it on every move. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body,
 #root {

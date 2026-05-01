@@ -64,7 +64,11 @@ for (const sc of SCEN) {
     if (counts.ready !== lastReady) {
       lastReady = counts.ready;
       stableSince = Date.now();
-    } else if (counts.ready > 0 && counts.ready === counts.total && Date.now() - stableSince >= 1500) {
+    } else if (
+      counts.ready > 0 &&
+      counts.ready === counts.total &&
+      Date.now() - stableSince >= 1500
+    ) {
       break;
     }
     await page.waitForTimeout(200);
@@ -72,33 +76,34 @@ for (const sc of SCEN) {
   await page.waitForTimeout(800);
 
   // Find the run on the requested page that contains matchText.
-  const target = await page.evaluate(
-    ({ pageIndex, matchText }) => {
-      const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
-      if (!host) return null;
-      for (const el of host.querySelectorAll("[data-run-id]")) {
-        const t = el.textContent || "";
-        if (t.includes(matchText)) {
-          return {
-            id: el.getAttribute("data-run-id"),
-            text: t,
-            fontFamily: el.getAttribute("data-font-family") ?? "",
-            baseFont: el.getAttribute("data-base-font") ?? "",
-          };
-        }
+  const target = await page.evaluate(({ pageIndex, matchText }) => {
+    const host = document.querySelector(`[data-page-index="${pageIndex}"]`);
+    if (!host) return null;
+    for (const el of host.querySelectorAll("[data-run-id]")) {
+      const t = el.textContent || "";
+      if (t.includes(matchText)) {
+        return {
+          id: el.getAttribute("data-run-id"),
+          text: t,
+          fontFamily: el.getAttribute("data-font-family") ?? "",
+          baseFont: el.getAttribute("data-base-font") ?? "",
+        };
       }
-      return null;
-    },
-    sc,
-  );
+    }
+    return null;
+  }, sc);
   if (!target) {
-    console.log(`[${sc.name}] run with text containing "${sc.matchText}" not found on page ${sc.pageIndex}`);
+    console.log(
+      `[${sc.name}] run with text containing "${sc.matchText}" not found on page ${sc.pageIndex}`,
+    );
     await ctx.close();
     continue;
   }
   console.log(`\n=== ${sc.name} ===`);
   console.log(`run id=${target.id} text="${target.text.slice(0, 60)}"`);
-  console.log(`run-attr: data-font-family="${target.fontFamily}" data-base-font="${target.baseFont}"`);
+  console.log(
+    `run-attr: data-font-family="${target.fontFamily}" data-base-font="${target.baseFont}"`,
+  );
 
   await page.locator(`[data-run-id="${target.id}"]`).scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);
@@ -111,12 +116,8 @@ for (const sc of SCEN) {
     const fontSelect = root.querySelector("select[aria-label='Font']");
     const sizeInput = root.querySelector("input[aria-label='Font size']");
     const fontVal = fontSelect ? fontSelect.value : null;
-    const fontOpts = fontSelect
-      ? Array.from(fontSelect.options).map((o) => o.value)
-      : [];
-    const styleButtons = Array.from(
-      root.querySelectorAll("button[aria-label]"),
-    ).map((b) => ({
+    const fontOpts = fontSelect ? Array.from(fontSelect.options).map((o) => o.value) : [];
+    const styleButtons = Array.from(root.querySelectorAll("button[aria-label]")).map((b) => ({
       label: b.getAttribute("aria-label"),
       ariaPressed: b.getAttribute("aria-pressed"),
       dataSelected: b.getAttribute("data-selected"),

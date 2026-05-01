@@ -36,7 +36,11 @@ while (Date.now() < DEADLINE) {
   if (counts.ready !== lastReady) {
     lastReady = counts.ready;
     stableSince = Date.now();
-  } else if (counts.ready > 0 && counts.ready === counts.total && Date.now() - stableSince >= 1500) {
+  } else if (
+    counts.ready > 0 &&
+    counts.ready === counts.total &&
+    Date.now() - stableSince >= 1500
+  ) {
     break;
   }
   await page.waitForTimeout(200);
@@ -77,7 +81,9 @@ for (const p of summary) {
   console.log(`\n=== PAGE ${p.idx} ===`);
   console.log(`  runs: ${p.runs.length}, images: ${p.imgs.length}`);
   for (const r of p.runs.slice(0, 30)) {
-    console.log(`  ${(r.id || "").padEnd(10)} (${String(r.x).padStart(4)},${String(r.y).padStart(4)},w${String(r.w).padStart(4)}) "${r.text}"`);
+    console.log(
+      `  ${(r.id || "").padEnd(10)} (${String(r.x).padStart(4)},${String(r.y).padStart(4)},w${String(r.w).padStart(4)}) "${r.text}"`,
+    );
   }
   if (p.runs.length > 30) console.log(`  …${p.runs.length - 30} more runs`);
 }

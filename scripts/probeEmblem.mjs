@@ -44,7 +44,11 @@ while (Date.now() < DEADLINE) {
   if (counts.ready !== lastReady) {
     lastReady = counts.ready;
     stableSince = Date.now();
-  } else if (counts.ready > 0 && counts.ready === counts.total && Date.now() - stableSince >= 1500) {
+  } else if (
+    counts.ready > 0 &&
+    counts.ready === counts.total &&
+    Date.now() - stableSince >= 1500
+  ) {
     break;
   }
   await page.waitForTimeout(200);
@@ -88,7 +92,9 @@ const info = await page.evaluate(async (b64) => {
 }, b64);
 console.log("\nXObject dicts on page 0 (Subtype / BBox / Matrix):");
 for (const g of info.xoGeom) {
-  console.log(`  ${g.resourceName}: subtype=${g.subtype} bbox=${JSON.stringify(g.bbox)} matrix=${JSON.stringify(g.matrix)}`);
+  console.log(
+    `  ${g.resourceName}: subtype=${g.subtype} bbox=${JSON.stringify(g.bbox)} matrix=${JSON.stringify(g.matrix)}`,
+  );
 }
 console.log("page meta:", JSON.stringify(info.page, null, 2));
 console.log("\nextracted images on page 0:");

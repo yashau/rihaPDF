@@ -118,11 +118,24 @@ export async function renderPage(
   images: import("./sourceImages").ImageInstance[] = [],
 ): Promise<RenderedPage> {
   const viewport = page.getViewport({ scale });
+  // Render the bitmap at scale × devicePixelRatio so retina mobile (DPR
+  // 2-3) gets crisp pixels on a canvas whose CSS-pixel size still
+  // matches the layout `scale`. `cropCanvasToDataUrl` derives the
+  // bitmap/CSS ratio from `canvas.style.width`, which PdfPage sets to
+  // `page.viewWidth` (= layout-scale CSS pixels), so its math
+  // automatically tracks this multiplier.
+  //
+  // DPR is capped at 2 to bound memory: a multi-page Letter document
+  // at scale 1.5 × DPR 3 would allocate ~37 MP per page. Cap of 2
+  // keeps the worst case at ~8 MP/page — visually indistinguishable
+  // from 3× on the affected devices.
+  const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  const renderViewport = page.getViewport({ scale: scale * dpr });
   const canvas = document.createElement("canvas");
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
+  canvas.width = Math.floor(renderViewport.width);
+  canvas.height = Math.floor(renderViewport.height);
   const ctx = canvas.getContext("2d")!;
-  await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+  await page.render({ canvasContext: ctx, viewport: renderViewport, canvas }).promise;
 
   // disableCombineTextItems keeps each Tj/TJ as its own item — pdf.js's
   // default consolidation merges adjacent items and inserts U+0020 to

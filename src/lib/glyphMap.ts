@@ -188,8 +188,7 @@ function firstCodePointFromHex(hex: string): number | null {
 function patchBrokenFiliMappings(map: Map<number, number>): void {
   const FILI_LO = 0x07a6;
   const FILI_HI = 0x07b0;
-  const inFili = (c: number | undefined): c is number =>
-    c != null && c >= FILI_LO && c <= FILI_HI;
+  const inFili = (c: number | undefined): c is number => c != null && c >= FILI_LO && c <= FILI_HI;
   // Snapshot keys — we mutate during iteration.
   const cids = Array.from(map.keys()).sort((a, b) => a - b);
   for (const cid of cids) {

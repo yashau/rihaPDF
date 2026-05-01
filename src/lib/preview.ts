@@ -109,7 +109,13 @@ export async function renderPagePreviewCanvas(
   const doc = await pdfjsLib.getDocument({ data: buf }).promise;
   try {
     const page = await doc.getPage(pageIndex + 1);
-    const viewport = page.getViewport({ scale });
+    // Match renderPage's DPR-aware bitmap rendering so the preview
+    // canvas is crisp on retina mobile and matches the original at
+    // pixel level. The CSS size (canvas.style.width) is set by
+    // PdfPage to page.viewWidth in CSS pixels — this only affects
+    // the bitmap pixel count, not the layout box.
+    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    const viewport = page.getViewport({ scale: scale * dpr });
     const canvas = document.createElement("canvas");
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);

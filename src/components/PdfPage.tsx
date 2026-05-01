@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, ToggleButton as HeroToggleButton } from "@heroui/react";
 import { Bold, Italic, Trash2, Underline, X } from "lucide-react";
 import type { RenderedPage, TextRun } from "../lib/pdf";
@@ -6,6 +6,8 @@ import type { EditStyle } from "../lib/save";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { ToolMode } from "../App";
 import { FONTS } from "../lib/fonts";
+import { clickSuppressMs, useDragGesture } from "../lib/useDragGesture";
+import { useIsMobile } from "../lib/useMediaQuery";
 
 export type EditValue = {
   text: string;
@@ -75,8 +77,6 @@ export type ImageMoveValue = {
   deleted?: boolean;
 };
 
-const DRAG_THRESHOLD_PX = 3;
-
 type ResizeCorner = "tl" | "tr" | "bl" | "br";
 
 /** Cross-page hit-test: given a viewport (clientX, clientY) point, find
@@ -88,17 +88,39 @@ type ResizeCorner = "tl" | "tr" | "bl" | "br";
  *  pageIndex is the CURRENT slot index in App's slots array — used to
  *  resolve the persisted target via `slotsRef`. sourceKey identifies
  *  which loaded source the slot points at; save uses it to route
- *  cross-source draws to the right `doc`. */
+ *  cross-source draws to the right `doc`.
+ *
+ *  Post-fit-to-width: the queried element's `getBoundingClientRect()`
+ *  returns the DISPLAYED rect (page.viewWidth × displayScale). The
+ *  natural `viewWidth/viewHeight` are read from the data attributes;
+ *  `effectiveScale = page.scale * displayScale` is the pdf-user-space
+ *  → displayed-screen-pixels ratio. Callers convert screen deltas to
+ *  PDF by dividing by `effectiveScale` and convert positions inside
+ *  the rect (e.g. `clientY - rect.top`) the same way. */
 function findPageAtPoint(
   clientX: number,
   clientY: number,
 ): {
   pageIndex: number;
   sourceKey: string;
+  /** pdf user space → NATURAL viewport pixel ratio (== `page.scale`). */
   scale: number;
+  /** screen-pixel size of the displayed rect. Equal to natural × displayScale. */
+  rect: DOMRect;
+  /** Natural viewport dimensions (pre-displayScale) — kept for callers
+   *  that compute persisted offsets in natural pixels. */
   viewWidth: number;
   viewHeight: number;
-  rect: DOMRect;
+  /** Displayed-pixel dimensions (= rect.width / rect.height). */
+  displayedWidth: number;
+  displayedHeight: number;
+  /** Natural-to-displayed ratio (= rect.width / viewWidth). 1 on desktop. */
+  displayScale: number;
+  /** pdf user space → DISPLAYED screen-pixel ratio (= scale * displayScale).
+   *  Use this when converting a (clientX, clientY) coord inside `rect`
+   *  to PDF user space — it folds in both render scale and the
+   *  fit-to-width transform. */
+  effectiveScale: number;
 } | null {
   const els = document.querySelectorAll<HTMLElement>("[data-page-index]");
   for (const el of Array.from(els)) {
@@ -107,14 +129,29 @@ function findPageAtPoint(
       const idx = parseInt(el.dataset.pageIndex ?? "", 10);
       const scale = parseFloat(el.dataset.pageScale ?? "");
       const sourceKey = el.dataset.sourceKey ?? "";
-      if (Number.isNaN(idx) || Number.isNaN(scale) || sourceKey === "") continue;
+      const naturalW = parseFloat(el.dataset.viewWidth ?? "");
+      const naturalH = parseFloat(el.dataset.viewHeight ?? "");
+      if (
+        Number.isNaN(idx) ||
+        Number.isNaN(scale) ||
+        sourceKey === "" ||
+        Number.isNaN(naturalW) ||
+        Number.isNaN(naturalH)
+      ) {
+        continue;
+      }
+      const displayScale = naturalW > 0 ? r.width / naturalW : 1;
       return {
         pageIndex: idx,
         sourceKey,
         scale,
-        viewWidth: r.width,
-        viewHeight: r.height,
         rect: r,
+        viewWidth: naturalW,
+        viewHeight: naturalH,
+        displayedWidth: r.width,
+        displayedHeight: r.height,
+        displayScale,
+        effectiveScale: scale * displayScale,
       };
     }
   }
@@ -189,17 +226,89 @@ export function PdfPage({
   onSelectImage,
   onSelectInsertedImage,
 }: Props) {
+  /** Outer layout wrapper. Reserves display-pixel space for the page
+   *  (= natural × displayScale) so the document scroll container can
+   *  size itself correctly. The actual page chrome lives on
+   *  `containerRef` (the inner natural-size div) which is CSS-
+   *  transformed by `displayScale` to fit. Children stay in NATURAL
+   *  CSS pixels — only the conversion from screen-pixel input
+   *  (cursor / finger) is wrapped through `displayScale`. */
+  const fitRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  /** Scale applied to the inner natural-size container so the page
+   *  fits the available scroll-container width. 1 on desktop where
+   *  the page already fits; <1 on mobile where it doesn't. */
+  const [displayScale, setDisplayScale] = useState(1);
+
+  // Compute displayScale synchronously before paint via
+  // useLayoutEffect so the first frame already shows the page at the
+  // correct scale. With a plain useEffect the first paint renders
+  // the OUTER at natural width (918px on US-Letter), spilling out of
+  // the mobile viewport and triggering a one-frame horizontal scroll
+  // before the corrected scale gets applied — visible to the user
+  // as a flash of overflow.
+  useLayoutEffect(() => {
+    const outer = fitRef.current;
+    if (!outer) return;
+    // Find the nearest scroll container — App's <main> with
+    // `overflow: auto`. The immediate parent of `outer` is a flex
+    // item that shrinks to fit its content (i.e. tracks displayScale
+    // itself), so observing it would create a feedback loop where
+    // displayScale stays at 1 forever. <main>'s clientWidth is the
+    // genuine available content area on screen, independent of the
+    // page's own width.
+    let scrollHost: HTMLElement | null = outer.parentElement;
+    while (scrollHost && scrollHost !== document.body) {
+      const cs = window.getComputedStyle(scrollHost);
+      if (cs.overflowX === "auto" || cs.overflowX === "scroll" || scrollHost.tagName === "MAIN") {
+        break;
+      }
+      scrollHost = scrollHost.parentElement;
+    }
+    if (!scrollHost || scrollHost === document.body) {
+      // Fall back to the document element if no auto-overflow
+      // ancestor was found (shouldn't happen — <main> is in App's
+      // tree — but the fallback keeps the page renderable).
+      scrollHost = document.documentElement;
+    }
+    const host = scrollHost;
+    const compute = () => {
+      // clientWidth excludes the vertical scrollbar (good — we don't
+      // want to render under it) but includes the host's own padding.
+      // Subtract horizontal padding so the page fits exactly inside
+      // the visible content area.
+      const cs = window.getComputedStyle(host);
+      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      const available = host.clientWidth - padX;
+      if (available <= 0 || !page.viewWidth) return;
+      const next = Math.min(1, available / page.viewWidth);
+      setDisplayScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [page.viewWidth]);
+
+  /** Read the current displayScale at gesture start. Stable through
+   *  the gesture (we don't want a window resize mid-drag to retarget
+   *  the deltas). */
+  const readDisplayScale = (): number => {
+    const inner = containerRef.current;
+    if (!inner) return displayScale;
+    const r = inner.getBoundingClientRect();
+    return page.viewWidth > 0 ? r.width / page.viewWidth : 1;
+  };
+
   const setEditingId = (next: string | null) => {
     onEditingChange(next);
   };
   /** While dragging a run, the live offset for the dragged run. We keep
    *  it in local state during the drag so we don't churn the parent's
-   *  edits Map on every mousemove. */
+   *  edits Map on every pointermove. The hook owns startX/startY so
+   *  this state only carries the live (dx, dy) the renderer reads. */
   const [drag, setDrag] = useState<{
     runId: string;
-    startX: number;
-    startY: number;
     dx: number;
     dy: number;
   } | null>(null);
@@ -209,18 +318,16 @@ export function PdfPage({
    *  means whole-image translate. */
   const [imageDrag, setImageDrag] = useState<{
     imageId: string;
-    startX: number;
-    startY: number;
     dx: number;
     dy: number;
     dw: number;
     dh: number;
     corner: ResizeCorner | null;
   } | null>(null);
-  /** Set to the runId during a drag and cleared a tick after mouseup, used
-   *  to suppress the click-to-edit that would otherwise fire after a drag
-   *  (Playwright's synthesised events don't match the browser's native
-   *  click-suppression on movement, so we guard explicitly). */
+  /** Set to the runId during a drag and cleared a tick after pointerup,
+   *  used to suppress the click-to-edit that would otherwise fire after
+   *  a drag (Playwright's synthesised events don't match the browser's
+   *  native click-suppression on movement, so we guard explicitly). */
   const justDraggedRef = useRef<string | null>(null);
 
   // Mounts the live canvas (preview or original) into our DOM slot and
@@ -240,51 +347,66 @@ export function PdfPage({
     /* eslint-enable react-hooks/immutability */
   }, [page, previewCanvas]);
 
-  /** Start a drag on a run. The handlers track movement on the window so
-   *  the drag continues even if the cursor leaves the original span. */
-  const startDrag = (runId: string, e: React.MouseEvent, base: { dx: number; dy: number }) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const originRect = containerRef.current?.getBoundingClientRect() ?? null;
-    setDrag({ runId, startX, startY, dx: base.dx, dy: base.dy });
-
-    const onMove = (ev: MouseEvent) => {
-      const newDx = base.dx + (ev.clientX - startX);
-      const newDy = base.dy + (ev.clientY - startY);
-      setDrag((prev) => (prev && prev.runId === runId ? { ...prev, dx: newDx, dy: newDy } : prev));
-    };
-    const onUp = (ev: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      const totalDx = base.dx + (ev.clientX - startX);
-      const totalDy = base.dy + (ev.clientY - startY);
-      const moved =
-        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
-        Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
+  /** Start a drag on a run. The hook tracks the gesture on `window` so
+   *  it survives the cursor / finger leaving the original span (the
+   *  cross-page drop hit-test depends on this).
+   *
+   *  `originDisplayScale` is captured at start so screen-pixel deltas
+   *  from the pointer get converted into NATURAL viewport pixels —
+   *  the unit dx/dy is persisted in. With displayScale < 1 (mobile
+   *  fit-to-width), a 100px finger swipe corresponds to ~240 natural
+   *  pixels of run translation, matching the visual scale-up. */
+  type RunDragCtx = {
+    runId: string;
+    base: { dx: number; dy: number };
+    originRect: DOMRect | null;
+    originDisplayScale: number;
+  };
+  const beginRunDrag = useDragGesture<RunDragCtx>({
+    onStart: (ctx) => {
+      setDrag({ runId: ctx.runId, dx: ctx.base.dx, dy: ctx.base.dy });
+    },
+    onMove: (ctx, info) => {
+      const dxNat = info.dxRaw / ctx.originDisplayScale;
+      const dyNat = info.dyRaw / ctx.originDisplayScale;
+      const newDx = ctx.base.dx + dxNat;
+      const newDy = ctx.base.dy + dyNat;
+      setDrag((prev) =>
+        prev && prev.runId === ctx.runId ? { ...prev, dx: newDx, dy: newDy } : prev,
+      );
+    },
+    onEnd: (ctx, info) => {
+      const { runId, base, originRect, originDisplayScale } = ctx;
+      const totalDx = base.dx + info.dxRaw / originDisplayScale;
+      const totalDy = base.dy + info.dyRaw / originDisplayScale;
       setDrag(null);
-      if (!moved) return; // treat as click — caller's onClick handles it
-      // Suppress the click that the browser/playwright fires immediately
-      // after mouseup so we don't drop into the editor right after a drag.
+      if (!info.moved) return; // treat as click — caller's onClick handles it
+      // Suppress the click that fires immediately after pointerup so we
+      // don't drop into the editor right after a drag. Touch pointers
+      // get a longer window because iOS' synthesised click is delayed.
       justDraggedRef.current = runId;
+      const suppressMs = clickSuppressMs(info.pointerType);
       setTimeout(() => {
         if (justDraggedRef.current === runId) justDraggedRef.current = null;
-      }, 200);
+      }, suppressMs);
       const run = page.textRuns.find((r) => r.id === runId);
       if (!run) return;
       const existing = edits.get(runId) ?? { text: run.text };
       // Cross-page detection: if the cursor landed on a different page
       // than this run's origin, persist absolute target-page baseline
       // coords too. Save uses them to strip-on-origin + draw-on-target.
-      const hit = originRect ? findPageAtPoint(ev.clientX, ev.clientY) : null;
+      const hit = originRect ? findPageAtPoint(info.clientX, info.clientY) : null;
       if (hit && originRect && hit.pageIndex !== pageIndex) {
-        const screenBaselineX = originRect.left + run.bounds.left + totalDx;
-        const screenBaselineY = originRect.top + run.baselineY + totalDy;
+        // Source-page natural-pixel positions (run.bounds.left, baselineY,
+        // totalDx, totalDy) projected to screen coords via the source's
+        // displayScale; then back to PDF user space on the TARGET page
+        // via `effectiveScale = scale * displayScale`.
+        const screenBaselineX = originRect.left + (run.bounds.left + totalDx) * originDisplayScale;
+        const screenBaselineY = originRect.top + (run.baselineY + totalDy) * originDisplayScale;
         const targetViewX = screenBaselineX - hit.rect.left;
         const targetViewY = screenBaselineY - hit.rect.top;
-        const targetPdfX = targetViewX / hit.scale;
-        const targetPdfY = (hit.viewHeight - targetViewY) / hit.scale;
+        const targetPdfX = targetViewX / hit.effectiveScale;
+        const targetPdfY = (hit.displayedHeight - targetViewY) / hit.effectiveScale;
         onEdit(runId, {
           ...existing,
           dx: totalDx,
@@ -305,57 +427,56 @@ export function PdfPage({
           targetPdfY: undefined,
         });
       }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+    onCancel: () => setDrag(null),
+  });
+  const startDrag = (runId: string, e: React.PointerEvent, base: { dx: number; dy: number }) => {
+    beginRunDrag(e, {
+      runId,
+      base,
+      originRect: containerRef.current?.getBoundingClientRect() ?? null,
+      originDisplayScale: readDisplayScale(),
+    });
   };
 
   /** Start a translate drag on an image overlay. Mirrors startDrag for
    *  runs but commits to the parent's onImageMove rather than onEdit.
    *  Width/height deltas (dw/dh) are passed through unchanged so the
    *  user's earlier resize survives a subsequent move. */
-  const startImageDrag = (
-    imageId: string,
-    e: React.MouseEvent,
-    base: { dx: number; dy: number; dw: number; dh: number },
-  ) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const originRect = containerRef.current?.getBoundingClientRect() ?? null;
-    setImageDrag({
-      imageId,
-      startX,
-      startY,
-      dx: base.dx,
-      dy: base.dy,
-      dw: base.dw,
-      dh: base.dh,
-      corner: null,
-    });
-    const onMove = (ev: MouseEvent) => {
-      const newDx = base.dx + (ev.clientX - startX);
-      const newDy = base.dy + (ev.clientY - startY);
+  type ImageDragCtx = {
+    imageId: string;
+    base: { dx: number; dy: number; dw: number; dh: number };
+    originRect: DOMRect | null;
+    originDisplayScale: number;
+  };
+  const beginImageDrag = useDragGesture<ImageDragCtx>({
+    onStart: (ctx) => {
+      setImageDrag({
+        imageId: ctx.imageId,
+        dx: ctx.base.dx,
+        dy: ctx.base.dy,
+        dw: ctx.base.dw,
+        dh: ctx.base.dh,
+        corner: null,
+      });
+    },
+    onMove: (ctx, info) => {
+      const dxNat = info.dxRaw / ctx.originDisplayScale;
+      const dyNat = info.dyRaw / ctx.originDisplayScale;
+      const newDx = ctx.base.dx + dxNat;
+      const newDy = ctx.base.dy + dyNat;
       setImageDrag((prev) =>
-        prev && prev.imageId === imageId ? { ...prev, dx: newDx, dy: newDy } : prev,
+        prev && prev.imageId === ctx.imageId ? { ...prev, dx: newDx, dy: newDy } : prev,
       );
-    };
-    const onUp = (ev: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      const totalDx = base.dx + (ev.clientX - startX);
-      const totalDy = base.dy + (ev.clientY - startY);
-      const moved =
-        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
-        Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
+    },
+    onEnd: (ctx, info) => {
+      const { imageId, base, originRect, originDisplayScale } = ctx;
+      const totalDx = base.dx + info.dxRaw / originDisplayScale;
+      const totalDy = base.dy + info.dyRaw / originDisplayScale;
       setImageDrag(null);
-      if (!moved) return;
+      if (!info.moved) return;
       const img = page.images.find((i) => i.id === imageId);
-      // Cross-page detection: if the drop landed on a different page,
-      // compute target-page bottom-left + size in PDF user space so
-      // save can replicate the XObject reference there.
-      const hit = originRect && img ? findPageAtPoint(ev.clientX, ev.clientY) : null;
+      const hit = originRect && img ? findPageAtPoint(info.clientX, info.clientY) : null;
       if (hit && originRect && img && hit.pageIndex !== pageIndex) {
         const origLeft = img.pdfX * page.scale;
         const origTopView = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
@@ -364,21 +485,22 @@ export function PdfPage({
         const newW = img.pdfWidth + dwPdf;
         const newH = img.pdfHeight + dhPdf;
         // Effective box top on origin page after move + resize (matches
-        // ImageOverlay's boxTop = top + dy - dh).
-        const screenLeft = originRect.left + origLeft + totalDx;
-        const screenTopBox = originRect.top + origTopView + totalDy - base.dh;
+        // ImageOverlay's boxTop = top + dy - dh). Natural→screen via
+        // origin's displayScale; screen→target-PDF via hit.effectiveScale.
+        const screenLeft = originRect.left + (origLeft + totalDx) * originDisplayScale;
+        const screenTopBox =
+          originRect.top + (origTopView + totalDy - base.dh) * originDisplayScale;
         const targetViewLeft = screenLeft - hit.rect.left;
         const targetViewTopBox = screenTopBox - hit.rect.top;
-        const newWView = newW * hit.scale;
-        const newHView = newH * hit.scale;
-        const targetPdfX = targetViewLeft / hit.scale;
-        // Bottom-left in PDF y-up = (viewHeight - viewBottom) / scale.
-        const targetViewBottom = targetViewTopBox + newHView;
-        const targetPdfY = (hit.viewHeight - targetViewBottom) / hit.scale;
-        // newWView / hit.scale = newW; symmetric — but go through view
-        // pixels so any scale mismatch between origin/target is handled.
-        const targetPdfWidth = newWView / hit.scale;
-        const targetPdfHeight = newHView / hit.scale;
+        // newH is in PDF units; on target page that's `newH * hit.effectiveScale`
+        // displayed-screen pixels.
+        const newHScreen = newH * hit.effectiveScale;
+        const targetPdfX = targetViewLeft / hit.effectiveScale;
+        const targetViewBottom = targetViewTopBox + newHScreen;
+        const targetPdfY = (hit.displayedHeight - targetViewBottom) / hit.effectiveScale;
+        // Width / height in PDF units are simply newW / newH.
+        const targetPdfWidth = newW;
+        const targetPdfHeight = newH;
         onImageMove(imageId, {
           dx: totalDx,
           dy: totalDy,
@@ -405,9 +527,20 @@ export function PdfPage({
           targetPdfHeight: undefined,
         });
       }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+    onCancel: () => setImageDrag(null),
+  });
+  const startImageDrag = (
+    imageId: string,
+    e: React.PointerEvent,
+    base: { dx: number; dy: number; dw: number; dh: number },
+  ) => {
+    beginImageDrag(e, {
+      imageId,
+      base,
+      originRect: containerRef.current?.getBoundingClientRect() ?? null,
+      originDisplayScale: readDisplayScale(),
+    });
   };
 
   /** Start a resize drag from one of the 4 image corners. Anchors the
@@ -416,69 +549,69 @@ export function PdfPage({
    *  convention as the move drag); dw/dh are viewport-pixel growth
    *  deltas — dh > 0 means image is taller. App.tsx converts to PDF
    *  units when emitting the cm op. */
-  const startImageResize = (
-    imageId: string,
-    img: import("../lib/sourceImages").ImageInstance,
-    corner: ResizeCorner,
-    e: React.MouseEvent,
-    base: { dx: number; dy: number; dw: number; dh: number },
-  ) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    setImageDrag({
-      imageId,
-      startX,
-      startY,
-      dx: base.dx,
-      dy: base.dy,
-      dw: base.dw,
-      dh: base.dh,
-      corner,
-    });
-    const origW = img.pdfWidth * page.scale;
-    const origH = img.pdfHeight * page.scale;
-    const MIN_VIEW = 10 * page.scale;
-    // (dx, dy, dw, dh) live in viewport pixels:
-    //   dx, dy  → bottom-left translation (dy positive = downward).
-    //   dw, dh  → growth of the box's width / height.
-    // Per-corner increment from a cursor (dxV, dyV) — derived by
-    // requiring that the OPPOSITE corner stays at its base viewport
-    // position. See the table in the source comment.
-    const onMove = (ev: MouseEvent) => {
-      const dxV = ev.clientX - startX;
-      const dyV = ev.clientY - startY;
+  type ImageResizeCtx = {
+    imageId: string;
+    corner: ResizeCorner;
+    base: { dx: number; dy: number; dw: number; dh: number };
+    origW: number;
+    origH: number;
+    minView: number;
+    /** Source page's natural→displayed ratio. Captured at start so
+     *  every screen delta gets converted to natural pixels (the unit
+     *  base.dw / dh / dx / dy live in). */
+    originDisplayScale: number;
+    /** Mutated inside onMove so onEnd has the latest computed deltas
+     *  without depending on the (async) imageDrag setState having
+     *  flushed. Initialised from `base` on start. */
+    latest: { dx: number; dy: number; dw: number; dh: number };
+  };
+  const beginImageResize = useDragGesture<ImageResizeCtx>({
+    onStart: (ctx) => {
+      setImageDrag({
+        imageId: ctx.imageId,
+        dx: ctx.base.dx,
+        dy: ctx.base.dy,
+        dw: ctx.base.dw,
+        dh: ctx.base.dh,
+        corner: ctx.corner,
+      });
+    },
+    onMove: (ctx, info) => {
+      const { base, corner, origW, origH, minView, originDisplayScale } = ctx;
+      // Convert screen-pixel deltas to NATURAL viewport pixels — base.*
+      // and origW / origH all live in natural CSS px.
+      const dxNat = info.dxRaw / originDisplayScale;
+      const dyNat = info.dyRaw / originDisplayScale;
       // Step 1: unclamped width/height growth.
       let nDw = base.dw;
       let nDh = base.dh;
       switch (corner) {
         case "br":
-          nDw = base.dw + dxV;
-          nDh = base.dh + dyV;
+          nDw = base.dw + dxNat;
+          nDh = base.dh + dyNat;
           break;
         case "tr":
-          nDw = base.dw + dxV;
-          nDh = base.dh - dyV;
+          nDw = base.dw + dxNat;
+          nDh = base.dh - dyNat;
           break;
         case "tl":
-          nDw = base.dw - dxV;
-          nDh = base.dh - dyV;
+          nDw = base.dw - dxNat;
+          nDh = base.dh - dyNat;
           break;
         case "bl":
-          nDw = base.dw - dxV;
-          nDh = base.dh + dyV;
+          nDw = base.dw - dxNat;
+          nDh = base.dh + dyNat;
           break;
       }
       // Step 2: clamp size so the viewport bbox stays ≥ MIN_VIEW.
-      if (origW + nDw < MIN_VIEW) nDw = MIN_VIEW - origW;
-      if (origH + nDh < MIN_VIEW) nDh = MIN_VIEW - origH;
+      if (origW + nDw < minView) nDw = minView - origW;
+      if (origH + nDh < minView) nDh = minView - origH;
       // Step 3: derive translation from the clamped size to keep the
       // anchored corner pinned. The relations come from
       //   anchor.left_x   stays → nDx = base.dx                (br, tr)
       //   anchor.right_x  stays → nDx = base.dx + (base.dw - nDw) (tl, bl)
       //   anchor.bottom_y stays → nDy = base.dy                  (tr, tl)
-      //   anchor.top_y    stays → nDy = base.dy + (nDh - base.dh)(br, bl)
+      //   anchor.top_y    stays → nDy = base.dy + (nDh - base.dh) (br, bl)
       let nDx = base.dx;
       let nDy = base.dy;
       if (corner === "tl" || corner === "bl") {
@@ -487,26 +620,42 @@ export function PdfPage({
       if (corner === "br" || corner === "bl") {
         nDy = base.dy + (nDh - base.dh);
       }
+      ctx.latest = { dx: nDx, dy: nDy, dw: nDw, dh: nDh };
       setImageDrag((prev) =>
-        prev && prev.imageId === imageId ? { ...prev, dx: nDx, dy: nDy, dw: nDw, dh: nDh } : prev,
+        prev && prev.imageId === ctx.imageId
+          ? { ...prev, dx: nDx, dy: nDy, dw: nDw, dh: nDh }
+          : prev,
       );
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      setImageDrag((prev) => {
-        if (!prev || prev.imageId !== imageId) return prev;
-        onImageMove(imageId, {
-          dx: prev.dx,
-          dy: prev.dy,
-          dw: prev.dw,
-          dh: prev.dh,
-        });
-        return null;
+    },
+    onEnd: (ctx) => {
+      const { imageId, latest } = ctx;
+      setImageDrag(null);
+      onImageMove(imageId, {
+        dx: latest.dx,
+        dy: latest.dy,
+        dw: latest.dw,
+        dh: latest.dh,
       });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+    onCancel: () => setImageDrag(null),
+  });
+  const startImageResize = (
+    imageId: string,
+    img: import("../lib/sourceImages").ImageInstance,
+    corner: ResizeCorner,
+    e: React.PointerEvent,
+    base: { dx: number; dy: number; dw: number; dh: number },
+  ) => {
+    beginImageResize(e, {
+      imageId,
+      corner,
+      base,
+      origW: img.pdfWidth * page.scale,
+      origH: img.pdfHeight * page.scale,
+      minView: 10 * page.scale,
+      originDisplayScale: readDisplayScale(),
+      latest: { dx: base.dx, dy: base.dy, dw: base.dw, dh: base.dh },
+    });
   };
 
   // Blocker rects the formatting toolbar must avoid. Computed once per
@@ -545,141 +694,277 @@ export function PdfPage({
 
   return (
     <div
-      ref={containerRef}
-      className="relative inline-block shadow-md"
-      style={{ width: page.viewWidth, height: page.viewHeight }}
-      data-page-index={pageIndex}
-      data-source-key={sourceKey}
-      data-page-scale={page.scale}
-      data-view-width={page.viewWidth}
-      data-view-height={page.viewHeight}
+      ref={fitRef}
+      // Outer layout wrapper — reserves displayed-pixel space so the
+      // scroll container sizes itself correctly. The natural-size
+      // chrome lives in the inner div; CSS transform fits it into the
+      // reserved displayed box. `position: relative` anchors the
+      // absolutely-positioned inner; `overflow: hidden` clips the
+      // inner's natural-size LAYOUT box (CSS transform shrinks
+      // visually but doesn't shrink the layout box, so without the
+      // clip the page would extend horizontally past its displayed
+      // width and produce a phantom right-pan area).
+      className="shadow-md"
+      style={{
+        width: page.viewWidth * displayScale,
+        height: page.viewHeight * displayScale,
+        maxWidth: "100%",
+        position: "relative",
+        overflow: "hidden",
+      }}
     >
-      <div data-canvas-slot />
-      {tool !== "select" ? (
-        // Placement-mode capture layer: sits above all other overlays
-        // so a click goes to onCanvasClick regardless of what's
-        // underneath. The user is in "drop a new thing here" mode;
-        // existing items shouldn't react to the click.
-        <div
-          className="absolute inset-0"
-          style={{
-            cursor: "crosshair",
-            zIndex: 50,
-            pointerEvents: "auto",
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            const host = containerRef.current;
-            if (!host) return;
-            const r = host.getBoundingClientRect();
-            const xView = e.clientX - r.x;
-            const yView = e.clientY - r.y;
-            // Convert viewport (y-down) → PDF user space (y-up).
-            const pdfX = xView / page.scale;
-            const pdfY = (page.viewHeight - yView) / page.scale;
-            onCanvasClick(pdfX, pdfY);
-          }}
-        />
-      ) : null}
-      <div className="absolute inset-0">
-        {/* Per-run + per-image overlays handle their own pointer-events.
+      <div
+        ref={containerRef}
+        className="relative inline-block"
+        style={{
+          width: page.viewWidth,
+          height: page.viewHeight,
+          // Absolute-position the inner so its natural-size layout
+          // box doesn't push the outer's content box wider than the
+          // displayed dimensions. The CSS transform handles the
+          // visual fit; absolute positioning keeps the layout in line.
+          position: "absolute",
+          top: 0,
+          left: 0,
+          transform: displayScale === 1 ? undefined : `scale(${displayScale})`,
+          transformOrigin: "top left",
+        }}
+        data-page-index={pageIndex}
+        data-source-key={sourceKey}
+        data-page-scale={page.scale}
+        data-view-width={page.viewWidth}
+        data-view-height={page.viewHeight}
+      >
+        <div data-canvas-slot />
+        {tool !== "select" ? (
+          // Placement-mode capture layer: sits above all other overlays
+          // so a tap/click goes to onCanvasClick regardless of what's
+          // underneath. The user is in "drop a new thing here" mode;
+          // existing items shouldn't react to the click.
+          // `touch-action: manipulation` suppresses iOS' 300ms double-
+          // tap-zoom delay on the layer so the placement click fires
+          // immediately on a finger tap.
+          <div
+            className="absolute inset-0"
+            style={{
+              cursor: "crosshair",
+              zIndex: 50,
+              pointerEvents: "auto",
+              touchAction: "manipulation",
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const host = containerRef.current;
+              if (!host) return;
+              const r = host.getBoundingClientRect();
+              // r is the DISPLAYED rect (post-CSS-transform). Convert
+              // screen px → PDF user space via effectiveScale = scale ×
+              // displayScale, derived once here so the math doesn't
+              // depend on `displayScale` state being current.
+              const ds = page.viewWidth > 0 ? r.width / page.viewWidth : 1;
+              const effective = page.scale * ds;
+              const xView = e.clientX - r.x;
+              const yView = e.clientY - r.y;
+              const pdfX = xView / effective;
+              // Use displayed height (= page.viewHeight × ds) for the
+              // y-flip so all terms are in the same unit before the
+              // single divide.
+              const pdfY = (r.height - yView) / effective;
+              onCanvasClick(pdfX, pdfY);
+            }}
+          />
+        ) : null}
+        <div className="absolute inset-0">
+          {/* Per-run + per-image overlays handle their own pointer-events.
             We don't switch the parent off while editing — the EditField's
             onBlur commits the current edit when the user clicks another
             run, so they can hop between edits without first dismissing. */}
-        {page.textRuns.map((run) => {
-          const isEditing = editingId === run.id;
-          const editedValue = edits.get(run.id);
-          // Deleted runs have no overlay at all — the preview canvas
-          // already stripped them; with no overlay there's nothing to
-          // re-grab, which is the intent.
-          if (editedValue?.deleted) return null;
-          const edited = editedValue !== undefined;
-          const isDragging = drag?.runId === run.id;
-          const isModified = edited || isDragging;
-          // Live drag offset for THIS run (or the persisted offset if we're
-          // not currently dragging it).
-          const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
-          const dy = (isDragging ? drag.dy : editedValue?.dy) ?? 0;
+          {page.textRuns.map((run) => {
+            const isEditing = editingId === run.id;
+            const editedValue = edits.get(run.id);
+            // Deleted runs have no overlay at all — the preview canvas
+            // already stripped them; with no overlay there's nothing to
+            // re-grab, which is the intent.
+            if (editedValue?.deleted) return null;
+            const edited = editedValue !== undefined;
+            const isDragging = drag?.runId === run.id;
+            const isModified = edited || isDragging;
+            // Live drag offset for THIS run (or the persisted offset if we're
+            // not currently dragging it).
+            const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
+            const dy = (isDragging ? drag.dy : editedValue?.dy) ?? 0;
 
-          // No more white-rectangle cover — the live preview pipeline in
-          // App.tsx rebuilds the page canvas with these runs/images
-          // STRIPPED out of the content stream, so the original glyphs
-          // are actually gone from the render. The HTML overlay below
-          // just paints the new content where the user wants it.
-          const padX = 2;
-          const padY = 2;
+            // No more white-rectangle cover — the live preview pipeline in
+            // App.tsx rebuilds the page canvas with these runs/images
+            // STRIPPED out of the content stream, so the original glyphs
+            // are actually gone from the render. The HTML overlay below
+            // just paints the new content where the user wants it.
+            const padX = 2;
+            const padY = 2;
 
-          if (isEditing) {
-            return (
-              <EditField
-                key={run.id}
-                run={run}
-                pageScale={page.scale}
-                toolbarBlockers={toolbarBlockers}
-                initial={editedValue ?? { text: run.text, style: undefined }}
-                onCommit={(value) => {
-                  // Preserve any existing move offset (dx/dy) — the
-                  // EditField only owns text + style, so we layer back
-                  // the persisted offset from editedValue.
-                  const merged: EditValue = {
-                    ...value,
-                    dx: editedValue?.dx ?? 0,
-                    dy: editedValue?.dy ?? 0,
-                  };
-                  const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
-                  if (value.text !== run.text || value.style || hasOffset) {
-                    onEdit(run.id, merged);
+            if (isEditing) {
+              return (
+                <EditField
+                  key={run.id}
+                  run={run}
+                  pageScale={page.scale}
+                  toolbarBlockers={toolbarBlockers}
+                  initial={editedValue ?? { text: run.text, style: undefined }}
+                  onCommit={(value) => {
+                    // Preserve any existing move offset (dx/dy) — the
+                    // EditField only owns text + style, so we layer back
+                    // the persisted offset from editedValue.
+                    const merged: EditValue = {
+                      ...value,
+                      dx: editedValue?.dx ?? 0,
+                      dy: editedValue?.dy ?? 0,
+                    };
+                    const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
+                    if (value.text !== run.text || value.style || hasOffset) {
+                      onEdit(run.id, merged);
+                    }
+                    setEditingId(null);
+                  }}
+                  onCancel={() => setEditingId(null)}
+                  onDelete={() => {
+                    // Mark the source run for deletion: save strips its
+                    // Tj/TJ ops, no replacement is drawn. The overlay is
+                    // hidden via the deleted-flag short-circuit below.
+                    onEdit(run.id, {
+                      ...(editedValue ?? { text: run.text }),
+                      deleted: true,
+                    });
+                    setEditingId(null);
+                  }}
+                />
+              );
+            }
+
+            if (edited) {
+              const style = editedValue.style ?? {};
+              // Edited / dragged run: paint the new text where the user
+              // wants it, no white cover under or behind. The original
+              // glyphs are already gone from the preview canvas.
+              return (
+                <span
+                  key={run.id}
+                  data-run-id={run.id}
+                  data-font-family={style.fontFamily ?? run.fontFamily}
+                  data-base-font={run.fontBaseName ?? ""}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Edit text: ${editedValue.text}`}
+                  style={{
+                    position: "absolute",
+                    left: run.bounds.left - padX + dx,
+                    top: run.bounds.top - padY + dy,
+                    width: Math.max(run.bounds.width, 12) + padX * 2,
+                    height: run.bounds.height + padY * 2,
+                    outline: isDragging
+                      ? "1px dashed rgba(255, 180, 30, 0.9)"
+                      : "1px solid rgba(255, 200, 60, 0.5)",
+                    pointerEvents: "auto",
+                    cursor: isDragging ? "grabbing" : "grab",
+                    display: "flex",
+                    alignItems: "center",
+                    overflow: "visible",
+                    // `pinch-zoom` lets two-finger pinch pass through
+                    // to the browser's native zoom while suppressing
+                    // single-finger pan — so a one-finger drag fires
+                    // pointermove (the gesture we want to handle) and
+                    // a two-finger pinch zooms the document (the
+                    // gesture the user expects from a phone).
+                    touchAction: "pinch-zoom",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                  }}
+                  title={editedValue.text}
+                  onPointerDown={(e) =>
+                    startDrag(run.id, e, {
+                      dx: editedValue.dx ?? 0,
+                      dy: editedValue.dy ?? 0,
+                    })
                   }
-                  setEditingId(null);
-                }}
-                onCancel={() => setEditingId(null)}
-                onDelete={() => {
-                  // Mark the source run for deletion: save strips its
-                  // Tj/TJ ops, no replacement is drawn. The overlay is
-                  // hidden via the deleted-flag short-circuit below.
-                  onEdit(run.id, {
-                    ...(editedValue ?? { text: run.text }),
-                    deleted: true,
-                  });
-                  setEditingId(null);
-                }}
-              />
-            );
-          }
-
-          if (edited) {
-            const style = editedValue.style ?? {};
-            // Edited / dragged run: paint the new text where the user
-            // wants it, no white cover under or behind. The original
-            // glyphs are already gone from the preview canvas.
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(run.id);
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (drag || justDraggedRef.current === run.id) return;
+                    setEditingId(run.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingId(run.id);
+                    }
+                  }}
+                >
+                  <span
+                    dir="auto"
+                    style={{
+                      fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
+                      fontSize: `${style.fontSize ?? run.height}px`,
+                      lineHeight: `${run.bounds.height}px`,
+                      fontWeight: (style.bold ?? run.bold) ? 700 : 400,
+                      fontStyle: (style.italic ?? run.italic) ? "italic" : "normal",
+                      textDecoration: style.underline ? "underline" : "none",
+                      color: "black",
+                      width: "100%",
+                      whiteSpace: "pre",
+                      paddingLeft: padX,
+                      paddingRight: padX,
+                    }}
+                  >
+                    {editedValue.text}
+                  </span>
+                </span>
+              );
+            }
+            // Unedited and not currently dragging: a transparent click
+            // target sits on top of the canvas glyphs. While the user IS
+            // dragging it (live state) we render the text visibly so they
+            // can see what's moving — the preview canvas has already
+            // stripped the original from its source spot, so there's no
+            // double-rendering.
             return (
               <span
                 key={run.id}
                 data-run-id={run.id}
-                data-font-family={style.fontFamily ?? run.fontFamily}
+                data-font-family={run.fontFamily}
                 data-base-font={run.fontBaseName ?? ""}
+                dir="auto"
+                role="button"
+                tabIndex={0}
+                aria-label={`Edit text: ${run.text}`}
+                // `select-none` (was: `select-text`) prevents iOS from
+                // popping the long-press copy menu over a drag-start —
+                // the menu would otherwise eat the gesture and lock the
+                // run in selection mode. Selection within the editor
+                // input is unaffected because that's a separate node.
+                className="thaana-stack absolute select-none"
                 style={{
-                  position: "absolute",
-                  left: run.bounds.left - padX + dx,
-                  top: run.bounds.top - padY + dy,
-                  width: Math.max(run.bounds.width, 12) + padX * 2,
-                  height: run.bounds.height + padY * 2,
-                  outline: isDragging
-                    ? "1px dashed rgba(255, 180, 30, 0.9)"
-                    : "1px solid rgba(255, 200, 60, 0.5)",
+                  left: run.bounds.left + dx,
+                  top: run.bounds.top + dy,
+                  width: Math.max(run.bounds.width, 12),
+                  height: run.bounds.height,
+                  fontSize: `${run.height}px`,
+                  lineHeight: `${run.bounds.height}px`,
+                  color: isModified ? "black" : "transparent",
+                  backgroundColor: "transparent",
                   pointerEvents: "auto",
-                  cursor: isDragging ? "grabbing" : "grab",
-                  display: "flex",
-                  alignItems: "center",
+                  whiteSpace: "pre",
                   overflow: "visible",
+                  cursor: isDragging ? "grabbing" : "grab",
+                  // `pinch-zoom` so two-finger pinch zooms the page
+                  // while one-finger drag still fires pointermove.
+                  touchAction: "pinch-zoom",
+                  WebkitUserSelect: "none",
                 }}
-                title={editedValue.text}
-                onMouseDown={(e) =>
-                  startDrag(run.id, e, {
-                    dx: editedValue.dx ?? 0,
-                    dy: editedValue.dy ?? 0,
-                  })
-                }
+                title={run.text}
+                onPointerDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditingId(run.id);
@@ -689,128 +974,77 @@ export function PdfPage({
                   if (drag || justDraggedRef.current === run.id) return;
                   setEditingId(run.id);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setEditingId(run.id);
+                  }
+                }}
               >
-                <span
-                  dir="auto"
-                  style={{
-                    fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
-                    fontSize: `${style.fontSize ?? run.height}px`,
-                    lineHeight: `${run.bounds.height}px`,
-                    fontWeight: (style.bold ?? run.bold) ? 700 : 400,
-                    fontStyle: (style.italic ?? run.italic) ? "italic" : "normal",
-                    textDecoration: style.underline ? "underline" : "none",
-                    color: "black",
-                    width: "100%",
-                    whiteSpace: "pre",
-                    paddingLeft: padX,
-                    paddingRight: padX,
-                  }}
-                >
-                  {editedValue.text}
-                </span>
+                {run.text}
               </span>
             );
-          }
-          // Unedited and not currently dragging: a transparent click
-          // target sits on top of the canvas glyphs. While the user IS
-          // dragging it (live state) we render the text visibly so they
-          // can see what's moving — the preview canvas has already
-          // stripped the original from its source spot, so there's no
-          // double-rendering.
-          return (
-            <span
-              key={run.id}
-              data-run-id={run.id}
-              data-font-family={run.fontFamily}
-              data-base-font={run.fontBaseName ?? ""}
-              dir="auto"
-              className="thaana-stack absolute select-text"
-              style={{
-                left: run.bounds.left + dx,
-                top: run.bounds.top + dy,
-                width: Math.max(run.bounds.width, 12),
-                height: run.bounds.height,
-                fontSize: `${run.height}px`,
-                lineHeight: `${run.bounds.height}px`,
-                color: isModified ? "black" : "transparent",
-                backgroundColor: "transparent",
-                pointerEvents: "auto",
-                whiteSpace: "pre",
-                overflow: "visible",
-                cursor: isDragging ? "grabbing" : "grab",
-              }}
-              title={run.text}
-              onMouseDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                setEditingId(run.id);
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (drag || justDraggedRef.current === run.id) return;
-                setEditingId(run.id);
-              }}
-            >
-              {run.text}
-            </span>
-          );
-        })}
-        {page.images.map((img) => {
-          // A deleted source image hides its overlay so the user can't
-          // re-grab it; the preview-strip pipeline already removed
-          // it from the canvas.
-          const persisted = imageMoves.get(img.id);
-          if (persisted?.deleted) return null;
-          return (
-            <ImageOverlay
-              key={img.id}
-              img={img}
-              page={page}
-              persisted={persisted}
-              isDragging={imageDrag?.imageId === img.id}
-              isSelected={selectedImageId === img.id}
-              liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
-              liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
-              liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
-              liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
-              onMouseDown={(e, base) => startImageDrag(img.id, e, base)}
-              onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
-              onSelect={() => onSelectImage(img.id)}
-            />
-          );
-        })}
-        {/* Inserted (net-new) text boxes. These render the same way as
+          })}
+          {page.images.map((img) => {
+            // A deleted source image hides its overlay so the user can't
+            // re-grab it; the preview-strip pipeline already removed
+            // it from the canvas.
+            const persisted = imageMoves.get(img.id);
+            if (persisted?.deleted) return null;
+            return (
+              <ImageOverlay
+                key={img.id}
+                img={img}
+                page={page}
+                persisted={persisted}
+                isDragging={imageDrag?.imageId === img.id}
+                isSelected={selectedImageId === img.id}
+                liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
+                liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
+                liveDw={imageDrag?.imageId === img.id ? imageDrag.dw : null}
+                liveDh={imageDrag?.imageId === img.id ? imageDrag.dh : null}
+                onPointerDown={(e, base) => startImageDrag(img.id, e, base)}
+                onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
+                onSelect={() => onSelectImage(img.id)}
+              />
+            );
+          })}
+          {/* Inserted (net-new) text boxes. These render the same way as
             edited runs do — drag to move, click to edit — but the save
             path treats them as fresh content rather than a rewrite. */}
-        {insertedTexts.map((ins) => (
-          <InsertedTextOverlay
-            key={ins.id}
-            ins={ins}
-            page={page}
-            toolbarBlockers={toolbarBlockers}
-            isEditing={editingId === ins.id}
-            onChange={(patch) => onTextInsertChange(ins.id, patch)}
-            onDelete={() => {
-              if (editingId === ins.id) setEditingId(null);
-              onTextInsertDelete(ins.id);
-            }}
-            onOpen={() => setEditingId(ins.id)}
-            onClose={() => setEditingId(null)}
-          />
-        ))}
-        {/* Inserted images — drag to move, click to select, Del key
+          {insertedTexts.map((ins) => (
+            <InsertedTextOverlay
+              key={ins.id}
+              ins={ins}
+              page={page}
+              displayScale={displayScale}
+              toolbarBlockers={toolbarBlockers}
+              isEditing={editingId === ins.id}
+              onChange={(patch) => onTextInsertChange(ins.id, patch)}
+              onDelete={() => {
+                if (editingId === ins.id) setEditingId(null);
+                onTextInsertDelete(ins.id);
+              }}
+              onOpen={() => setEditingId(ins.id)}
+              onClose={() => setEditingId(null)}
+            />
+          ))}
+          {/* Inserted images — drag to move, click to select, Del key
             to delete. Double-click is still a deletion shortcut. */}
-        {insertedImages.map((ins) => (
-          <InsertedImageOverlay
-            key={ins.id}
-            ins={ins}
-            page={page}
-            isSelected={selectedInsertedImageId === ins.id}
-            onChange={(patch) => onImageInsertChange(ins.id, patch)}
-            onDelete={() => onImageInsertDelete(ins.id)}
-            onSelect={() => onSelectInsertedImage(ins.id)}
-          />
-        ))}
+          {insertedImages.map((ins) => (
+            <InsertedImageOverlay
+              key={ins.id}
+              ins={ins}
+              page={page}
+              displayScale={displayScale}
+              isSelected={selectedInsertedImageId === ins.id}
+              onChange={(patch) => onImageInsertChange(ins.id, patch)}
+              onDelete={() => onImageInsertDelete(ins.id)}
+              onSelect={() => onSelectInsertedImage(ins.id)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -837,7 +1071,7 @@ function ImageOverlay({
   liveDy,
   liveDw,
   liveDh,
-  onMouseDown,
+  onPointerDown,
   onResizeStart,
   onSelect,
 }: {
@@ -850,13 +1084,13 @@ function ImageOverlay({
   liveDy: number | null;
   liveDw: number | null;
   liveDh: number | null;
-  onMouseDown: (
-    e: React.MouseEvent,
+  onPointerDown: (
+    e: React.PointerEvent,
     base: { dx: number; dy: number; dw: number; dh: number },
   ) => void;
   onResizeStart: (
     corner: ResizeCorner,
-    e: React.MouseEvent,
+    e: React.PointerEvent,
     base: { dx: number; dy: number; dw: number; dh: number },
   ) => void;
   onSelect: () => void;
@@ -897,6 +1131,13 @@ function ImageOverlay({
   return (
     <div
       data-image-id={img.id}
+      role={movable ? "button" : undefined}
+      tabIndex={movable ? 0 : undefined}
+      aria-label={
+        movable
+          ? `Image ${img.resourceName} — drag to move, corners to resize`
+          : `Image ${img.resourceName}`
+      }
       style={{
         position: "absolute",
         left: boxLeft,
@@ -917,15 +1158,20 @@ function ImageOverlay({
         backgroundRepeat: "no-repeat",
         cursor: movable ? (isDragging ? "grabbing" : "grab") : "not-allowed",
         pointerEvents: "auto",
+        // `pinch-zoom` on movable images: one-finger drag fires
+        // pointermove (move/resize); two-finger pinch zooms the
+        // document. Un-movable images keep default behaviour so a
+        // pan starting on them scrolls the document.
+        touchAction: movable ? "pinch-zoom" : undefined,
       }}
       title={
         movable
           ? `Image ${img.resourceName} (drag to move, corners to resize, Del to delete)`
           : `Image ${img.resourceName} (un-movable)`
       }
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
         if (!movable) return;
-        onMouseDown(e, baseFor());
+        onPointerDown(e, baseFor());
       }}
       onClick={(e) => {
         // Stop propagation so the window-level click-outside handler
@@ -933,13 +1179,41 @@ function ImageOverlay({
         e.stopPropagation();
         if (movable) onSelect();
       }}
+      onKeyDown={(e) => {
+        if (!movable) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect();
+        }
+      }}
     >
       {movable ? (
         <>
-          <ResizeHandle position="tl" onMouseDown={(e) => onResizeStart("tl", e, baseFor())} />
-          <ResizeHandle position="tr" onMouseDown={(e) => onResizeStart("tr", e, baseFor())} />
-          <ResizeHandle position="bl" onMouseDown={(e) => onResizeStart("bl", e, baseFor())} />
-          <ResizeHandle position="br" onMouseDown={(e) => onResizeStart("br", e, baseFor())} />
+          <ResizeHandle
+            position="tl"
+            parentW={boxW}
+            parentH={boxH}
+            onPointerDown={(e) => onResizeStart("tl", e, baseFor())}
+          />
+          <ResizeHandle
+            position="tr"
+            parentW={boxW}
+            parentH={boxH}
+            onPointerDown={(e) => onResizeStart("tr", e, baseFor())}
+          />
+          <ResizeHandle
+            position="bl"
+            parentW={boxW}
+            parentH={boxH}
+            onPointerDown={(e) => onResizeStart("bl", e, baseFor())}
+          />
+          <ResizeHandle
+            position="br"
+            parentW={boxW}
+            parentH={boxH}
+            onPointerDown={(e) => onResizeStart("br", e, baseFor())}
+          />
         </>
       ) : null}
     </div>
@@ -987,6 +1261,7 @@ function cropCanvasToDataUrl(
 function InsertedTextOverlay({
   ins,
   page,
+  displayScale,
   toolbarBlockers,
   isEditing,
   onChange,
@@ -996,6 +1271,9 @@ function InsertedTextOverlay({
 }: {
   ins: TextInsertion;
   page: RenderedPage;
+  /** Source page's natural→displayed ratio. Drag deltas in screen px
+   *  divide by `displayScale * page.scale` to land in PDF user space. */
+  displayScale: number;
   toolbarBlockers: readonly ToolbarBlocker[];
   isEditing: boolean;
   onChange: (patch: Partial<TextInsertion>) => void;
@@ -1025,10 +1303,6 @@ function InsertedTextOverlay({
   const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
   const width = Math.max(ins.pdfWidth * page.scale, 60);
   const height = lineHeight * page.scale;
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
-    null,
-  );
-
   useEffect(() => {
     if (isEditing) {
       inputRef.current?.focus();
@@ -1056,62 +1330,51 @@ function InsertedTextOverlay({
     onChange(insPatch);
   };
 
-  const startDrag = (e: React.MouseEvent) => {
-    if (isEditing) return;
-    e.stopPropagation();
-    e.preventDefault();
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      baseX: ins.pdfX,
-      baseY: ins.pdfY,
-    };
-    const onMove = (ev: MouseEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      const dxView = ev.clientX - d.startX;
-      const dyView = ev.clientY - d.startY;
+  // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
+  // divided by `effectivePdfScale` lands in PDF user space.
+  const effectivePdfScale = page.scale * displayScale;
+  type InsTextDragCtx = { baseX: number; baseY: number };
+  const beginInsTextDrag = useDragGesture<InsTextDragCtx>({
+    onMove: (ctx, info) => {
       onChange({
-        pdfX: d.baseX + dxView / page.scale,
+        pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
         // viewport y-down → PDF y-up: subtract.
-        pdfY: d.baseY - dyView / page.scale,
+        pdfY: ctx.baseY - info.dyRaw / effectivePdfScale,
       });
-    };
-    const onUp = (ev: MouseEvent) => {
-      const d = dragRef.current;
-      dragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+    },
+    onEnd: (ctx, info) => {
       // Cross-page drop: re-key onto the target page in App. Convert
       // the overlay's screen position to the target page's PDF coords
       // (baseline x; baseline y is fontSizePx ABOVE the box top).
-      if (!d) return;
-      const hit = findPageAtPoint(ev.clientX, ev.clientY);
+      const hit = findPageAtPoint(info.clientX, info.clientY);
       if (!hit || hit.pageIndex === ins.pageIndex) return;
       const originRect = document
         .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
         ?.getBoundingClientRect();
       if (!originRect) return;
-      const dxView = ev.clientX - d.startX;
-      const dyView = ev.clientY - d.startY;
-      const pdfXOrigin = d.baseX + dxView / page.scale;
-      const pdfYOrigin = d.baseY - dyView / page.scale;
-      const overlayScreenLeft = originRect.left + pdfXOrigin * page.scale;
+      const pdfXOrigin = ctx.baseX + info.dxRaw / effectivePdfScale;
+      const pdfYOrigin = ctx.baseY - info.dyRaw / effectivePdfScale;
+      // Project origin-page PDF coords → screen px via the source's
+      // displayed width factor; then back to PDF on the target.
+      const overlayScreenLeft = originRect.left + pdfXOrigin * effectivePdfScale;
       const overlayScreenTopBox =
-        originRect.top + page.viewHeight - pdfYOrigin * page.scale - fontSizePx;
-      const targetFontSizePx = ins.fontSize * hit.scale;
-      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.scale;
+        originRect.top + (page.viewHeight - pdfYOrigin * page.scale - fontSizePx) * displayScale;
+      const targetFontSizePxScreen = ins.fontSize * hit.effectiveScale;
+      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.effectiveScale;
       const targetPdfY =
-        (hit.viewHeight - (overlayScreenTopBox - hit.rect.top) - targetFontSizePx) / hit.scale;
+        (hit.displayedHeight - (overlayScreenTopBox - hit.rect.top) - targetFontSizePxScreen) /
+        hit.effectiveScale;
       onChange({
         sourceKey: hit.sourceKey,
         pageIndex: hit.pageIndex,
         pdfX: targetPdfX,
         pdfY: targetPdfY,
       });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+  });
+  const startDrag = (e: React.PointerEvent) => {
+    if (isEditing) return;
+    beginInsTextDrag(e, { baseX: ins.pdfX, baseY: ins.pdfY });
   };
 
   return (
@@ -1148,6 +1411,15 @@ function InsertedTextOverlay({
       ) : null}
       <div
         data-text-insert-id={ins.id}
+        role={isEditing ? undefined : "button"}
+        tabIndex={isEditing ? undefined : 0}
+        aria-label={
+          isEditing
+            ? undefined
+            : ins.text
+              ? `Edit inserted text: ${ins.text}`
+              : "Edit empty inserted text"
+        }
         style={{
           position: "absolute",
           left,
@@ -1163,8 +1435,14 @@ function InsertedTextOverlay({
           display: "flex",
           alignItems: "center",
           zIndex: 20,
+          // Allow native gestures while in editing mode (so the user
+          // can scroll the on-screen keyboard / select text); on the
+          // drag-affordance state, allow pinch-zoom so two-finger
+          // pinch passes through to the browser, but suppress single-
+          // finger pan so a one-finger drag fires pointermove.
+          touchAction: isEditing ? "auto" : "pinch-zoom",
         }}
-        onMouseDown={startDrag}
+        onPointerDown={startDrag}
         onDoubleClick={(e) => {
           e.stopPropagation();
           onOpen();
@@ -1172,6 +1450,14 @@ function InsertedTextOverlay({
         onClick={(e) => {
           e.stopPropagation();
           if (!isEditing) onOpen();
+        }}
+        onKeyDown={(e) => {
+          if (isEditing) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpen();
+          }
         }}
       >
         {isEditing ? (
@@ -1212,7 +1498,7 @@ function InsertedTextOverlay({
               if (ins.text === "") onDelete();
               onClose();
             }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
           />
         ) : (
@@ -1248,6 +1534,7 @@ function InsertedTextOverlay({
 function InsertedImageOverlay({
   ins,
   page,
+  displayScale,
   isSelected,
   onChange,
   onDelete,
@@ -1255,6 +1542,9 @@ function InsertedImageOverlay({
 }: {
   ins: ImageInsertion;
   page: RenderedPage;
+  /** Source page's natural→displayed ratio. Drag deltas in screen px
+   *  divide by `displayScale * page.scale` to land in PDF user space. */
+  displayScale: number;
   isSelected: boolean;
   onChange: (patch: Partial<ImageInsertion>) => void;
   onDelete: () => void;
@@ -1279,114 +1569,102 @@ function InsertedImageOverlay({
   const w = ins.pdfWidth * page.scale;
   const h = ins.pdfHeight * page.scale;
 
-  const startDrag = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const baseX = ins.pdfX;
-    const baseY = ins.pdfY;
-    const onMove = (ev: MouseEvent) => {
-      const dxView = ev.clientX - startX;
-      const dyView = ev.clientY - startY;
+  // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
+  // divided by `effectivePdfScale` lands in PDF user space.
+  const effectivePdfScale = page.scale * displayScale;
+  type InsImageDragCtx = { baseX: number; baseY: number };
+  const beginInsImageDrag = useDragGesture<InsImageDragCtx>({
+    onMove: (ctx, info) => {
       onChange({
-        pdfX: baseX + dxView / page.scale,
-        pdfY: baseY - dyView / page.scale,
+        pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
+        pdfY: ctx.baseY - info.dyRaw / effectivePdfScale,
       });
-    };
-    const onUp = (ev: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      // Cross-page drop: re-key onto the target page in App.
-      const hit = findPageAtPoint(ev.clientX, ev.clientY);
+    },
+    onEnd: (ctx, info) => {
+      const hit = findPageAtPoint(info.clientX, info.clientY);
       if (!hit || hit.pageIndex === ins.pageIndex) return;
       const originRect = document
         .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
         ?.getBoundingClientRect();
       if (!originRect) return;
-      const dxView = ev.clientX - startX;
-      const dyView = ev.clientY - startY;
-      const pdfXOrigin = baseX + dxView / page.scale;
-      const pdfYOrigin = baseY - dyView / page.scale;
-      // ins.pdfY is the BOTTOM of the box; the overlay's screen top is
-      // originRect.top + (page.viewHeight - (pdfY + pdfHeight) * scale).
-      const overlayScreenLeft = originRect.left + pdfXOrigin * page.scale;
+      const pdfXOrigin = ctx.baseX + info.dxRaw / effectivePdfScale;
+      const pdfYOrigin = ctx.baseY - info.dyRaw / effectivePdfScale;
+      const overlayScreenLeft = originRect.left + pdfXOrigin * effectivePdfScale;
       const overlayScreenTopBox =
-        originRect.top + page.viewHeight - (pdfYOrigin + ins.pdfHeight) * page.scale;
-      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.scale;
-      const heightView = ins.pdfHeight * hit.scale;
-      // Bottom-left in PDF y-up = (viewHeight - viewBottom) / scale.
-      const targetViewBottom = overlayScreenTopBox - hit.rect.top + heightView;
-      const targetPdfY = (hit.viewHeight - targetViewBottom) / hit.scale;
+        originRect.top +
+        (page.viewHeight - (pdfYOrigin + ins.pdfHeight) * page.scale) * displayScale;
+      const targetPdfX = (overlayScreenLeft - hit.rect.left) / hit.effectiveScale;
+      const heightScreenOnTarget = ins.pdfHeight * hit.effectiveScale;
+      const targetViewBottom = overlayScreenTopBox - hit.rect.top + heightScreenOnTarget;
+      const targetPdfY = (hit.displayedHeight - targetViewBottom) / hit.effectiveScale;
       onChange({
         sourceKey: hit.sourceKey,
         pageIndex: hit.pageIndex,
         pdfX: targetPdfX,
         pdfY: targetPdfY,
       });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+  });
+  const startDrag = (e: React.PointerEvent) => {
+    beginInsImageDrag(e, { baseX: ins.pdfX, baseY: ins.pdfY });
   };
 
   // Resize from any of the 4 corners. Math is in PDF user space (y-up):
   // ins.pdfY is the BOTTOM of the box, ins.pdfY+pdfHeight is the top.
   // Each handle anchors the OPPOSITE corner so the box grows/shrinks
   // toward the dragged corner.
-  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const base = {
-      x: ins.pdfX,
-      y: ins.pdfY,
-      w: ins.pdfWidth,
-      h: ins.pdfHeight,
-    };
-    const MIN = 10;
-    const onMove = (ev: MouseEvent) => {
-      const dxPdf = (ev.clientX - startX) / page.scale;
+  type InsImageResizeCtx = {
+    corner: "tl" | "tr" | "bl" | "br";
+    base: { x: number; y: number; w: number; h: number };
+  };
+  const MIN_PDF = 10;
+  const beginInsImageResize = useDragGesture<InsImageResizeCtx>({
+    onMove: (ctx, info) => {
+      const { corner, base } = ctx;
+      const dxPdf = info.dxRaw / effectivePdfScale;
       // Viewport y is y-down, PDF is y-up — drag DOWN means -dyPdf.
-      const dyPdf = -(ev.clientY - startY) / page.scale;
+      const dyPdf = -info.dyRaw / effectivePdfScale;
       let { x, y } = base;
       let nw = base.w;
       let nh = base.h;
       switch (corner) {
         case "br": // anchor TL: x stays, y+h stays
-          nw = Math.max(MIN, base.w + dxPdf);
-          nh = Math.max(MIN, base.h - dyPdf);
+          nw = Math.max(MIN_PDF, base.w + dxPdf);
+          nh = Math.max(MIN_PDF, base.h - dyPdf);
           y = base.y + base.h - nh;
           break;
         case "tr": // anchor BL: x stays, y stays
-          nw = Math.max(MIN, base.w + dxPdf);
-          nh = Math.max(MIN, base.h + dyPdf);
+          nw = Math.max(MIN_PDF, base.w + dxPdf);
+          nh = Math.max(MIN_PDF, base.h + dyPdf);
           break;
         case "tl": // anchor BR: x+w stays, y stays
-          nw = Math.max(MIN, base.w - dxPdf);
-          nh = Math.max(MIN, base.h + dyPdf);
+          nw = Math.max(MIN_PDF, base.w - dxPdf);
+          nh = Math.max(MIN_PDF, base.h + dyPdf);
           x = base.x + base.w - nw;
           break;
         case "bl": // anchor TR: x+w stays, y+h stays
-          nw = Math.max(MIN, base.w - dxPdf);
-          nh = Math.max(MIN, base.h - dyPdf);
+          nw = Math.max(MIN_PDF, base.w - dxPdf);
+          nh = Math.max(MIN_PDF, base.h - dyPdf);
           x = base.x + base.w - nw;
           y = base.y + base.h - nh;
           break;
       }
       onChange({ pdfX: x, pdfY: y, pdfWidth: nw, pdfHeight: nh });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    },
+  });
+  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (e: React.PointerEvent) => {
+    beginInsImageResize(e, {
+      corner,
+      base: { x: ins.pdfX, y: ins.pdfY, w: ins.pdfWidth, h: ins.pdfHeight },
+    });
   };
 
   return (
     <div
       data-image-insert-id={ins.id}
+      role="button"
+      tabIndex={0}
+      aria-label="Inserted image — drag to move, corners to resize, Del to delete"
       style={{
         position: "absolute",
         left,
@@ -1402,9 +1680,10 @@ function InsertedImageOverlay({
         cursor: "grab",
         pointerEvents: "auto",
         zIndex: 20,
+        touchAction: "pinch-zoom",
       }}
       title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
-      onMouseDown={startDrag}
+      onPointerDown={startDrag}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -1413,62 +1692,109 @@ function InsertedImageOverlay({
         e.stopPropagation();
         onDelete();
       }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect();
+        }
+      }}
     >
-      <ResizeHandle position="tl" onMouseDown={startResize("tl")} />
-      <ResizeHandle position="tr" onMouseDown={startResize("tr")} />
-      <ResizeHandle position="bl" onMouseDown={startResize("bl")} />
-      <ResizeHandle position="br" onMouseDown={startResize("br")} />
+      <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
+      <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
+      <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
+      <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
     </div>
   );
 }
 
-/** Square corner handle for resizing image overlays. Sits flush against
- *  the corner INSIDE the box so it's never clipped by the page-level
- *  container's bounds (matters for images near the page edge). The
- *  square overlaps the drag-to-move surface, but its higher z-index
- *  and earlier mousedown hit-test wins out when the cursor is on it. */
+/** Square corner handle for resizing image overlays. Sits at the
+ *  corner of the box with a transparent hit-test pad surrounding the
+ *  visible square — bigger than the dot so a finger touch lands
+ *  cleanly, while desktop precision is preserved by the inset visible
+ *  square. The pad extends slightly past the box (negative offsets)
+ *  so a user grabbing the visible corner from outside still hits.
+ *
+ *  The hit pad is CAPPED so opposite-corner pads don't meet at the
+ *  centre — there has to be at least `MIN_DRAG_GAP` pixels of
+ *  drag-to-move surface left between them, otherwise the parent's
+ *  click-to-translate gesture becomes unreachable on small overlays
+ *  (e.g. a 45×45 inserted image). For overlays large enough to fit
+ *  the full 32×32 pad with breathing room, the cap is a no-op.
+ *
+ *  z-index 21 keeps the handle above the parent box's onPointerDown
+ *  surface so the resize wins the hit-test over the translate drag. */
 function ResizeHandle({
   position,
-  onMouseDown,
+  parentW,
+  parentH,
+  onPointerDown,
 }: {
   position: "tl" | "tr" | "bl" | "br";
-  onMouseDown: (e: React.MouseEvent) => void;
+  /** Parent overlay's viewport-pixel width/height. Used to cap the
+   *  hit pad so two corner pads don't meet in the centre. */
+  parentW: number;
+  parentH: number;
+  onPointerDown: (e: React.PointerEvent) => void;
 }) {
-  const SIZE = 10;
-  const style: React.CSSProperties = {
+  const VISIBLE = 12;
+  const MAX_HIT = 32;
+  const MIN_DRAG_GAP = 8;
+  // Gap-between-opposite-pads = parentSize - HIT - VISIBLE, derived
+  // from `pad_extent_inside_box = HIT - inset = (HIT + VISIBLE) / 2`.
+  // Solve for HIT: HIT <= parentSize - VISIBLE - MIN_DRAG_GAP.
+  const fitW = parentW - VISIBLE - MIN_DRAG_GAP;
+  const fitH = parentH - VISIBLE - MIN_DRAG_GAP;
+  const HIT = Math.max(VISIBLE, Math.min(MAX_HIT, Math.floor(Math.min(fitW, fitH))));
+  const inset = (HIT - VISIBLE) / 2;
+  const padStyle: React.CSSProperties = {
     position: "absolute",
-    width: SIZE,
-    height: SIZE,
+    width: HIT,
+    height: HIT,
+    pointerEvents: "auto",
+    zIndex: 21,
+    // Resize handles need a precise grab — disable single-finger pan
+    // so a drag at the corner fires pointermove. Two-finger pinch
+    // still passes through to zoom the document.
+    touchAction: "pinch-zoom",
+  };
+  if (position === "tl") {
+    padStyle.left = -inset;
+    padStyle.top = -inset;
+    padStyle.cursor = "nwse-resize";
+  } else if (position === "tr") {
+    padStyle.right = -inset;
+    padStyle.top = -inset;
+    padStyle.cursor = "nesw-resize";
+  } else if (position === "bl") {
+    padStyle.left = -inset;
+    padStyle.bottom = -inset;
+    padStyle.cursor = "nesw-resize";
+  } else {
+    padStyle.right = -inset;
+    padStyle.bottom = -inset;
+    padStyle.cursor = "nwse-resize";
+  }
+  const dotStyle: React.CSSProperties = {
+    position: "absolute",
+    left: inset,
+    top: inset,
+    width: VISIBLE,
+    height: VISIBLE,
     background: "white",
     border: "1px solid rgba(40, 130, 255, 0.9)",
     boxSizing: "border-box",
-    pointerEvents: "auto",
-    zIndex: 21,
+    pointerEvents: "none",
   };
-  if (position === "tl") {
-    style.left = 0;
-    style.top = 0;
-    style.cursor = "nwse-resize";
-  } else if (position === "tr") {
-    style.right = 0;
-    style.top = 0;
-    style.cursor = "nesw-resize";
-  } else if (position === "bl") {
-    style.left = 0;
-    style.bottom = 0;
-    style.cursor = "nesw-resize";
-  } else {
-    style.right = 0;
-    style.bottom = 0;
-    style.cursor = "nwse-resize";
-  }
   return (
     <div
       data-resize-handle={position}
-      style={style}
-      onMouseDown={onMouseDown}
+      style={padStyle}
+      onPointerDown={onPointerDown}
       onDoubleClick={(e) => e.stopPropagation()}
-    />
+    >
+      <div style={dotStyle} />
+    </div>
   );
 }
 
@@ -1498,6 +1824,7 @@ function EditField({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [text, setText] = useState(initial.text);
+  const isMobile = useIsMobile();
   // Editor opens at the run's CURRENT position (= original bounds + any
   // committed move offset). Otherwise dragging-then-clicking opens the
   // input at the original spot, which is jarring.
@@ -1530,6 +1857,15 @@ function EditField({
     inputRef.current?.focus();
     inputRef.current?.select();
     remeasure();
+    if (isMobile) {
+      // The on-screen keyboard occupies the bottom ~40% of the viewport
+      // and the fixed-bottom toolbar adds ~80px more. Without scrolling,
+      // an EditField near the bottom of the page would be hidden.
+      // Centre it in the visible viewport area on open. `auto` skips
+      // the smooth-scroll animation so the user sees the editor
+      // immediately rather than after a 250ms slide.
+      inputRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1753,6 +2089,60 @@ function EditTextToolbar({
    *  removes the entry from its slot bucket. */
   onDelete?: () => void;
 }) {
+  const isMobile = useIsMobile();
+  // Distance from the bottom of the layout viewport to the bottom of
+  // the visual viewport — i.e. how far the iOS keyboard pushes the
+  // visible area up. We track it so the fixed-bottom mobile toolbar
+  // rides above the keyboard instead of being hidden behind it.
+  const [keyboardBottom, setKeyboardBottom] = useState(0);
+  useEffect(() => {
+    if (!isMobile) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const offset = window.innerHeight - vv.height - vv.offsetTop;
+      setKeyboardBottom(Math.max(0, offset));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [isMobile]);
+
+  // Mobile layout: anchored to the visible viewport, full-width with
+  // wrap so the font picker can drop to its own row when the labels
+  // get long. Desktop keeps the original absolute / page-coord layout.
+  const baseStyle: React.CSSProperties = isMobile
+    ? {
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: keyboardBottom,
+        zIndex: 30,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        padding: 8,
+        paddingBottom: `max(8px, var(--safe-bottom, 0px))`,
+        alignItems: "center",
+        pointerEvents: "auto",
+      }
+    : {
+        position: "absolute",
+        left,
+        top,
+        zIndex: 30,
+        display: "flex",
+        gap: 4,
+        padding: 4,
+        borderRadius: 6,
+        alignItems: "center",
+        pointerEvents: "auto",
+        whiteSpace: "nowrap",
+      };
   return (
     <div
       data-edit-toolbar
@@ -1765,26 +2155,21 @@ function EditTextToolbar({
       // to Tailwind dark-variants. `color-scheme: dark` on the wrapper
       // also makes the native <select> dropdown arrow + <input>
       // up/down spinner pick the OS dark UI.
-      className="border border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
-      style={{
-        position: "absolute",
-        left,
-        top,
-        zIndex: 30,
-        display: "flex",
-        gap: 4,
-        padding: 4,
-        borderRadius: 6,
-        alignItems: "center",
-        pointerEvents: "auto",
-        whiteSpace: "nowrap",
-      }}
-      // We do NOT preventDefault on mouseDown here — the native <select>
-      // dropdown won't open if its focus change is suppressed. Instead
-      // each input's onBlur checks `relatedTarget`: if the new focus
-      // target lives inside `[data-edit-toolbar]`, the editor stays
-      // open. See `isFocusMovingToToolbar` below.
-      onMouseDown={(e) => {
+      //
+      // Mobile drops the rounded corners (it's a full-width strip) and
+      // adds a top border to delineate it from the page content above.
+      className={
+        isMobile
+          ? "border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+          : "border border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+      }
+      style={baseStyle}
+      // We do NOT preventDefault on pointerdown here — the native
+      // <select> dropdown won't open if its focus change is suppressed.
+      // Instead each input's onBlur checks `relatedTarget`: if the new
+      // focus target lives inside `[data-edit-toolbar]`, the editor
+      // stays open. See `isFocusMovingToToolbar` below.
+      onPointerDown={(e) => {
         e.stopPropagation();
       }}
     >
@@ -1797,6 +2182,9 @@ function EditTextToolbar({
           borderRadius: 4,
           fontSize: 12,
           minWidth: 140,
+          // On mobile the font picker takes the full first row so its
+          // long names don't truncate; size + B/I/U + ✕ wrap below.
+          flexBasis: isMobile ? "100%" : undefined,
         }}
         onChange={(e) => onChange({ fontFamily: e.target.value })}
       >

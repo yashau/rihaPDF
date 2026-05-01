@@ -19,6 +19,7 @@ import { loadSource, nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./lib/loa
 import type { LoadedSource } from "./lib/loadSource";
 import type { RenderedPage } from "./lib/pdf";
 import { useTheme } from "./lib/theme";
+import { useIsMobile } from "./lib/useMediaQuery";
 
 export type ToolMode = "select" | "addText" | "addImage";
 
@@ -26,6 +27,7 @@ const RENDER_SCALE = 1.5;
 
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const isMobile = useIsMobile();
   const [primaryFilename, setPrimaryFilename] = useState<string | null>(null);
   /** All loaded sources keyed by sourceKey. The primary file uses the
    *  fixed key from `PRIMARY_SOURCE_KEY`; externals use per-pick keys
@@ -317,6 +319,10 @@ export default function App() {
     }
     const gen = ++previewGenRef.current;
     let cancelled = false;
+    // Mobile CPUs are slower; rebuild lag is more noticeable. Bump
+    // the debounce so the user finishes a sustained edit (e.g.
+    // typing in an EditField) before any rebuild kicks off.
+    const debounceMs = isMobile ? 250 : 150;
     const handle = window.setTimeout(async () => {
       try {
         const next = new Map<string, HTMLCanvasElement>();
@@ -340,12 +346,12 @@ export default function App() {
       } catch (err) {
         console.warn("preview rebuild failed", err);
       }
-    }, 150);
+    }, debounceMs);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [sources, slotById, edits, imageMoves, editingByPage]);
+  }, [sources, slotById, edits, imageMoves, editingByPage, isMobile]);
 
   const onEditingChange = useCallback((slotId: string, runId: string | null) => {
     setEditingByPage((prev) => {
@@ -744,143 +750,284 @@ export default function App() {
   const structuralOpCount =
     removedSourceCount + blankSlotCount + externalSlotCount + (slotsReordered ? 1 : 0);
 
+  // Compact "save badge" content shared between desktop and mobile —
+  // desktop shows the verbose breakdown, mobile shows just the
+  // per-category counts as short tokens. Op count is the same source
+  // of truth (`structuralOpCount + …`). The boolean below drives the
+  // disabled state in both layouts.
+  const totalChangeCount =
+    totalEdits + totalImageMoves + structuralOpCount + totalInsertedTexts + totalInsertedImages;
+  const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
+  const toolTip =
+    tool === "addText"
+      ? "Tap a page to drop a text box"
+      : tool === "addImage" && pendingImage
+        ? "Tap a page to place the image"
+        : null;
+
+  // The hidden file inputs are rendered ONCE outside both header
+  // subtrees so the desktop / mobile layouts can target the same
+  // input ref via `.click()`. Two render paths sharing one input
+  // avoids the "ref attached to whichever subtree mounted last"
+  // foot-gun.
+  const fileInputs = (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        data-testid="open-pdf-input"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={imageFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void onPickImageFile(f);
+          e.target.value = "";
+        }}
+      />
+    </>
+  );
+
   return (
     <div className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      <header className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-        <button
-          type="button"
-          onClick={() => setAboutOpen(true)}
-          className="flex items-center gap-2 mr-4 cursor-pointer rounded hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          aria-label="About rihaPDF"
-        >
-          <img src="/riha-logo.png" alt="" className="h-7 w-auto" />
-          <h1 className="text-lg font-semibold">rihaPDF</h1>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          data-testid="open-pdf-input"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void handleFile(f);
-            e.target.value = "";
-          }}
-        />
-        <Button variant="primary" isDisabled={busy} onPress={() => fileInputRef.current?.click()}>
-          <FolderOpen size={16} aria-hidden />
-          Open PDF
-        </Button>
-        <Button
-          variant="secondary"
-          isDisabled={
-            sources.size === 0 ||
-            busy ||
-            totalEdits +
-              totalImageMoves +
-              structuralOpCount +
-              totalInsertedTexts +
-              totalInsertedImages ===
-              0
-          }
-          onPress={() => void onSave()}
-        >
-          <Save size={16} aria-hidden />
-          Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
-          {totalImageMoves
-            ? `, ${totalImageMoves} image move${totalImageMoves === 1 ? "" : "s"}`
-            : ""}
-          {totalInsertedTexts
-            ? `, +${totalInsertedTexts} text${totalInsertedTexts === 1 ? "" : "s"}`
-            : ""}
-          {totalInsertedImages
-            ? `, +${totalInsertedImages} image${totalInsertedImages === 1 ? "" : "s"}`
-            : ""}
-          {removedSourceCount ? `, -${removedSourceCount} page` : ""}
-          {blankSlotCount ? `, +${blankSlotCount} blank` : ""}
-          {externalSlotCount ? `, +${externalSlotCount} from PDF` : ""}
-          {slotsReordered ? ", reordered" : ""})
-        </Button>
-        <div className="flex items-center gap-1 ml-2 border-l pl-3">
-          <Button
-            size="sm"
-            variant={tool === "select" ? "primary" : "ghost"}
-            isDisabled={busy || sources.size === 0}
-            onPress={() => {
-              setTool("select");
-              setPendingImage(null);
-            }}
+      {fileInputs}
+      {/* Render exactly one header at a time — keying by `isMobile`
+          rather than CSS-only switching prevents duplicate buttons in
+          the DOM (which would break `locator('button')` strict-mode
+          tests + add hidden focus-cycle stops to keyboard users). */}
+      {!isMobile && (
+        /* Desktop header — single row, full labels. */
+        <header className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setAboutOpen(true)}
+            className="flex items-center gap-2 mr-4 cursor-pointer rounded hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            aria-label="About rihaPDF"
           >
-            <MousePointer2 size={14} aria-hidden />
-            Select
+            <img src="/riha-logo.png" alt="" className="h-7 w-auto" />
+            <h1 className="text-lg font-semibold">
+              rihaPDF
+              <sup className="ml-0.5 text-[0.6rem] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                preview
+              </sup>
+            </h1>
+          </button>
+          <Button variant="primary" isDisabled={busy} onPress={() => fileInputRef.current?.click()}>
+            <FolderOpen size={16} aria-hidden />
+            Open PDF
           </Button>
-          <Button
-            size="sm"
-            variant={tool === "addText" ? "primary" : "ghost"}
-            isDisabled={busy || sources.size === 0}
-            onPress={() => {
-              setTool((t) => (t === "addText" ? "select" : "addText"));
-              setPendingImage(null);
-            }}
-          >
-            <Type size={14} aria-hidden />+ Text
+          <Button variant="secondary" isDisabled={saveDisabled} onPress={() => void onSave()}>
+            <Save size={16} aria-hidden />
+            Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
+            {totalImageMoves
+              ? `, ${totalImageMoves} image move${totalImageMoves === 1 ? "" : "s"}`
+              : ""}
+            {totalInsertedTexts
+              ? `, +${totalInsertedTexts} text${totalInsertedTexts === 1 ? "" : "s"}`
+              : ""}
+            {totalInsertedImages
+              ? `, +${totalInsertedImages} image${totalInsertedImages === 1 ? "" : "s"}`
+              : ""}
+            {removedSourceCount ? `, -${removedSourceCount} page` : ""}
+            {blankSlotCount ? `, +${blankSlotCount} blank` : ""}
+            {externalSlotCount ? `, +${externalSlotCount} from PDF` : ""}
+            {slotsReordered ? ", reordered" : ""})
           </Button>
-          <Button
-            size="sm"
-            variant={tool === "addImage" ? "primary" : "ghost"}
-            isDisabled={busy || sources.size === 0}
-            onPress={() => {
-              if (tool === "addImage") {
+          <div className="flex items-center gap-1 ml-2 border-l pl-3">
+            <Button
+              size="sm"
+              variant={tool === "select" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
                 setTool("select");
                 setPendingImage(null);
-              } else {
-                imageFileInputRef.current?.click();
-              }
-            }}
-          >
-            <ImageIcon size={14} aria-hidden />+ Image
-            {pendingImage ? <Check size={14} aria-label="image queued" /> : null}
-          </Button>
-          <input
-            ref={imageFileInputRef}
-            type="file"
-            accept="image/png,image/jpeg"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onPickImageFile(f);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto">
-          {tool === "addText"
-            ? "Click on a page to drop a text box"
-            : tool === "addImage" && pendingImage
-              ? "Click on a page to place the image"
-              : (primaryFilename ?? "No file loaded")}
-        </span>
-        <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 pl-3 ml-1">
-          <ThemeToggle mode={themeMode} onChange={setThemeMode} />
-        </div>
-      </header>
+              }}
+            >
+              <MousePointer2 size={14} aria-hidden />
+              Select
+            </Button>
+            <Button
+              size="sm"
+              variant={tool === "addText" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
+                setTool((t) => (t === "addText" ? "select" : "addText"));
+                setPendingImage(null);
+              }}
+            >
+              <Type size={14} aria-hidden />+ Text
+            </Button>
+            <Button
+              size="sm"
+              variant={tool === "addImage" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
+                if (tool === "addImage") {
+                  setTool("select");
+                  setPendingImage(null);
+                } else {
+                  imageFileInputRef.current?.click();
+                }
+              }}
+            >
+              <ImageIcon size={14} aria-hidden />+ Image
+              {pendingImage ? <Check size={14} aria-label="image queued" /> : null}
+            </Button>
+          </div>
+          <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto">
+            {toolTip ?? primaryFilename ?? "No file loaded"}
+          </span>
+          <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 pl-3 ml-1">
+            <ThemeToggle mode={themeMode} onChange={setThemeMode} />
+          </div>
+        </header>
+      )}
+      {isMobile && (
+        /* Mobile header — two stacked rows, icon-only tool buttons. */
+        <header className="flex flex-col gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              className="flex items-center gap-1.5 cursor-pointer rounded hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shrink-0"
+              aria-label="About rihaPDF"
+              style={{ touchAction: "manipulation" }}
+            >
+              <img src="/riha-logo.png" alt="" className="h-6 w-auto" />
+              <h1 className="text-base font-semibold">
+                rihaPDF
+                <sup className="ml-0.5 text-[0.55rem] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  preview
+                </sup>
+              </h1>
+            </button>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate min-w-0 flex-1">
+              {toolTip ?? primaryFilename ?? "No file loaded"}
+            </span>
+            <div className="shrink-0">
+              <ThemeToggle mode={themeMode} onChange={setThemeMode} />
+            </div>
+          </div>
+          <div className="flex items-center gap-1 flex-wrap">
+            <Button
+              size="sm"
+              variant="primary"
+              isDisabled={busy}
+              onPress={() => fileInputRef.current?.click()}
+              aria-label="Open PDF"
+            >
+              <FolderOpen size={14} aria-hidden />
+              Open
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={saveDisabled}
+              onPress={() => void onSave()}
+              aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
+            >
+              <Save size={14} aria-hidden />
+              Save{totalChangeCount > 0 ? ` (${totalChangeCount})` : ""}
+            </Button>
+            <div className="flex items-center gap-1 ml-1 pl-1 border-l border-zinc-200 dark:border-zinc-800">
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "select" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  setTool("select");
+                  setPendingImage(null);
+                }}
+                aria-label="Select tool"
+              >
+                <MousePointer2 size={14} aria-hidden />
+              </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "addText" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  setTool((t) => (t === "addText" ? "select" : "addText"));
+                  setPendingImage(null);
+                }}
+                aria-label="Add text"
+              >
+                <Type size={14} aria-hidden />
+              </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "addImage" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  if (tool === "addImage") {
+                    setTool("select");
+                    setPendingImage(null);
+                  } else {
+                    imageFileInputRef.current?.click();
+                  }
+                }}
+                aria-label="Add image"
+              >
+                <ImageIcon size={14} aria-hidden />
+                {pendingImage ? <Check size={12} aria-label="image queued" /> : null}
+              </Button>
+            </div>
+          </div>
+        </header>
+      )}
       <div className="flex flex-1 overflow-hidden">
+        {/* Hide the sidebar entirely on mobile — it's a thumbnail rail
+            sized for desktop, and a phone viewport doesn't have the
+            horizontal budget for both rail + page. Page-management
+            (reorder / blank-insert / delete) is therefore desktop-
+            only for now. Mobile users get full editing on the visible
+            pages, which is the priority. */}
         {slots.length > 0 && (
-          <PageSidebar
-            slots={slots}
-            sources={sources}
-            onSlotsChange={setSlots}
-            onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
-          />
+          <div className="hidden sm:block">
+            <PageSidebar
+              slots={slots}
+              sources={sources}
+              onSlotsChange={setSlots}
+              onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
+            />
+          </div>
         )}
-        <main className="flex-1 overflow-auto px-6 py-6">
+        <main
+          className="flex-1 overflow-auto px-2 py-3 sm:px-6 sm:py-6"
+          onPointerDown={(e) => {
+            // Tap on empty `<main>` (no overlay child consumed the
+            // event) cancels a pending image placement so the user
+            // can back out without picking a target page.
+            if (e.target === e.currentTarget && tool === "addImage" && pendingImage) {
+              setTool("select");
+              setPendingImage(null);
+            }
+          }}
+        >
           {slots.length === 0 ? (
             <div className="flex h-full items-center justify-center text-zinc-400 dark:text-zinc-500">
               Open a PDF to begin. Double-click any text fragment to edit it.
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-6">
+            // `w-full` so the flex column has a defined width to
+            // constrain `max-width: 100%` on each PdfPage's outer
+            // wrapper. Without it, the column auto-sizes to its
+            // widest child (= the natural page width on first
+            // render), breaking fit-to-width on mobile.
+            <div className="flex flex-col items-center gap-6 w-full">
               {slots.map((slot, idx) => {
                 if (slot.kind === "blank") {
                   return (
@@ -1148,7 +1295,7 @@ function PageWithToolbar({
   onSelectInsertedImage: (id: string) => void;
 }) {
   return (
-    <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6">
+    <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
       <div className="flex gap-2 items-center text-sm">
         <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>

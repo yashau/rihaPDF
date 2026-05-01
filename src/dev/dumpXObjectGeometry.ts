@@ -68,7 +68,8 @@ export async function dumpXObjectGeometry(
     out.push({
       resourceName: name.toString().replace(/^\//, ""),
       subtype,
-      bbox: bbox && bbox.length >= 4 ? (bbox.slice(0, 4) as [number, number, number, number]) : null,
+      bbox:
+        bbox && bbox.length >= 4 ? (bbox.slice(0, 4) as [number, number, number, number]) : null,
       matrix:
         matrix && matrix.length >= 6
           ? (matrix.slice(0, 6) as [number, number, number, number, number, number])
