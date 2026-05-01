@@ -187,6 +187,27 @@ pnpm format         # prettier --write .
 pnpm format:check   # prettier --check . (no writes)
 pnpm test           # vitest E2E suite (needs dev server up)
 pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
+pnpm cf:dev         # wrangler dev — local Workers preview of dist/
+pnpm cf:deploy      # build + wrangler deploy → Cloudflare Workers
+```
+
+## Deploy (Cloudflare Workers)
+
+Ships as a Cloudflare Worker via Workers Static Assets — `dist/` is
+uploaded and served with SPA fallback (`not_found_handling:
+"single-page-application"`), so client-side routes resolve to
+`index.html` instead of 404.
+
+The real [wrangler.jsonc](wrangler.jsonc) is **gitignored** because it
+carries a per-developer `account_id` (and optional custom-domain
+`routes`). Bootstrap your own from the committed template:
+
+```bash
+cp wrangler.jsonc.template wrangler.jsonc
+# edit account_id (find it with `pnpm exec wrangler whoami`),
+# or omit it and rely on `wrangler login` to pick the right account.
+pnpm exec wrangler login   # first time only
+pnpm cf:deploy             # pnpm build && wrangler deploy
 ```
 
 ## Tests
