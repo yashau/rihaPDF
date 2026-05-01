@@ -1,0 +1,20 @@
+// Copy this file to `wrangler.jsonc` and edit values to match your account.
+// `wrangler.jsonc` is gitignored so personal/per-environment values (worker name,
+// custom routes, account_id) stay out of source control.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rihapdf",
+  "compatibility_date": "2026-04-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+
+  // Optional: pin to a specific Cloudflare account
+  // "account_id": "<YOUR_ACCOUNT_ID>",
+
+  // Optional: serve from a custom domain (zone must be on your account)
+  // "routes": [
+  //   { "pattern": "rihapdf.example.com", "custom_domain": true }
+  // ]
+}

@@ -36,3 +36,10 @@ Proper_Thaana_Fonts/
 
 # Task runner cache
 .task/
+
+# Wrangler / Cloudflare Workers
+# Real config is per-developer; commit `wrangler.jsonc.template` instead.
+wrangler.jsonc
+wrangler.toml
+.wrangler/
+.dev.vars
