@@ -93,3 +93,50 @@ console.log("wrote", out, fs.statSync(out).size, "bytes");
   fs.writeFileSync(out2, await doc2.save());
   console.log("wrote", out2, fs.statSync(out2).size, "bytes");
 }
+
+// External-pdf-fixture for the "+ From PDF" first-class-pages tests.
+// Two pages with distinct labels + a green image on page 2 so the
+// external-page edit/insert/move tests can identify content after a
+// save+reload through copyPages out of an external source.
+{
+  const docExt = await PDFDocument.create();
+  const helvE = await docExt.embedFont(StandardFonts.Helvetica);
+  const greenPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAtIbi/wAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const green = await docExt.embedPng(greenPng);
+
+  const ep1 = docExt.addPage([595, 842]);
+  ep1.drawText("EXTERNAL_FIXTURE_P1", {
+    x: 50,
+    y: 800,
+    size: 14,
+    font: helvE,
+    color: rgb(0, 0, 0),
+  });
+  // Place an editable run mid-page so the edit-on-external test has a
+  // run it can double-click and replace.
+  ep1.drawText("EXT_EDIT_ME_RUN", {
+    x: 50,
+    y: 600,
+    size: 16,
+    font: helvE,
+    color: rgb(0, 0, 0),
+  });
+
+  const ep2 = docExt.addPage([595, 842]);
+  ep2.drawText("EXTERNAL_FIXTURE_P2", {
+    x: 50,
+    y: 800,
+    size: 14,
+    font: helvE,
+    color: rgb(0, 0, 0),
+  });
+  // Image on page 2 lets the move-on-external test drag it.
+  ep2.drawImage(green, { x: 100, y: 500, width: 200, height: 120 });
+
+  const outExt = path.join(__dirname, "external-source.pdf");
+  fs.writeFileSync(outExt, await docExt.save());
+  console.log("wrote", outExt, fs.statSync(outExt).size, "bytes");
+}

@@ -1,24 +1,38 @@
 // Ordered "slot" model for the displayed page list.
 //
 // A slot is one rendered page in the document. Slots are independent of
-// the source PDF's page order so the user can reorder, insert, and
+// any source PDF's page order so the user can reorder, insert, and
 // remove pages without mutating the source. State that's keyed per slot
 // (edits, image moves, insertions) uses the slot's stable `id` rather
 // than its position in the array, so an entry follows its page through
 // reordering.
+//
+// Sources are addressed by `sourceKey`. The primary file uses the
+// sentinel `PRIMARY_SOURCE_KEY` from `loadSource.ts`; externals use
+// per-session content keys. Page slots and blanks are the only kinds —
+// what used to be `original` vs `external` collapses into a single
+// `page` kind that carries a sourceKey + page index within that source.
 
-import type { RenderedPage } from "./pdf";
+import type { LoadedSource } from "./loadSource";
+import { PRIMARY_SOURCE_KEY } from "./loadSource";
 
 export type PageSlot =
-  | { id: string; kind: "original"; sourceIndex: number }
-  | { id: string; kind: "blank"; size: [number, number] }
-  | { id: string; kind: "external"; sourceKey: string; sourcePageIndex: number };
+  | { id: string; kind: "page"; sourceKey: string; sourcePageIndex: number }
+  | { id: string; kind: "blank"; size: [number, number] };
 
 let blankCounter = 0;
-let externalCounter = 0;
+let pageCounter = 0;
 
-export function originalSlot(sourceIndex: number): PageSlot {
-  return { id: `slot-orig-${sourceIndex}`, kind: "original", sourceIndex };
+export function pageSlot(sourceKey: string, sourcePageIndex: number): PageSlot {
+  pageCounter += 1;
+  // Primary slots get a stable id derived solely from the source page
+  // index so a fresh load of the same primary file produces the same
+  // slot ids — keeps tests / debugging less noisy.
+  const id =
+    sourceKey === PRIMARY_SOURCE_KEY
+      ? `slot-page-primary-${sourcePageIndex}`
+      : `slot-page-${sourceKey}-${sourcePageIndex}-${pageCounter}`;
+  return { id, kind: "page", sourceKey, sourcePageIndex };
 }
 
 export function blankSlot(size: [number, number]): PageSlot {
@@ -26,24 +40,18 @@ export function blankSlot(size: [number, number]): PageSlot {
   return { id: `slot-blank-${Date.now().toString(36)}-${blankCounter}`, kind: "blank", size };
 }
 
-export function externalSlot(sourceKey: string, sourcePageIndex: number): PageSlot {
-  externalCounter += 1;
-  return {
-    id: `slot-ext-${Date.now().toString(36)}-${externalCounter}`,
-    kind: "external",
-    sourceKey,
-    sourcePageIndex,
-  };
+export function slotsFromSource(source: LoadedSource): PageSlot[] {
+  return source.pages.map((_, i) => pageSlot(source.sourceKey, i));
 }
 
-export function slotsFromPages(pages: RenderedPage[]): PageSlot[] {
-  return pages.map((_, i) => originalSlot(i));
-}
-
-/** Resolve a slot to the rendered canvas/page used by the main view.
- *  Originals point back into `pages[sourceIndex]`; blanks have no
- *  source render and are handled separately by the caller. */
-export function resolveOriginal(slot: PageSlot, pages: RenderedPage[]): RenderedPage | null {
-  if (slot.kind !== "original") return null;
-  return pages[slot.sourceIndex] ?? null;
+/** Resolve a page slot to the rendered page from its source map. Blanks
+ *  return null and must be handled separately by the caller. */
+export function resolvePage(
+  slot: PageSlot,
+  sources: Map<string, LoadedSource>,
+): { source: LoadedSource; pageIndex: number } | null {
+  if (slot.kind !== "page") return null;
+  const source = sources.get(slot.sourceKey);
+  if (!source) return null;
+  return { source, pageIndex: slot.sourcePageIndex };
 }

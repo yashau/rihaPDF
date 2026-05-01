@@ -24,6 +24,10 @@ export type EditValue = {
    *  App.tsx converts to/from `targetSlotId` on the way in/out so the
    *  target survives reorder. */
   targetPageIndex?: number;
+  /** Source identifier of the page the run was dropped on. Cross-source
+   *  moves (drop onto a page from a different loaded PDF) carry this
+   *  through to save so the target source's doc gets the drawText. */
+  targetSourceKey?: string;
   targetPdfX?: number;
   targetPdfY?: number;
   /** Stable identity of the target slot — populated by App.tsx for
@@ -55,6 +59,10 @@ export type ImageMoveValue = {
    *  while save uses (targetPdfX/Y/W/H) to draw on the target page
    *  and strips the original q…Q block from the origin. */
   targetPageIndex?: number;
+  /** Source identifier of the target page when the move crossed
+   *  sources. Save uses this to decide between XObject-replication
+   *  (same source) and pixel-bytes re-embed (different source). */
+  targetSourceKey?: string;
   targetPdfX?: number;
   targetPdfY?: number;
   targetPdfWidth?: number;
@@ -75,12 +83,18 @@ type ResizeCorner = "tl" | "tr" | "bl" | "br";
  *  which page container is under it and return its index/scale/size.
  *  Iterates `[data-page-index]` elements and returns the first whose
  *  bounding rect contains the point. Returns null when the cursor is
- *  outside any page (e.g. in the header or between pages). */
+ *  outside any page (e.g. in the header or between pages).
+ *
+ *  pageIndex is the CURRENT slot index in App's slots array — used to
+ *  resolve the persisted target via `slotsRef`. sourceKey identifies
+ *  which loaded source the slot points at; save uses it to route
+ *  cross-source draws to the right `doc`. */
 function findPageAtPoint(
   clientX: number,
   clientY: number,
 ): {
   pageIndex: number;
+  sourceKey: string;
   scale: number;
   viewWidth: number;
   viewHeight: number;
@@ -92,9 +106,11 @@ function findPageAtPoint(
     if (clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom) {
       const idx = parseInt(el.dataset.pageIndex ?? "", 10);
       const scale = parseFloat(el.dataset.pageScale ?? "");
-      if (Number.isNaN(idx) || Number.isNaN(scale)) continue;
+      const sourceKey = el.dataset.sourceKey ?? "";
+      if (Number.isNaN(idx) || Number.isNaN(scale) || sourceKey === "") continue;
       return {
         pageIndex: idx,
+        sourceKey,
         scale,
         viewWidth: r.width,
         viewHeight: r.height,
@@ -108,6 +124,10 @@ function findPageAtPoint(
 type Props = {
   page: RenderedPage;
   pageIndex: number;
+  /** Source identity for the rendered page. Emitted as `data-source-key`
+   *  on the page container so the cross-page hit-test can carry it
+   *  through to save-time addressing. */
+  sourceKey: string;
   edits: Map<string, EditValue>;
   imageMoves: Map<string, ImageMoveValue>;
   insertedTexts: TextInsertion[];
@@ -148,6 +168,7 @@ type Props = {
 export function PdfPage({
   page,
   pageIndex,
+  sourceKey,
   edits,
   imageMoves,
   insertedTexts,
@@ -269,6 +290,7 @@ export function PdfPage({
           dx: totalDx,
           dy: totalDy,
           targetPageIndex: hit.pageIndex,
+          targetSourceKey: hit.sourceKey,
           targetPdfX,
           targetPdfY,
         });
@@ -278,6 +300,7 @@ export function PdfPage({
           dx: totalDx,
           dy: totalDy,
           targetPageIndex: undefined,
+          targetSourceKey: undefined,
           targetPdfX: undefined,
           targetPdfY: undefined,
         });
@@ -362,6 +385,7 @@ export function PdfPage({
           dw: base.dw,
           dh: base.dh,
           targetPageIndex: hit.pageIndex,
+          targetSourceKey: hit.sourceKey,
           targetPdfX,
           targetPdfY,
           targetPdfWidth,
@@ -374,6 +398,7 @@ export function PdfPage({
           dw: base.dw,
           dh: base.dh,
           targetPageIndex: undefined,
+          targetSourceKey: undefined,
           targetPdfX: undefined,
           targetPdfY: undefined,
           targetPdfWidth: undefined,
@@ -490,6 +515,7 @@ export function PdfPage({
       className="relative inline-block shadow-md"
       style={{ width: page.viewWidth, height: page.viewHeight }}
       data-page-index={pageIndex}
+      data-source-key={sourceKey}
       data-page-scale={page.scale}
       data-view-width={page.viewWidth}
       data-view-height={page.viewHeight}
@@ -1040,6 +1066,7 @@ function InsertedTextOverlay({
       const targetPdfY =
         (hit.viewHeight - (overlayScreenTopBox - hit.rect.top) - targetFontSizePx) / hit.scale;
       onChange({
+        sourceKey: hit.sourceKey,
         pageIndex: hit.pageIndex,
         pdfX: targetPdfX,
         pdfY: targetPdfY,
@@ -1248,6 +1275,7 @@ function InsertedImageOverlay({
       const targetViewBottom = overlayScreenTopBox - hit.rect.top + heightView;
       const targetPdfY = (hit.viewHeight - targetViewBottom) / hit.scale;
       onChange({
+        sourceKey: hit.sourceKey,
         pageIndex: hit.pageIndex,
         pdfX: targetPdfX,
         pdfY: targetPdfY,

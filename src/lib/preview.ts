@@ -9,6 +9,10 @@
 // minus the items the user is currently editing/moving" — keeps the
 // preview cheap (no font embedding) and keeps the save path the sole
 // owner of the actual content rewrite.
+//
+// Source-keyed: callers run this once per source whose pages need
+// stripping. The output bytes feed straight into pdfjs.getDocument for
+// per-page re-rendering keyed by `${sourceKey}:${pageIndex}`.
 
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
@@ -17,6 +21,7 @@ import { parseContentStream, serializeContentStream, findTextShows } from "./con
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 
 export type PageStripSpec = {
+  /** Page index within the source's doc. */
   pageIndex: number;
   /** Run IDs whose Tj/TJ ops should be removed (covers both text edits
    *  and live drags — the HTML overlay redraws the text). */
@@ -58,23 +63,10 @@ export async function buildPreviewBytes(
       if (!run) continue;
       for (const i of run.contentStreamOpIndices) indicesToRemove.add(i);
     }
-    // Then pick up any extra shows that visually fall inside one of
-    // the targeted runs' bounding box on the same line. This catches
-    // small adjacent Tj's (digits, punctuation, parens) that pdf.js
-    // extracted into a different bucket so applyShowDecodes never
-    // claimed them — without this, dragging an "6.1 …" line leaves
-    // the "6.1" / "( ) /" islands rendered on the canvas.
-    // Same-line whole-line strip. For each targeted run, also strip
-    // ANY Tj whose textMatrix sits on its baseline — regardless of
-    // horizontal distance. This covers section-heading digits ("6 ·"
-    // at the far right of a heading bar) and any other small Tj
-    // pdf.js bucketed into a different run but that visually lives
-    // on the same line as the moved text.
-    //
-    // It would be too aggressive for pages with multiple distinct
-    // runs sharing one y baseline, but each line in our extractor
-    // already collapses into a single run via the merge threshold,
-    // so in practice no other run shares the y of a strip target.
+    // Then pick up any extra shows that visually fall on the same
+    // baseline as one of the targeted runs. See preview-strip-paragraph
+    // tests for why this is needed (pdf.js bucketing splits a logical
+    // paragraph into multiple Tj's that share a y).
     const allTargetYs = new Set<number>();
     for (const runId of spec.runIds) {
       const run = rendered.textRuns.find((r) => r.id === runId);
@@ -85,16 +77,11 @@ export async function buildPreviewBytes(
     for (const s of shows) {
       if (indicesToRemove.has(s.index)) continue;
       const ey = Math.round(s.textMatrix[5]);
-      // Allow 1pt slack each way for kerning / Office's optical-
-      // alignment baseline jitter.
       if (allTargetYs.has(ey) || allTargetYs.has(ey - 1) || allTargetYs.has(ey + 1)) {
         indicesToRemove.add(s.index);
       }
     }
 
-    // Each image has its Do op index pre-resolved at extraction; just
-    // drop that op. Form XObjects with multiple cm/state changes still
-    // disappear because pdf.js won't paint a Do that's gone.
     for (const imageId of spec.imageIds) {
       const img = rendered.images.find((i) => i.id === imageId);
       if (!img) continue;

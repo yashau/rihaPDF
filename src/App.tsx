@@ -1,12 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal } from "@heroui/react";
 import { Check, FolderOpen, Image as ImageIcon, MousePointer2, Save, Type } from "lucide-react";
-import { loadPdf, renderPage } from "./lib/pdf";
-import type { RenderedPage } from "./lib/pdf";
-import { extractPageFontShows } from "./lib/sourceFonts";
-import { extractPageGlyphMaps } from "./lib/glyphMap";
-import { extractPageImages } from "./lib/sourceImages";
-import { PDFDocument } from "pdf-lib";
 import {
   applyEditsAndSave,
   downloadBlob,
@@ -20,8 +14,10 @@ import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/in
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 import { PageSidebar } from "./components/PageSidebar";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { externalSlot, slotsFromPages, type PageSlot } from "./lib/slots";
-import { loadExternalPdf } from "./lib/externalPdf";
+import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
+import { loadSource, nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./lib/loadSource";
+import type { LoadedSource } from "./lib/loadSource";
+import type { RenderedPage } from "./lib/pdf";
 import { useTheme } from "./lib/theme";
 
 export type ToolMode = "select" | "addText" | "addImage";
@@ -30,11 +26,15 @@ const RENDER_SCALE = 1.5;
 
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
-  const [filename, setFilename] = useState<string | null>(null);
-  const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
-  const [pages, setPages] = useState<RenderedPage[]>([]);
+  const [primaryFilename, setPrimaryFilename] = useState<string | null>(null);
+  /** All loaded sources keyed by sourceKey. The primary file uses the
+   *  fixed key from `PRIMARY_SOURCE_KEY`; externals use per-pick keys
+   *  from `nextExternalSourceKey`. Promoting external pages to first-
+   *  class status meant collapsing the old `originalBytes / pages /
+   *  externalSources / externalRendered` fan-out into this single map. */
+  const [sources, setSources] = useState<Map<string, LoadedSource>>(new Map());
   /** Ordered list of displayed pages. Each slot points back at a source
-   *  page (`kind: "original"`) or is a fresh blank (`kind: "blank"`).
+   *  page (`kind: "page"`) or is a fresh blank (`kind: "blank"`).
    *  Slot identity (`id`) is the stable key used to index per-page state
    *  so an entry follows its page through reorder. */
   const [slots, setSlots] = useState<PageSlot[]>([]);
@@ -46,11 +46,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /** Per-source-page replacement canvases produced by the live preview
-   *  pipeline. Keyed by SOURCE page index (not slotId) because the
-   *  strip operates on the original PDF — multiple slots referencing
-   *  the same source share the same preview canvas. */
-  const [previewCanvases, setPreviewCanvases] = useState<Map<number, HTMLCanvasElement>>(new Map());
+  /** Per-(sourceKey, sourcePageIndex) replacement canvases produced by
+   *  the live preview pipeline. Keys are `${sourceKey}:${pageIndex}` so
+   *  edits on external pages get their own preview canvas, not just
+   *  primary pages. */
+  const [previewCanvases, setPreviewCanvases] = useState<Map<string, HTMLCanvasElement>>(new Map());
   /** Monotonic generation counter used to discard stale preview-rebuild
    *  results when the user keeps editing during the rebuild. */
   const previewGenRef = useRef(0);
@@ -76,21 +76,12 @@ export default function App() {
   const [insertedImages, setInsertedImages] = useState<Map<string, ImageInsertion[]>>(new Map());
   /** Currently-selected object — set by single-click on an image
    *  overlay; cleared by Escape, by clicking elsewhere, or by tool
-   *  changes. The keyboard delete shortcut targets this; the toolbar
-   *  trash button (where applicable) does too. Text editing has its
-   *  own focus model so text runs don't enter this state. */
+   *  changes. */
   const [selection, setSelection] = useState<
     | { kind: "image"; slotId: string; imageId: string }
     | { kind: "insertedImage"; slotId: string; id: string }
     | null
   >(null);
-  /** Bytes for each loaded external PDF, keyed by sourceKey. The save
-   *  pipeline reads these to copyPages from the right doc. */
-  const [externalSources, setExternalSources] = useState<Map<string, ArrayBuffer>>(new Map());
-  /** Per-source rendered pages used to display external slots in the
-   *  main view + to power their sidebar thumbnails. Read-only for v1
-   *  so we only need the canvas — no fonts/glyph maps. */
-  const [externalRendered, setExternalRendered] = useState<Map<string, RenderedPage[]>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -104,36 +95,10 @@ export default function App() {
   const handleFile = useCallback(async (file: File) => {
     setBusy(true);
     try {
-      const buf = await file.arrayBuffer();
-      const forPdfJs = buf.slice(0);
-      const forSave = buf.slice(0);
-      const forFonts = buf.slice(0);
-      const forGlyphMaps = buf.slice(0);
-      const forImages = buf.slice(0);
-      const [doc, fontShowsByPage, glyphsDoc, imagesByPage] = await Promise.all([
-        loadPdf(forPdfJs),
-        extractPageFontShows(forFonts),
-        PDFDocument.load(forGlyphMaps, { ignoreEncryption: true }),
-        extractPageImages(forImages),
-      ]);
-      const rendered: RenderedPage[] = [];
-      for (let i = 1; i <= doc.numPages; i++) {
-        const page = await doc.getPage(i);
-        const glyphMaps = extractPageGlyphMaps(glyphsDoc, i - 1);
-        rendered.push(
-          await renderPage(
-            page,
-            RENDER_SCALE,
-            fontShowsByPage[i - 1] ?? [],
-            glyphMaps,
-            imagesByPage[i - 1] ?? [],
-          ),
-        );
-      }
-      setFilename(file.name);
-      setOriginalBytes(forSave);
-      setPages(rendered);
-      setSlots(slotsFromPages(rendered));
+      const source = await loadSource(file, RENDER_SCALE, PRIMARY_SOURCE_KEY);
+      setPrimaryFilename(file.name);
+      setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
+      setSlots(slotsFromSource(source));
       // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
       // probe can inspect what the strip pipeline thinks each run owns
       // without re-running the whole extractor in the browser.
@@ -142,15 +107,13 @@ export default function App() {
           __runOpIndices?: Map<string, number[]>;
         }
       ).__runOpIndices = new Map(
-        rendered.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
+        source.pages.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
       );
       setEdits(new Map());
       setImageMoves(new Map());
       setPreviewCanvases(new Map());
       setInsertedTexts(new Map());
       setInsertedImages(new Map());
-      setExternalSources(new Map());
-      setExternalRendered(new Map());
       setTool("select");
       setPendingImage(null);
     } finally {
@@ -169,10 +132,13 @@ export default function App() {
       stored = {
         ...value,
         targetPageIndex: undefined,
+        // targetSourceKey is preserved as the authoritative source
+        // identity for the drop; targetSlotId carries the slot's
+        // stable id so reorder doesn't strand it.
         targetSlotId: targetSlot?.id,
       };
     } else {
-      stored = { ...value, targetSlotId: undefined };
+      stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
     }
     setEdits((prev) => {
       const next = new Map(prev);
@@ -190,10 +156,6 @@ export default function App() {
     setSelection({ kind: "insertedImage", slotId, id });
   }, []);
 
-  /** Delete whatever's currently selected. For source images this means
-   *  flipping `deleted=true` on the stored ImageMoveValue (so save
-   *  strips the q…Q block); for inserted images we just drop the
-   *  entry from the slot's bucket. Selection is cleared either way. */
   const onDeleteSelection = useCallback(() => {
     setSelection((current) => {
       if (!current) return null;
@@ -218,10 +180,6 @@ export default function App() {
     });
   }, []);
 
-  // Window-level Delete / Backspace handler. The input-focus guard is
-  // critical: without it, every Backspace inside the EditField text
-  // input would also delete the selected image, which surprises users
-  // mid-edit.
   useEffect(() => {
     if (!selection) return;
     const onKey = (e: KeyboardEvent) => {
@@ -247,10 +205,6 @@ export default function App() {
     };
   }, [selection, onDeleteSelection]);
 
-  // Click-outside handler: any window click that wasn't stop-propagated
-  // by an overlay falls through to here and clears selection. Overlay
-  // onClick callbacks call e.stopPropagation() so a click on a
-  // selected image keeps the selection.
   useEffect(() => {
     if (!selection) return;
     const onClick = () => setSelection(null);
@@ -268,7 +222,7 @@ export default function App() {
         targetSlotId: targetSlot?.id,
       };
     } else {
-      stored = { ...value, targetSlotId: undefined };
+      stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
     }
     setImageMoves((prev) => {
       const next = new Map(prev);
@@ -279,48 +233,53 @@ export default function App() {
     });
   }, []);
 
+  // Resolve a slotId to (sourceKey, sourcePageIndex). Used in the save
+  // flatten phase + the preview strip useEffect.
+  const slotById = useMemo(() => new Map<string, PageSlot>(slots.map((s) => [s.id, s])), [slots]);
+
   // Rebuild the per-page preview canvases whenever the set of edited
-  // runs or moved images changes. The preview is a copy of the source
-  // PDF with those items REMOVED from the content stream — pdf.js then
-  // renders a clean canvas for each affected page, and the HTML
-  // overlays in PdfPage paint the moved/edited content on top with
-  // nothing to hide. Debounced so a fast edit loop doesn't spawn a
-  // dozen overlapping renders.
+  // runs or moved images changes. Per-source — every affected source's
+  // doc gets its own buildPreviewBytes pass.
   useEffect(() => {
-    if (!originalBytes || pages.length === 0) return;
-    // Group slot-keyed strip work by source-page index so each source
-    // page is stripped at most once even if multiple slots reference
-    // it. (Phase 1 has 1:1 slot↔source mapping but the grouping is
-    // also future-proof for duplicate slots.)
-    const slotById = new Map<string, PageSlot>(slots.map((s) => [s.id, s]));
-    const sourceIndexFor = (slotId: string): number | null => {
-      const slot = slotById.get(slotId);
-      return slot && slot.kind === "original" ? slot.sourceIndex : null;
+    if (sources.size === 0) return;
+    type SourceBuckets = {
+      runIdsByPage: Map<number, Set<string>>;
+      imageIdsByPage: Map<number, Set<string>>;
     };
-    const runIdsBySource = new Map<number, Set<string>>();
-    const imageIdsBySource = new Map<number, Set<string>>();
-    const addRun = (sourceIndex: number, runId: string) => {
-      const set = runIdsBySource.get(sourceIndex) ?? new Set<string>();
+    const bySource = new Map<string, SourceBuckets>();
+    const get = (sourceKey: string): SourceBuckets => {
+      let b = bySource.get(sourceKey);
+      if (!b) {
+        b = { runIdsByPage: new Map(), imageIdsByPage: new Map() };
+        bySource.set(sourceKey, b);
+      }
+      return b;
+    };
+    const addRun = (sourceKey: string, pageIndex: number, runId: string) => {
+      const b = get(sourceKey);
+      const set = b.runIdsByPage.get(pageIndex) ?? new Set<string>();
       set.add(runId);
-      runIdsBySource.set(sourceIndex, set);
+      b.runIdsByPage.set(pageIndex, set);
     };
-    const addImage = (sourceIndex: number, imageId: string) => {
-      const set = imageIdsBySource.get(sourceIndex) ?? new Set<string>();
+    const addImage = (sourceKey: string, pageIndex: number, imageId: string) => {
+      const b = get(sourceKey);
+      const set = b.imageIdsByPage.get(pageIndex) ?? new Set<string>();
       set.add(imageId);
-      imageIdsBySource.set(sourceIndex, set);
+      b.imageIdsByPage.set(pageIndex, set);
+    };
+    const sourceTupleFor = (slotId: string): [string, number] | null => {
+      const slot = slotById.get(slotId);
+      return slot && slot.kind === "page" ? [slot.sourceKey, slot.sourcePageIndex] : null;
     };
     for (const [slotId, runs] of edits) {
-      const si = sourceIndexFor(slotId);
-      if (si == null) continue;
-      for (const runId of runs.keys()) addRun(si, runId);
+      const t = sourceTupleFor(slotId);
+      if (!t) continue;
+      for (const runId of runs.keys()) addRun(t[0], t[1], runId);
     }
     for (const [slotId, imgs] of imageMoves) {
-      const si = sourceIndexFor(slotId);
-      if (si == null) continue;
+      const t = sourceTupleFor(slotId);
+      if (!t) continue;
       for (const [id, v] of imgs) {
-        // Stored entries carry `targetSlotId` (cross-page) — the
-        // pre-storage `targetPageIndex` is stripped by onImageMove.
-        // Deletion always strips, even with no movement.
         if (
           v.deleted ||
           (v.dx ?? 0) !== 0 ||
@@ -329,31 +288,29 @@ export default function App() {
           (v.dh ?? 0) !== 0 ||
           v.targetSlotId !== undefined
         ) {
-          addImage(si, id);
+          addImage(t[0], t[1], id);
         }
       }
     }
     for (const [slotId, runId] of editingByPage) {
-      const si = sourceIndexFor(slotId);
-      if (si == null) continue;
-      // Currently-open editor counts as "needs strip" too — we want
-      // the original to vanish the moment the input appears, not only
-      // after commit.
-      addRun(si, runId);
+      const t = sourceTupleFor(slotId);
+      if (!t) continue;
+      addRun(t[0], t[1], runId);
     }
-    const specs: PageStripSpec[] = [];
-    const affectedSources = new Set<number>([...runIdsBySource.keys(), ...imageIdsBySource.keys()]);
-    for (const sourceIndex of affectedSources) {
-      const runIds = runIdsBySource.get(sourceIndex) ?? new Set<string>();
-      const imageIds = imageIdsBySource.get(sourceIndex) ?? new Set<string>();
-      if (runIds.size === 0 && imageIds.size === 0) continue;
-      specs.push({ pageIndex: sourceIndex, runIds, imageIds });
+
+    const tasks: Array<{ sourceKey: string; specs: PageStripSpec[] }> = [];
+    for (const [sourceKey, b] of bySource) {
+      const affected = new Set<number>([...b.runIdsByPage.keys(), ...b.imageIdsByPage.keys()]);
+      const specs: PageStripSpec[] = [];
+      for (const pageIndex of affected) {
+        const runIds = b.runIdsByPage.get(pageIndex) ?? new Set<string>();
+        const imageIds = b.imageIdsByPage.get(pageIndex) ?? new Set<string>();
+        if (runIds.size === 0 && imageIds.size === 0) continue;
+        specs.push({ pageIndex, runIds, imageIds });
+      }
+      if (specs.length > 0) tasks.push({ sourceKey, specs });
     }
-    if (specs.length === 0) {
-      // Nothing left modified — drop any cached preview canvases so the
-      // pristine `page.canvas` shows again. We're already in a render-
-      // triggered effect; the cascading re-render here is intentional
-      // (one extra paint to clear the preview).
+    if (tasks.length === 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map()));
       return;
@@ -362,20 +319,25 @@ export default function App() {
     let cancelled = false;
     const handle = window.setTimeout(async () => {
       try {
-        const previewBytes = await buildPreviewBytes(originalBytes.slice(0), pages, specs);
-        if (cancelled || previewGenRef.current !== gen) return;
-        const next = new Map<number, HTMLCanvasElement>();
-        for (const spec of specs) {
-          const canvas = await renderPagePreviewCanvas(previewBytes, spec.pageIndex, RENDER_SCALE);
+        const next = new Map<string, HTMLCanvasElement>();
+        for (const { sourceKey, specs } of tasks) {
+          const source = sources.get(sourceKey);
+          if (!source) continue;
+          const previewBytes = await buildPreviewBytes(source.bytes.slice(0), source.pages, specs);
           if (cancelled || previewGenRef.current !== gen) return;
-          next.set(spec.pageIndex, canvas);
+          for (const spec of specs) {
+            const canvas = await renderPagePreviewCanvas(
+              previewBytes,
+              spec.pageIndex,
+              RENDER_SCALE,
+            );
+            if (cancelled || previewGenRef.current !== gen) return;
+            next.set(`${sourceKey}:${spec.pageIndex}`, canvas);
+          }
         }
         if (cancelled || previewGenRef.current !== gen) return;
         setPreviewCanvases(next);
       } catch (err) {
-        // Don't tear down editing on a preview failure — fall back to
-        // the original canvas (the user just sees the old glyphs along
-        // with overlays, same as before this feature).
         console.warn("preview rebuild failed", err);
       }
     }, 150);
@@ -383,7 +345,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [originalBytes, pages, slots, edits, imageMoves, editingByPage]);
+  }, [sources, slotById, edits, imageMoves, editingByPage]);
 
   const onEditingChange = useCallback((slotId: string, runId: string | null) => {
     setEditingByPage((prev) => {
@@ -394,19 +356,18 @@ export default function App() {
     });
   }, []);
 
-  /** Handle a click on a page when a tool mode is active — drops a new
-   *  text/image insertion at the click position (PDF user space). The
-   *  insertion is bucketed by slotId (so it follows reorder) but its
-   *  internal `pageIndex` field is the current slot index, used by the
-   *  save pipeline to address pdf-lib's docPages array. */
   const onCanvasClick = useCallback(
     (slotId: string, pageIndex: number, pdfX: number, pdfY: number) => {
+      // Resolve the slot-time (sourceKey, sourcePageIndex) so net-new
+      // insertions know which source's doc they target at save time.
+      const slot = slotsRef.current[pageIndex];
+      if (!slot || slot.kind !== "page") return;
       if (tool === "addText") {
         const id = `p${pageIndex + 1}-t${Date.now().toString(36)}`;
-        // Default font size: 12pt — tweakable via the editor toolbar.
         const ins: TextInsertion = {
           id,
-          pageIndex,
+          sourceKey: slot.sourceKey,
+          pageIndex: slot.sourcePageIndex,
           pdfX,
           pdfY,
           pdfWidth: 120,
@@ -420,7 +381,6 @@ export default function App() {
           return next;
         });
         setTool("select");
-        // Open the editor for the brand-new text box automatically.
         setEditingByPage((prev) => {
           const next = new Map(prev);
           next.set(slotId, id);
@@ -430,18 +390,14 @@ export default function App() {
       }
       if (tool === "addImage" && pendingImage) {
         const id = `p${pageIndex + 1}-ni${Date.now().toString(36)}`;
-        // Drop with a sensible initial size: scale to fit ~200pt wide
-        // while preserving aspect ratio, capped to the picture's
-        // natural pixel dimensions but never smaller than 30pt — a
-        // 1×1 source PNG would otherwise produce a sub-pixel overlay
-        // the user can't grab.
         const targetW = Math.min(Math.max(pendingImage.naturalWidth, 30), 200);
         const aspect = pendingImage.naturalHeight / pendingImage.naturalWidth;
         const w = targetW;
         const h = targetW * aspect;
         const ins: ImageInsertion = {
           id,
-          pageIndex,
+          sourceKey: slot.sourceKey,
+          pageIndex: slot.sourcePageIndex,
           pdfX: pdfX - w / 2,
           pdfY: pdfY - h / 2,
           pdfWidth: w,
@@ -463,9 +419,12 @@ export default function App() {
   );
 
   /** Update an inserted text box (text/style/position changes). When
-   *  `patch.pageIndex` (the destination slot index) differs from the
-   *  source slot, the entry is moved between slot buckets — this is
-   *  how a cross-page drag lands. */
+   *  `patch.pageIndex` (the destination slot index, set by PdfPage on
+   *  cross-page drop) differs from the source slot, the entry is moved
+   *  between slot buckets — this is how a cross-page or cross-source
+   *  drag lands. PdfPage emits the destination's source-page index via
+   *  `patch.pageIndex` (treated as a slot index here when paired with
+   *  `patch.sourceKey`). */
   const onTextInsertChange = useCallback(
     (sourceSlotId: string, id: string, patch: Partial<TextInsertion>) => {
       setInsertedTexts((prev) => {
@@ -473,14 +432,32 @@ export default function App() {
         const fromArr = next.get(sourceSlotId) ?? [];
         const item = fromArr.find((t) => t.id === id);
         if (!item) return prev;
-        // patch.pageIndex (when present) is the destination slot index
-        // returned by PdfPage's cross-page hit-test. Resolve to slotId
-        // via the current slots array so reorder doesn't strand it.
-        const targetSlotId =
-          patch.pageIndex !== undefined && patch.pageIndex !== item.pageIndex
-            ? (slotsRef.current[patch.pageIndex]?.id ?? sourceSlotId)
-            : sourceSlotId;
-        const updated: TextInsertion = { ...item, ...patch };
+        // PdfPage's cross-page drop emits `patch.pageIndex` as the
+        // destination's CURRENT slot index. Resolve to that slot's
+        // (sourceKey, sourcePageIndex) so the patched insertion's
+        // address survives reorder.
+        let updated: TextInsertion;
+        let targetSlotId = sourceSlotId;
+        if (
+          patch.pageIndex !== undefined &&
+          patch.sourceKey !== undefined &&
+          (patch.pageIndex !== item.pageIndex || patch.sourceKey !== item.sourceKey)
+        ) {
+          const destSlot = slotsRef.current[patch.pageIndex];
+          if (destSlot && destSlot.kind === "page") {
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: destSlot.sourceKey,
+              pageIndex: destSlot.sourcePageIndex,
+            };
+            targetSlotId = destSlot.id;
+          } else {
+            updated = { ...item, ...patch };
+          }
+        } else {
+          updated = { ...item, ...patch };
+        }
         if (targetSlotId !== sourceSlotId) {
           next.set(
             sourceSlotId,
@@ -513,11 +490,28 @@ export default function App() {
         const fromArr = next.get(sourceSlotId) ?? [];
         const item = fromArr.find((m) => m.id === id);
         if (!item) return prev;
-        const targetSlotId =
-          patch.pageIndex !== undefined && patch.pageIndex !== item.pageIndex
-            ? (slotsRef.current[patch.pageIndex]?.id ?? sourceSlotId)
-            : sourceSlotId;
-        const updated: ImageInsertion = { ...item, ...patch };
+        let updated: ImageInsertion;
+        let targetSlotId = sourceSlotId;
+        if (
+          patch.pageIndex !== undefined &&
+          patch.sourceKey !== undefined &&
+          (patch.pageIndex !== item.pageIndex || patch.sourceKey !== item.sourceKey)
+        ) {
+          const destSlot = slotsRef.current[patch.pageIndex];
+          if (destSlot && destSlot.kind === "page") {
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: destSlot.sourceKey,
+              pageIndex: destSlot.sourcePageIndex,
+            };
+            targetSlotId = destSlot.id;
+          } else {
+            updated = { ...item, ...patch };
+          }
+        } else {
+          updated = { ...item, ...patch };
+        }
         if (targetSlotId !== sourceSlotId) {
           next.set(
             sourceSlotId,
@@ -544,29 +538,24 @@ export default function App() {
     });
   }, []);
 
-  /** "+ From PDF" handler: load one or more external PDFs, render
-   *  every page, and append slots in pick order. External slots are
-   *  read-only (v1) — display + reorder + delete, no text editing.
-   *  Save copies them out of each external doc via pdf-lib's copyPages.
-   *  Files are processed sequentially so the busy flag and slot order
-   *  stay coherent even when several files land at once. */
+  /** "+ From PDF" handler: load one or more external PDFs and append
+   *  their pages as full first-class slots. Each external goes through
+   *  `loadSource` so its pages get the same font / glyph-map / image
+   *  extraction as the primary — the user can edit, drag, insert,
+   *  delete on them just like primary pages. */
   const onAddExternalPdfs = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
     setBusy(true);
     try {
       for (const file of files) {
-        const { bytes, rendered, sourceKey } = await loadExternalPdf(file, RENDER_SCALE);
-        setExternalSources((prev) => {
+        const sourceKey = nextExternalSourceKey(file);
+        const source = await loadSource(file, RENDER_SCALE, sourceKey);
+        setSources((prev) => {
           const next = new Map(prev);
-          next.set(sourceKey, bytes);
+          next.set(sourceKey, source);
           return next;
         });
-        setExternalRendered((prev) => {
-          const next = new Map(prev);
-          next.set(sourceKey, rendered);
-          return next;
-        });
-        setSlots((prev) => [...prev, ...rendered.map((_, i) => externalSlot(sourceKey, i))]);
+        setSlots((prev) => [...prev, ...source.pages.map((_, i) => pageSlot(sourceKey, i))]);
       }
     } finally {
       setBusy(false);
@@ -584,36 +573,45 @@ export default function App() {
   }, []);
 
   const onSave = useCallback(async () => {
-    if (!originalBytes || !filename) return;
+    if (sources.size === 0 || !primaryFilename) return;
     setBusy(true);
     try {
-      // Translate slotId-keyed state back to source-page-index keys
-      // for the legacy save pipeline. Phase 1 has slots 1:1 with
-      // pages so every slot maps to its source; blanks (none yet
-      // in Phase 1) carry no per-slot edits and would be skipped.
-      const sourceIndexBySlotId = new Map<string, number>();
+      // Translate slotId-keyed state back to (sourceKey, sourcePageIndex)
+      // for the per-source save pipeline.
+      const slotAddr = new Map<string, { sourceKey: string; pageIndex: number; slot: PageSlot }>();
       for (const slot of slots) {
-        if (slot.kind === "original") sourceIndexBySlotId.set(slot.id, slot.sourceIndex);
+        if (slot.kind === "page") {
+          slotAddr.set(slot.id, {
+            sourceKey: slot.sourceKey,
+            pageIndex: slot.sourcePageIndex,
+            slot,
+          });
+        }
       }
       const flatEdits: Edit[] = [];
       for (const [slotId, runs] of edits) {
-        const pageIndex = sourceIndexBySlotId.get(slotId);
-        if (pageIndex == null) continue;
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
         for (const [runId, value] of runs) {
-          // Cross-page target: prefer the stable targetSlotId
-          // (populated by onEdit) over the legacy targetPageIndex
-          // shape. Resolve to the target's CURRENT source-page index.
-          const targetPageIndex =
-            value.targetSlotId !== undefined
-              ? sourceIndexBySlotId.get(value.targetSlotId)
-              : undefined;
+          // Cross-page / cross-source target: prefer stable targetSlotId.
+          let targetSourceKey: string | undefined;
+          let targetPageIndex: number | undefined;
+          if (value.targetSlotId !== undefined) {
+            const target = slotAddr.get(value.targetSlotId);
+            if (target) {
+              targetSourceKey = target.sourceKey;
+              targetPageIndex = target.pageIndex;
+            }
+          }
           flatEdits.push({
-            pageIndex,
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
             runId,
             newText: value.text,
             style: value.style,
             dx: value.dx,
             dy: value.dy,
+            targetSourceKey,
             targetPageIndex,
             targetPdfX: value.targetPdfX,
             targetPdfY: value.targetPdfY,
@@ -623,30 +621,34 @@ export default function App() {
       }
       const flatImageMoves: ImageMove[] = [];
       for (const [slotId, imgs] of imageMoves) {
-        const pageIndex = sourceIndexBySlotId.get(slotId);
-        if (pageIndex == null) continue;
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
         for (const [imageId, value] of imgs) {
           const dx = value.dx ?? 0;
           const dy = value.dy ?? 0;
           const dw = value.dw ?? 0;
           const dh = value.dh ?? 0;
           const isCrossPage = value.targetSlotId !== undefined;
-          // Skip no-op entries (no movement, no resize, no cross-page,
-          // not deleted). A `deleted` value still needs to flow through
-          // even when dx/dy/dw/dh are all zero.
           if (!isCrossPage && !value.deleted && dx === 0 && dy === 0 && dw === 0 && dh === 0)
             continue;
-          const targetPageIndex =
-            value.targetSlotId !== undefined
-              ? sourceIndexBySlotId.get(value.targetSlotId)
-              : undefined;
+          let targetSourceKey: string | undefined;
+          let targetPageIndex: number | undefined;
+          if (value.targetSlotId !== undefined) {
+            const target = slotAddr.get(value.targetSlotId);
+            if (target) {
+              targetSourceKey = target.sourceKey;
+              targetPageIndex = target.pageIndex;
+            }
+          }
           flatImageMoves.push({
-            pageIndex,
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
             imageId,
             dx,
             dy,
             dw,
             dh,
+            targetSourceKey,
             targetPageIndex,
             targetPdfX: value.targetPdfX,
             targetPdfY: value.targetPdfY,
@@ -658,12 +660,13 @@ export default function App() {
       }
       const flatTextInserts: TextInsert[] = [];
       for (const [slotId, arr] of insertedTexts) {
-        const pageIndex = sourceIndexBySlotId.get(slotId);
-        if (pageIndex == null) continue;
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
         for (const t of arr) {
           if (!t.text || t.text.trim().length === 0) continue;
           flatTextInserts.push({
-            pageIndex,
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
             pdfX: t.pdfX,
             pdfY: t.pdfY,
             fontSize: t.fontSize,
@@ -674,11 +677,12 @@ export default function App() {
       }
       const flatImageInserts: ImageInsert[] = [];
       for (const [slotId, arr] of insertedImages) {
-        const pageIndex = sourceIndexBySlotId.get(slotId);
-        if (pageIndex == null) continue;
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
         for (const i of arr) {
           flatImageInserts.push({
-            pageIndex,
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
             pdfX: i.pdfX,
             pdfY: i.pdfY,
             pdfWidth: i.pdfWidth,
@@ -689,31 +693,19 @@ export default function App() {
         }
       }
       const out = await applyEditsAndSave(
-        originalBytes,
-        pages,
-        flatEdits,
+        sources,
         slots,
+        flatEdits,
         flatImageMoves,
         flatTextInserts,
         flatImageInserts,
-        externalSources,
       );
-      const baseName = filename.replace(/\.pdf$/i, "");
+      const baseName = primaryFilename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
     } finally {
       setBusy(false);
     }
-  }, [
-    originalBytes,
-    filename,
-    slots,
-    edits,
-    imageMoves,
-    pages,
-    insertedTexts,
-    insertedImages,
-    externalSources,
-  ]);
+  }, [sources, primaryFilename, slots, edits, imageMoves, insertedTexts, insertedImages]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
   const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
@@ -725,23 +717,30 @@ export default function App() {
     (sum, arr) => sum + arr.length,
     0,
   );
-  // Count structural changes vs the initial 1:1 slots/pages state:
-  // sources missing from `slots` are deletions; "blank" slots are
-  // inserts. Reorder isn't counted as a structural change for Save's
-  // dirty bit because reordering the same set of pages still produces
-  // a different output and warrants saving on its own.
-  const slotOriginalCount = slots.reduce((n, s) => n + (s.kind === "original" ? 1 : 0), 0);
+  // Count structural changes vs the initial slots-from-primary state:
+  // missing primary pages are deletions; "blank" slots are inserts;
+  // page slots from non-primary sources are external inserts.
+  const primarySource = sources.get(PRIMARY_SOURCE_KEY);
+  const primaryPageCount = primarySource?.pages.length ?? 0;
+  const slotPrimaryPageCount = slots.reduce(
+    (n, s) => n + (s.kind === "page" && s.sourceKey === PRIMARY_SOURCE_KEY ? 1 : 0),
+    0,
+  );
   const blankSlotCount = slots.reduce((n, s) => n + (s.kind === "blank" ? 1 : 0), 0);
-  const externalSlotCount = slots.reduce((n, s) => n + (s.kind === "external" ? 1 : 0), 0);
-  const removedSourceCount = Math.max(0, pages.length - slotOriginalCount);
-  // Real reorder = the surviving originals appear out of source order.
-  // Deleting page 0 leaves [1, 2, ...] which is still ascending and
-  // shouldn't be flagged.
-  const origSourceOrder: number[] = [];
+  const externalSlotCount = slots.reduce(
+    (n, s) => n + (s.kind === "page" && s.sourceKey !== PRIMARY_SOURCE_KEY ? 1 : 0),
+    0,
+  );
+  const removedSourceCount = Math.max(0, primaryPageCount - slotPrimaryPageCount);
+  const primarySourceOrder: number[] = [];
   for (const s of slots) {
-    if (s.kind === "original") origSourceOrder.push(s.sourceIndex);
+    if (s.kind === "page" && s.sourceKey === PRIMARY_SOURCE_KEY) {
+      primarySourceOrder.push(s.sourcePageIndex);
+    }
   }
-  const slotsReordered = origSourceOrder.some((si, i) => i > 0 && si < origSourceOrder[i - 1]);
+  const slotsReordered = primarySourceOrder.some(
+    (si, i) => i > 0 && si < primarySourceOrder[i - 1],
+  );
   const structuralOpCount =
     removedSourceCount + blankSlotCount + externalSlotCount + (slotsReordered ? 1 : 0);
 
@@ -776,7 +775,7 @@ export default function App() {
         <Button
           variant="secondary"
           isDisabled={
-            !originalBytes ||
+            sources.size === 0 ||
             busy ||
             totalEdits +
               totalImageMoves +
@@ -807,7 +806,7 @@ export default function App() {
           <Button
             size="sm"
             variant={tool === "select" ? "primary" : "ghost"}
-            isDisabled={busy || pages.length === 0}
+            isDisabled={busy || sources.size === 0}
             onPress={() => {
               setTool("select");
               setPendingImage(null);
@@ -819,7 +818,7 @@ export default function App() {
           <Button
             size="sm"
             variant={tool === "addText" ? "primary" : "ghost"}
-            isDisabled={busy || pages.length === 0}
+            isDisabled={busy || sources.size === 0}
             onPress={() => {
               setTool((t) => (t === "addText" ? "select" : "addText"));
               setPendingImage(null);
@@ -830,7 +829,7 @@ export default function App() {
           <Button
             size="sm"
             variant={tool === "addImage" ? "primary" : "ghost"}
-            isDisabled={busy || pages.length === 0}
+            isDisabled={busy || sources.size === 0}
             onPress={() => {
               if (tool === "addImage") {
                 setTool("select");
@@ -860,7 +859,7 @@ export default function App() {
             ? "Click on a page to drop a text box"
             : tool === "addImage" && pendingImage
               ? "Click on a page to place the image"
-              : (filename ?? "No file loaded")}
+              : (primaryFilename ?? "No file loaded")}
         </span>
         <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 pl-3 ml-1">
           <ThemeToggle mode={themeMode} onChange={setThemeMode} />
@@ -870,9 +869,7 @@ export default function App() {
         {slots.length > 0 && (
           <PageSidebar
             slots={slots}
-            pages={pages}
-            originalBytes={originalBytes}
-            externalRendered={externalRendered}
+            sources={sources}
             onSlotsChange={setSlots}
             onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
           />
@@ -899,16 +896,11 @@ export default function App() {
                     </div>
                   );
                 }
-                if (slot.kind === "external") {
-                  const rp = externalRendered.get(slot.sourceKey)?.[slot.sourcePageIndex];
-                  if (!rp) return null;
-                  return <ExternalPageView key={slot.id} page={rp} displayIndex={idx} />;
-                }
-                const page = pages[slot.sourceIndex];
-                if (!page) return null;
+                const source = sources.get(slot.sourceKey);
+                const page = source?.pages[slot.sourcePageIndex];
+                if (!source || !page) return null;
                 // Re-derive cross-page targetPageIndex from the stable
                 // targetSlotId so reorder doesn't strand overlays.
-                // Stored entries with no cross-page state pass through.
                 const slotIndexById = (id: string | undefined) => {
                   if (!id) return -1;
                   return slots.findIndex((s) => s.id === id);
@@ -929,6 +921,7 @@ export default function App() {
                         editsForSlot.set(runId, {
                           ...v,
                           targetPageIndex: undefined,
+                          targetSourceKey: undefined,
                           targetSlotId: undefined,
                           targetPdfX: undefined,
                           targetPdfY: undefined,
@@ -955,6 +948,7 @@ export default function App() {
                         imageMovesForSlot.set(imageId, {
                           ...v,
                           targetPageIndex: undefined,
+                          targetSourceKey: undefined,
                           targetSlotId: undefined,
                           targetPdfX: undefined,
                           targetPdfY: undefined,
@@ -980,11 +974,14 @@ export default function App() {
                     key={slot.id}
                     page={page}
                     pageIndex={idx}
+                    sourceKey={slot.sourceKey}
                     edits={editsForSlot}
                     imageMoves={imageMovesForSlot}
                     insertedTexts={insertedTexts.get(slot.id) ?? []}
                     insertedImages={insertedImages.get(slot.id) ?? []}
-                    previewCanvas={previewCanvases.get(slot.sourceIndex) ?? null}
+                    previewCanvas={
+                      previewCanvases.get(`${slot.sourceKey}:${slot.sourcePageIndex}`) ?? null
+                    }
                     tool={tool}
                     editingId={editingByPage.get(slot.id) ?? null}
                     selectedImageId={selectedImageId}
@@ -1099,45 +1096,10 @@ function AboutModal({
   );
 }
 
-/** Read-only view for an "insert from PDF" slot. Mounts the rendered
- *  canvas and shows a "Read-only" badge — no edits / inserts / cross-
- *  page targets. Without `data-page-index` the cross-page hit-test
- *  also can't pick this as a drop target, so external pages stay
- *  immutable in v1. */
-function ExternalPageView({ page, displayIndex }: { page: RenderedPage; displayIndex: number }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  /* eslint-disable-next-line react-hooks/immutability */
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    node.replaceChildren();
-    /* eslint-disable react-hooks/immutability */
-    page.canvas.style.display = "block";
-    page.canvas.style.width = `${page.viewWidth}px`;
-    page.canvas.style.height = `${page.viewHeight}px`;
-    /* eslint-enable react-hooks/immutability */
-    node.appendChild(page.canvas);
-  }, [page]);
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="flex gap-2 items-center text-sm">
-        <span className="text-zinc-500 dark:text-zinc-400">Page {displayIndex + 1}</span>
-        <span className="text-[10px] uppercase tracking-wide bg-amber-500/90 text-white px-1.5 py-0.5 rounded">
-          Read-only
-        </span>
-      </div>
-      <div
-        ref={ref}
-        className="relative border border-zinc-300 dark:border-zinc-700 shadow-sm bg-white"
-        style={{ width: page.viewWidth, height: page.viewHeight }}
-      />
-    </div>
-  );
-}
-
 function PageWithToolbar({
   page,
   pageIndex,
+  sourceKey,
   edits,
   imageMoves,
   insertedTexts,
@@ -1160,6 +1122,7 @@ function PageWithToolbar({
 }: {
   page: RenderedPage;
   pageIndex: number;
+  sourceKey: string;
   edits: Map<string, EditValue>;
   imageMoves: Map<string, ImageMoveValue>;
   insertedTexts: TextInsertion[];
@@ -1188,6 +1151,7 @@ function PageWithToolbar({
       <PdfPage
         page={page}
         pageIndex={pageIndex}
+        sourceKey={sourceKey}
         edits={edits}
         imageMoves={imageMoves}
         insertedTexts={insertedTexts}

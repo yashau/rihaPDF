@@ -27,6 +27,11 @@ export const FIXTURE = {
    *  page 2 has a blue image + its own label. Used for cross-page
    *  move tests so each page has distinct, identifiable content. */
   withImagesMultipage: path.join(FIXTURES, "with-images-multipage.pdf"),
+  /** Two-page external-import fixture used by the "first-class
+   *  external pages" suite: distinct labels, an editable run on page
+   *  1, and a green image on page 2 so save/reload through copyPages
+   *  out of an external source can be verified end-to-end. */
+  externalSource: path.join(FIXTURES, "external-source.pdf"),
 };
 
 export const APP_URL = "http://localhost:5173/";

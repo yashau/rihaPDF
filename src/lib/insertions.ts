@@ -13,6 +13,11 @@ import type { EditStyle } from "./save";
 export type TextInsertion = {
   /** Stable id for state plumbing: "p<pageNumber>-t<index>". */
   id: string;
+  /** Source the destination slot belongs to — derived from the
+   *  destination slot at flatten time. Carried here so a cross-source
+   *  drag's drop site is recorded directly. */
+  sourceKey: string;
+  /** Page index within the destination source's doc. */
   pageIndex: number;
   /** Baseline x in PDF user space. */
   pdfX: number;
@@ -31,6 +36,9 @@ export type TextInsertion = {
 export type ImageInsertion = {
   /** Stable id: "p<pageNumber>-ni<index>". */
   id: string;
+  /** Source the destination slot belongs to. */
+  sourceKey: string;
+  /** Page index within the destination source's doc. */
   pageIndex: number;
   /** Bottom-left in PDF user space (matches ImageInstance convention). */
   pdfX: number;

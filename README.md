@@ -51,11 +51,13 @@ removed from the content stream, not just covered with a whiteout.
 - **Page sidebar with reorder, delete, insert blank, insert from PDF.**
   Left rail shows a thumbnail per page. Drag thumbs to reorder
   (`@dnd-kit`), hover to delete, click `+ Blank` to insert a fresh
-  page anywhere, click `+ From PDF` to merge pages from any other PDF
-  (read-only in v1: display + reorder + delete, no text editing).
-  Save walks the slot list and rebuilds the output via
-  `PDFDocument.copyPages` so reorder + insert + delete all compose
-  cleanly with edits applied to the originals.
+  page anywhere, click `+ From PDF` to merge pages from any other PDF.
+  External pages are first-class: every editing affordance (text edit,
+  text/image insert, drag-move, cross-page and cross-source moves)
+  works on them too, since they share the same load + save pipeline as
+  the primary file. Save walks the slot list and rebuilds the output
+  via `PDFDocument.copyPages` so reorder + insert + delete all compose
+  cleanly with edits applied to whichever source the slot points at.
 - **Live full-pixel font fallback.** 38 bundled Dhivehi families plus
   Noto Sans Thaana ship as `@font-face` (`local()` first → user's
   installed copy wins). The save path embeds whichever family the
@@ -107,6 +109,10 @@ Test fixtures live in [test/fixtures/](test/fixtures/):
 - `with-images-multipage.pdf` — two-page synthetic fixture with one
   identifiable image and label per page; same builder. Used by the
   cross-page move tests.
+- `external-source.pdf` — two-page fixture with distinct labels, an
+  editable Helvetica run, and a green image. Used by the
+  external-first-class tests as the file dropped into `+ From PDF` so
+  edits / inserts / cross-source drags can be verified end-to-end.
 
 ## Architecture
 
@@ -207,6 +213,7 @@ pnpm test         # in another — runs every spec
 | `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                |
 | `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages  |
 | `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable    |
+| `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip   |
 | `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload      |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
@@ -217,6 +224,16 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **First-class external pages.** "+ From PDF" now goes through the
+      same `loadSource` extraction (fonts, glyph maps, images, runs) as
+      the primary file. The slot model collapsed `original` + `external`
+      into a single `kind: "page"` carrying `(sourceKey, sourcePageIndex)`,
+      and `Edit / ImageMove / TextInsert / ImageInsert` all carry a
+      `sourceKey`. Save loads each source's `PDFDocument` once, runs the
+      content-stream surgery per source, then `output.copyPages` from
+      every source in slot order. Cross-source text drags round-trip
+      via `drawText` on the target source's doc; cross-source image
+      drags re-embed the origin's pixel bytes on the target.
 - [x] **Dark theme with system override.** Three-way toolbar toggle
       (system / light / dark) that defaults to system and tracks
       `prefers-color-scheme` live via `matchMedia`. The user's pick
@@ -309,12 +326,6 @@ dev-server-on-localhost:5173 assumption.
 
 ### Document-level
 
-- [ ] **Editable inserted-PDF pages.** External pages from `+ From PDF`
-      are read-only in v1 (display + reorder + delete only). Making
-      them editable means running the same font / glyph-map / image
-      extraction pipeline on the inserted source bytes that
-      [src/App.tsx](src/App.tsx)'s `handleFile` runs on the primary
-      doc.
 - [ ] **Annotations** — rect, highlight, freehand.
 - [ ] **Form fields** (text + checkbox).
 

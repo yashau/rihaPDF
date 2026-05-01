@@ -19,16 +19,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { PageSlot } from "../lib/slots";
 import { blankSlot } from "../lib/slots";
-import { renderPagePreviewCanvas } from "../lib/preview";
-import type { RenderedPage } from "../lib/pdf";
+import type { LoadedSource } from "../lib/loadSource";
 
 type Props = {
   slots: PageSlot[];
-  pages: RenderedPage[];
-  originalBytes: ArrayBuffer | null;
-  /** Per-source rendered pages for external (insert-from-PDF) slots —
-   *  used to display + thumbnail external slots without re-rendering. */
-  externalRendered: Map<string, RenderedPage[]>;
+  /** All loaded sources, keyed by sourceKey. Sidebar reads them to
+   *  size blanks against neighbouring pages and to render thumbs by
+   *  downscaling each source's already-rendered canvas. */
+  sources: Map<string, LoadedSource>;
   onSlotsChange: (next: PageSlot[]) => void;
   onAddExternalPdfs: (files: File[]) => void;
 };
@@ -36,83 +34,59 @@ type Props = {
 const THUMB_SCALE = 0.18;
 const SOURCE_RENDER_SCALE = 1.5;
 
-export function PageSidebar({
-  slots,
-  pages,
-  originalBytes,
-  externalRendered,
-  onSlotsChange,
-  onAddExternalPdfs,
-}: Props) {
+export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }: Props) {
   const externalFileInputRef = useRef<HTMLInputElement | null>(null);
-  // Unified thumbnail cache. Keys: `orig:${sourceIndex}` for original
-  // pages, `ext:${sourceKey}:${pageIndex}` for external pages. Values
-  // are PNG data URLs so multiple <img> tags can share one entry.
+  /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are PNG
+   *  data URLs so multiple <img> tags can share one entry. */
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
-  const prevBytesRef = useRef<ArrayBuffer | null>(null);
+  const knownSourcesRef = useRef<Set<string>>(new Set());
 
+  // When a source disappears (the user re-opened the primary PDF), drop
+  // its cached thumbs so we don't keep stale entries around. Tracked by
+  // the live set of known sourceKeys.
   useEffect(() => {
-    if (prevBytesRef.current !== originalBytes) {
-      prevBytesRef.current = originalBytes;
-      // Drop ALL thumbs (both original + external) on file reload —
-      // external slots are also reset by App in the same flow.
-      setThumbs(new Map());
+    const live = new Set(sources.keys());
+    if (knownSourcesRef.current.size === 0) {
+      knownSourcesRef.current = live;
+      return;
     }
-    if (!originalBytes) return;
-    const wantedOriginals = new Set<number>();
-    for (const slot of slots) {
-      if (slot.kind === "original") wantedOriginals.add(slot.sourceIndex);
-    }
-    let cancelled = false;
-    void (async () => {
-      for (const sourceIndex of wantedOriginals) {
-        const key = `orig:${sourceIndex}`;
-        // Reading `thumbs` snapshot here is safe — setThumbs uses
-        // functional updates so a stale read is just wasted-work hint.
-        if (thumbs.has(key)) continue;
-        try {
-          const canvas = await renderPagePreviewCanvas(
-            new Uint8Array(originalBytes.slice(0)),
-            sourceIndex,
-            THUMB_SCALE,
-          );
-          if (cancelled) return;
-          const url = canvas.toDataURL("image/png");
-          setThumbs((prev) => {
-            if (prev.has(key)) return prev;
-            const next = new Map(prev);
-            next.set(key, url);
-            return next;
-          });
-        } catch (err) {
-          console.warn("thumbnail render failed", err);
-        }
+    let changed = false;
+    for (const k of knownSourcesRef.current) {
+      if (!live.has(k)) {
+        changed = true;
+        break;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originalBytes, slots]);
-
-  // External slot thumbs: downscale the already-rendered RenderedPage
-  // canvas via 2D drawImage. Cheaper than re-running pdf.js because we
-  // already have the source canvas in memory.
-  useEffect(() => {
-    const wantedExternals: Array<{ key: string; src: HTMLCanvasElement }> = [];
-    for (const slot of slots) {
-      if (slot.kind !== "external") continue;
-      const renderedPages = externalRendered.get(slot.sourceKey);
-      const rp = renderedPages?.[slot.sourcePageIndex];
-      if (!rp) continue;
-      const key = `ext:${slot.sourceKey}:${slot.sourcePageIndex}`;
-      if (thumbs.has(key)) continue;
-      wantedExternals.push({ key, src: rp.canvas });
     }
-    if (wantedExternals.length === 0) return;
+    knownSourcesRef.current = live;
+    if (!changed) return;
+    setThumbs((prev) => {
+      const next = new Map<string, string>();
+      for (const [k, v] of prev) {
+        const sourceKey = k.split(":")[0];
+        if (live.has(sourceKey)) next.set(k, v);
+      }
+      return next;
+    });
+  }, [sources]);
+
+  // For each page slot, downscale the already-rendered canvas via 2D
+  // drawImage. Cheaper than re-running pdf.js because we already have
+  // the source canvas in memory after eager extraction.
+  useEffect(() => {
+    const wanted: Array<{ key: string; src: HTMLCanvasElement }> = [];
+    for (const slot of slots) {
+      if (slot.kind !== "page") continue;
+      const source = sources.get(slot.sourceKey);
+      const rp = source?.pages[slot.sourcePageIndex];
+      if (!rp) continue;
+      const key = `${slot.sourceKey}:${slot.sourcePageIndex}`;
+      if (thumbs.has(key)) continue;
+      wanted.push({ key, src: rp.canvas });
+    }
+    if (wanted.length === 0) return;
     const factor = THUMB_SCALE / SOURCE_RENDER_SCALE;
     const additions = new Map<string, string>();
-    for (const { key, src } of wantedExternals) {
+    for (const { key, src } of wanted) {
       const w = Math.max(1, Math.round(src.width * factor));
       const h = Math.max(1, Math.round(src.height * factor));
       const c = document.createElement("canvas");
@@ -135,7 +109,7 @@ export function PageSidebar({
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, externalRendered]);
+  }, [slots, sources]);
 
   const insertBlankAt = (i: number) => {
     // Match the size of the nearest neighbour so a blank inserted into
@@ -143,12 +117,10 @@ export function PageSidebar({
     const ref = slots[i] ?? slots[i - 1] ?? null;
     let size: [number, number] = [595.28, 841.89];
     if (ref) {
-      if (ref.kind === "original") {
-        const p = pages[ref.sourceIndex];
+      if (ref.kind === "page") {
+        const source = sources.get(ref.sourceKey);
+        const p = source?.pages[ref.sourcePageIndex];
         if (p) size = [p.viewWidth / p.scale, p.viewHeight / p.scale];
-      } else if (ref.kind === "external") {
-        const rp = externalRendered.get(ref.sourceKey)?.[ref.sourcePageIndex];
-        if (rp) size = [rp.viewWidth / rp.scale, rp.viewHeight / rp.scale];
       } else {
         size = ref.size;
       }
@@ -173,6 +145,8 @@ export function PageSidebar({
     onSlotsChange(arrayMove(slots, oldIndex, newIndex));
   };
 
+  const sourcesLoaded = sources.size > 0;
+
   return (
     <aside className="flex-shrink-0 w-52 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2">
       <div className="flex flex-col gap-2 px-3 mb-2">
@@ -183,7 +157,7 @@ export function PageSidebar({
           <Button
             size="sm"
             variant="ghost"
-            isDisabled={!originalBytes}
+            isDisabled={!sourcesLoaded}
             onPress={() => insertBlankAt(slots.length)}
           >
             <Plus size={14} aria-hidden />
@@ -192,7 +166,7 @@ export function PageSidebar({
           <Button
             size="sm"
             variant="ghost"
-            isDisabled={!originalBytes}
+            isDisabled={!sourcesLoaded}
             onPress={() => externalFileInputRef.current?.click()}
           >
             <FilePlus2 size={14} aria-hidden />
@@ -222,11 +196,9 @@ export function PageSidebar({
                   slot={slot}
                   displayIndex={idx}
                   dataUrl={
-                    slot.kind === "original"
-                      ? (thumbs.get(`orig:${slot.sourceIndex}`) ?? null)
-                      : slot.kind === "external"
-                        ? (thumbs.get(`ext:${slot.sourceKey}:${slot.sourcePageIndex}`) ?? null)
-                        : null
+                    slot.kind === "page"
+                      ? (thumbs.get(`${slot.sourceKey}:${slot.sourcePageIndex}`) ?? null)
+                      : null
                   }
                   onRemove={() => removeSlot(slot.id)}
                 />
@@ -308,14 +280,7 @@ function SortableSlotThumb({
           Blank
         </div>
       ) : dataUrl ? (
-        <>
-          <img src={dataUrl} alt="" className="block w-full h-auto" draggable={false} />
-          {slot.kind === "external" && (
-            <div className="absolute bottom-1 left-1 z-10 bg-amber-500/90 text-white text-[9px] uppercase tracking-wide px-1 py-0.5 rounded pointer-events-none">
-              Read-only
-            </div>
-          )}
-        </>
+        <img src={dataUrl} alt="" className="block w-full h-auto" draggable={false} />
       ) : (
         <div className="flex items-center justify-center text-zinc-300 dark:text-zinc-600 text-xs h-32">
           …
