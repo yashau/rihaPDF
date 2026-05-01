@@ -20,6 +20,7 @@ import type { LoadedSource } from "./lib/loadSource";
 import type { RenderedPage } from "./lib/pdf";
 import { useTheme } from "./lib/theme";
 import { useIsMobile } from "./lib/useMediaQuery";
+import { useVisualViewportFollow } from "./lib/useVisualViewport";
 
 export type ToolMode = "select" | "addText" | "addImage";
 
@@ -29,6 +30,29 @@ export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const isMobile = useIsMobile();
   const [primaryFilename, setPrimaryFilename] = useState<string | null>(null);
+  // Mobile header is `position: fixed` (so it survives pinch-zoom via
+  // `useVisualViewportFollow` below) — that takes it out of the flex
+  // flow, so we measure its height and pad <main> by the same amount
+  // to keep page content from sliding under it on first paint.
+  const mobileHeaderRef = useRef<HTMLElement | null>(null);
+  const [mobileHeaderH, setMobileHeaderH] = useState(0);
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = mobileHeaderRef.current;
+    if (!el) return;
+    // ResizeObserver fires once on observe with the current size, then
+    // again on each layout change (theme tweaks, font swap, etc.). We
+    // round to avoid sub-pixel state churn.
+    const ro = new ResizeObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last) setMobileHeaderH(Math.round(last.contentRect.height));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile]);
+  // Counter pinch-zoom: keep the header visually fixed-size at the top
+  // of the visual viewport even when the user pinches the page.
+  useVisualViewportFollow(mobileHeaderRef, "top", isMobile);
   /** All loaded sources keyed by sourceKey. The primary file uses the
    *  fixed key from `PRIMARY_SOURCE_KEY`; externals use per-pick keys
    *  from `nextExternalSourceKey`. Promoting external pages to first-
@@ -893,8 +917,18 @@ export default function App() {
         </header>
       )}
       {isMobile && (
-        /* Mobile header — two stacked rows, icon-only tool buttons. */
-        <header className="flex flex-col gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        /* Mobile header — two stacked rows, icon-only tool buttons.
+            position: fixed so it sits in front of the scrolling page
+            list and so `useVisualViewportFollow` (above) can apply a
+            visualViewport-driven transform that keeps it at constant
+            visual size during pinch-zoom. <main> below receives a
+            matching `paddingTop` so first-paint content isn't hidden
+            behind the header. */
+        <header
+          ref={mobileHeaderRef}
+          className="fixed inset-x-0 top-0 z-20 flex flex-col gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800"
+          style={{ transformOrigin: "0 0" }}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
@@ -1007,6 +1041,10 @@ export default function App() {
         )}
         <main
           className="flex-1 overflow-auto px-2 py-3 sm:px-6 sm:py-6"
+          // Mobile header is `position: fixed` (out of flow), so push
+          // page content down by its measured height. `mobileHeaderH`
+          // is 0 on desktop, where the header is back in the flex flow.
+          style={isMobile ? { paddingTop: mobileHeaderH + 12 } : undefined}
           onPointerDown={(e) => {
             // Tap on empty `<main>` (no overlay child consumed the
             // event) cancels a pending image placement so the user

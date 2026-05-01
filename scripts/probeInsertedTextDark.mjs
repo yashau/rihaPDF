@@ -34,23 +34,17 @@ await page.addInitScript(() => {
 });
 
 await page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
-await page
-  .locator('input[data-testid="open-pdf-input"]')
-  .setInputFiles(FIXTURE);
+await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(FIXTURE);
 await page.waitForSelector("[data-page-index]", { timeout: 30_000 });
 
 // Wait for the canvas to render.
-await page.waitForFunction(
-  () => !!document.querySelector("[data-page-index] canvas"),
-  null,
-  { timeout: 30_000 },
-);
+await page.waitForFunction(() => !!document.querySelector("[data-page-index] canvas"), null, {
+  timeout: 30_000,
+});
 await page.waitForTimeout(800);
 
 // Confirm dark mode is actually on.
-const isDark = await page.evaluate(() =>
-  document.documentElement.classList.contains("dark"),
-);
+const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
 console.log("dark class present:", isDark);
 
 // Click the "Text" insert tool by aria-label or visible text.

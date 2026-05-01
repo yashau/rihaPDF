@@ -15,10 +15,15 @@ removed from the content stream, not just covered with a whiteout.
 ## What works today
 
 - **Edit any text run.** Click → input opens with a floating toolbar
-  (font, size, B/I/U). Bold and italic overrides survive close/reopen.
-  Source-detected style (Office's `Tr 2` fake-bold included) is the
-  starting point; user toggles are tracked separately so an explicit
-  _un_-bold sticks even if the run was source-bold.
+  (font, size, B/I/U, RTL/LTR direction). Bold and italic overrides
+  survive close/reopen. Source-detected style (Office's `Tr 2`
+  fake-bold included) is the starting point; user toggles are tracked
+  separately so an explicit _un_-bold sticks even if the run was
+  source-bold. The direction button cycles auto → RTL → LTR → auto so
+  the user can override the codepoint-based auto-detection on mixed
+  / all-digit runs that misclassify (e.g. a numeric run inside a
+  Dhivehi paragraph that should stay RTL). Toolbar auto-flips below
+  the editor when sitting above would overlap a neighbouring run.
 - **Move runs by dragging.** Drag any run; on release the saved PDF
   emits a fresh `Tm` placing the same glyphs at the new origin. The
   live preview canvas has the original Tj's stripped during the
@@ -68,6 +73,26 @@ removed from the content stream, not just covered with a whiteout.
   class on `<html>` driven by [src/lib/theme.ts](src/lib/theme.ts), so a
   single class flip wires both Tailwind v4's `dark:` variant and
   HeroUI's `.dark, [data-theme=dark]` rules without conflict.
+- **Mobile / phone layout.** Each page fits the viewport width via a
+  CSS-transform on the inner natural-size container, so a US-Letter
+  page on a 390px-wide phone shrinks to fit instead of horizontally
+  scrolling. Pointer events convert screen-pixel deltas through the
+  fit-to-width scale so drag distances stay visually 1:1. One-finger
+  drags on overlays use `touch-action: pinch-zoom` so two-finger pinch
+  still passes through to the browser's native zoom. Page sidebar
+  collapses behind a hamburger button on small viewports. Header and
+  edit-toolbar are anchored to the visual viewport (not the layout
+  viewport) via [src/lib/useVisualViewport.ts](src/lib/useVisualViewport.ts),
+  so they stay above the soft keyboard and at constant visual size
+  during pinch-zoom across both iOS Safari and Chromium-based mobile
+  browsers.
+- **Phonetic Latin → Thaana keyboard.** Mobile devices rarely have a
+  system Dhivehi keyboard, so the edit input rewrites each Latin
+  keystroke to the corresponding Thaana codepoint using the well-known
+  Mahaa keymap (mihaaru.com / vaguthu.mv). A `DV` / `EN` toggle on the
+  edit toolbar flips between transliterated input (Faruma editing) and
+  raw passthrough (digits, Latin words). Implemented in
+  [src/lib/thaanaKeyboard.ts](src/lib/thaanaKeyboard.ts).
 
 ## Stack
 
@@ -143,6 +168,17 @@ The actual content-stream surgery is a small custom tokenizer / serializer
 in [src/lib/contentStream.ts](src/lib/contentStream.ts) — pdf-lib doesn't
 expose its parser publicly, so we read the raw bytes via
 [src/lib/pageContent.ts](src/lib/pageContent.ts) and rewrite them.
+
+The page renderer is split into per-concern modules under
+[src/components/PdfPage/](src/components/PdfPage/) — `index.tsx` owns
+the page chrome and the run/image gesture wiring; `EditField.tsx` is
+the click-to-edit input; `EditTextToolbar.tsx` is the floating
+formatting toolbar shared between source-run edits and inserted-text
+overlays; `overlays.tsx` is the source-image, inserted-text, and
+inserted-image overlays plus the corner resize handles; `helpers.ts`
+holds the cross-page hit-test, the toolbar smart-flip, and a couple of
+focus-tracking helpers; `types.ts` is the EditValue / ImageMoveValue
+shape that App.tsx persists per slot.
 
 ## Adding a new Dhivehi font
 
@@ -245,6 +281,30 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **PdfPage refactor.** The 2358-line `PdfPage.tsx` got split into
+      six per-concern files under
+      [src/components/PdfPage/](src/components/PdfPage/) — types,
+      helpers, EditTextToolbar, EditField, overlays, and a thinner
+      index that now owns only the page chrome and gesture wiring.
+      Public surface (`PdfPage`, `EditValue`, `ImageMoveValue`) is
+      preserved via folder-index re-exports, so `App.tsx` is unchanged.
+- [x] **Mobile view.** Pages fit-to-width on phones via a CSS-transform
+      on the inner natural-size container, with pointer-event deltas
+      converted through the fit scale so drag distances stay 1:1.
+      Overlays use `touch-action: pinch-zoom` so two-finger pinch zooms
+      the document while one-finger drag still fires `pointermove`. The
+      page sidebar collapses behind a hamburger on small viewports.
+- [x] **Toolbar smart-flip.** The floating formatting toolbar
+      defaults above the editor but flips below when sitting above
+      would overlap a neighbouring run/insertion on the same page.
+- [x] **Explicit RTL/LTR override on the edit toolbar.** A direction
+      button cycles auto → RTL → LTR → auto so the user can pin
+      direction on runs that the codepoint-based auto-detector
+      misclassifies (e.g. all-digit runs inside a Dhivehi paragraph
+      that should stay RTL).
+- [x] **Cloudflare Workers deploy.** `pnpm cf:deploy` ships the built
+      bundle as a Worker via Workers Static Assets with SPA fallback;
+      live at <https://rihapdf.ibrahim-yashau.workers.dev>.
 - [x] **First-class external pages.** "+ From PDF" now goes through the
       same `loadSource` extraction (fonts, glyph maps, images, runs) as
       the primary file. The slot model collapsed `original` + `external`

@@ -9,8 +9,11 @@ import {
   Underline,
   X,
 } from "lucide-react";
+import { useRef } from "react";
+import { createPortal } from "react-dom";
 import { FONTS } from "../../lib/fonts";
 import { useIsMobile } from "../../lib/useMediaQuery";
+import { useVisualViewportFollow } from "../../lib/useVisualViewport";
 
 /** Shared formatting toolbar — font picker, size, B / I / U toggles, X.
  *  Used by both the existing-run EditField and the InsertedTextOverlay
@@ -25,6 +28,8 @@ export function EditTextToolbar({
   italic,
   underline,
   dir,
+  thaanaInput,
+  onThaanaInputChange,
   onChange,
   onCancel,
   onDelete,
@@ -39,6 +44,12 @@ export function EditTextToolbar({
   underline: boolean;
   /** Explicit text direction. `undefined` = auto-detect from text. */
   dir: "rtl" | "ltr" | undefined;
+  /** Mobile-only DV/EN toggle. When `true`, the input transliterates
+   *  Latin keystrokes to Thaana; when `false`, the input takes raw
+   *  Latin / system-keyboard text. The button is only rendered on
+   *  mobile (toolbar reads `useIsMobile()` internally). */
+  thaanaInput?: boolean;
+  onThaanaInputChange?: (next: boolean) => void;
   onChange: (patch: {
     fontFamily?: string;
     fontSize?: number;
@@ -55,23 +66,22 @@ export function EditTextToolbar({
   onDelete?: () => void;
 }) {
   const isMobile = useIsMobile();
-  // Mobile: pin to the bottom of the *dynamic* viewport (`100dvh`)
-  // instead of the layout viewport (`100vh`). On modern mobile
-  // browsers `dvh` shrinks when the soft keyboard opens, so a
-  // dvh-anchored bar rides above the keyboard automatically — no
-  // visualViewport JS bookkeeping required, and no risk of being
-  // hidden behind it. Anchoring with `top: 100dvh` + a translateY of
-  // -100% gives us "bottom of the dynamic viewport" without needing
-  // the toolbar's own height.
-  //
-  // Desktop keeps the absolute / page-coord layout near the editor.
+  // Mobile: pin to the visual-viewport bottom (above the keyboard,
+  // surviving pinch-zoom). `useVisualViewportFollow` writes the
+  // visualViewport-driven transform / origin onto this ref; we just
+  // place the toolbar at `bottom: 0` of the layout viewport and let
+  // the transform translate it up by the keyboard inset and counter-
+  // scale it so it stays at constant visual size when the user
+  // pinch-zooms the page. Desktop keeps the absolute / page-coord
+  // layout near the editor.
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  useVisualViewportFollow(toolbarRef, "bottom", isMobile);
   const baseStyle: React.CSSProperties = isMobile
     ? {
         position: "fixed",
         left: 0,
         right: 0,
-        top: "100dvh",
-        transform: "translateY(-100%)",
+        bottom: 0,
         zIndex: 30,
         display: "flex",
         flexWrap: "wrap",
@@ -94,8 +104,9 @@ export function EditTextToolbar({
         pointerEvents: "auto",
         whiteSpace: "nowrap",
       };
-  return (
+  const node = (
     <div
+      ref={toolbarRef}
       data-edit-toolbar
       // Theme-aware colours: HeroUI's ToggleButton honours the `.dark`
       // class (added by useTheme()) and renders dark fills there. The
@@ -219,6 +230,28 @@ export function EditTextToolbar({
           <ArrowLeftRight size={14} />
         )}
       </Button>
+      {/* Mobile-only DV / EN input-mode toggle. DV = phonetic Latin →
+          Thaana transliteration on every keystroke (so a user with the
+          OS English keyboard can still type Thaana into a Faruma run);
+          EN = raw passthrough for typing Latin or for users with a
+          real Dhivehi system keyboard. Hidden on desktop and when the
+          parent doesn't pass the prop. */}
+      {isMobile && thaanaInput !== undefined && onThaanaInputChange ? (
+        <Button
+          size="sm"
+          variant={thaanaInput ? "primary" : "ghost"}
+          onPress={() => onThaanaInputChange(!thaanaInput)}
+          onMouseDown={(e) => e.preventDefault()}
+          aria-label={
+            thaanaInput
+              ? "Thaana phonetic input (click to type Latin)"
+              : "Latin input (click to type Thaana)"
+          }
+          style={{ minWidth: 44, fontWeight: 600, fontSize: 12 }}
+        >
+          {thaanaInput ? "DV" : "EN"}
+        </Button>
+      ) : null}
       {onDelete ? (
         <Button
           isIconOnly
@@ -243,6 +276,18 @@ export function EditTextToolbar({
       ) : null}
     </div>
   );
+  // Mobile: portal to document.body so `position: fixed` actually
+  // anchors to the visual viewport. Inline rendering puts the toolbar
+  // inside the per-page `transform: scale(...)` wrapper used for fit-
+  // to-width, and per CSS spec a transform creates a containing block
+  // for fixed-position descendants — so `top: 100dvh` lands inside
+  // that scaled box (somewhere mid-page) rather than at the bottom of
+  // the viewport. Desktop keeps inline rendering since it positions
+  // absolutely against the page anyway.
+  if (isMobile && typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 }
 
 /** Wrapper around HeroUI's ToggleButton that suppresses focus-shift on

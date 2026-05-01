@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { TextRun } from "../../lib/pdf";
 import type { EditStyle } from "../../lib/save";
+import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
+import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
 import { chooseToolbarTop, hasStyle, isFocusMovingToToolbar } from "./helpers";
@@ -40,6 +42,10 @@ export function EditField({
   const dy = initial.dy ?? 0;
   const [style, setStyle] = useState<EditStyle>(initial.style ?? {});
   const [width, setWidth] = useState<number>(Math.max(run.bounds.width + 24, 80));
+  // Mobile DV/EN toggle — DV transliterates Latin keystrokes to Thaana,
+  // EN passes through. Default DV since most mobile users hit a Latin
+  // keyboard and are editing a Thaana run; the toolbar exposes the flip.
+  const [thaanaInput, setThaanaInput] = useState(true);
 
   // Default everything to the run's source-detected formatting; the
   // toolbar overrides take precedence when explicitly set.
@@ -60,20 +66,23 @@ export function EditField({
     setWidth(Math.max(run.bounds.width, node.offsetWidth) + 24);
   };
 
+  // Mobile-only Latin → Thaana phonetic transliteration so users without
+  // a Dhivehi system keyboard can type into Faruma-styled fields. On
+  // desktop the user typically has a real Dhivehi keyboard or wants
+  // mixed Latin/Thaana flexibility, so the hook is a no-op there. The
+  // toolbar's DV/EN toggle flips `thaanaInput` for raw-passthrough
+  // typing on mobile (e.g. typing a number or a Latin word).
+  useThaanaTransliteration(inputRef, isMobile && thaanaInput);
+  // Mobile: scroll so the input sits in the centre of the *visible*
+  // viewport (above the keyboard, above the bottom-pinned toolbar).
+  // Re-fires on visualViewport changes so it tracks keyboard show/hide.
+  useCenterInVisibleViewport(inputRef, isMobile);
+
   useEffect(() => {
     if (measureRef.current) measureRef.current.textContent = text || " ";
     inputRef.current?.focus();
     inputRef.current?.select();
     remeasure();
-    if (isMobile) {
-      // The on-screen keyboard occupies the bottom ~40% of the viewport
-      // and the fixed-bottom toolbar adds ~80px more. Without scrolling,
-      // an EditField near the bottom of the page would be hidden.
-      // Centre it in the visible viewport area on open. `auto` skips
-      // the smooth-scroll animation so the user sees the editor
-      // immediately rather than after a 250ms slide.
-      inputRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -112,6 +121,8 @@ export function EditField({
         italic={effectiveItalic}
         underline={!!style.underline}
         dir={style.dir}
+        thaanaInput={thaanaInput}
+        onThaanaInputChange={setThaanaInput}
         onChange={(patch) =>
           setStyle((s) => {
             const next: EditStyle = { ...s };
@@ -141,6 +152,14 @@ export function EditField({
         dir={style.dir ?? "auto"}
         data-run-id={run.id}
         data-editor
+        // On mobile + DV mode, suppress the soft keyboard's autocorrect
+        // / autocapitalise / spellcheck so each keystroke fires a
+        // single-char `insertText` event the transliterator can
+        // intercept. EN mode + desktop keep native defaults.
+        autoComplete={isMobile && thaanaInput ? "off" : undefined}
+        autoCorrect={isMobile && thaanaInput ? "off" : undefined}
+        autoCapitalize={isMobile && thaanaInput ? "none" : undefined}
+        spellCheck={isMobile && thaanaInput ? false : undefined}
         style={{
           position: "absolute",
           left: run.bounds.left - 2 + dx,

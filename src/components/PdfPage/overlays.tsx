@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
+import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
 import { useDragGesture } from "../../lib/useDragGesture";
+import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
+import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
 import { chooseToolbarTop, findPageAtPoint, isFocusMovingToToolbar } from "./helpers";
 import type { ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
@@ -238,6 +241,15 @@ export function InsertedTextOverlay({
   onClose: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const isMobile = useIsMobile();
+  // Mobile-only Latin → Thaana phonetic transliteration. Defaults on
+  // (most users on mobile have a Latin keyboard); the toolbar's DV/EN
+  // toggle flips it for the current edit session.
+  const [thaanaInput, setThaanaInput] = useState(true);
+  useThaanaTransliteration(inputRef, isMobile && isEditing && thaanaInput);
+  // Centre the input in the visible viewport on mobile so the keyboard
+  // doesn't cover it. Fires only while the input is mounted (isEditing).
+  useCenterInVisibleViewport(inputRef, isMobile && isEditing);
   // Style state is in the parent (TextInsertion.style + .fontSize),
   // mirrored here in convenience locals so the render stays readable.
   const style = ins.style ?? {};
@@ -358,6 +370,8 @@ export function InsertedTextOverlay({
           italic={italic}
           underline={underline}
           dir={style.dir}
+          thaanaInput={thaanaInput}
+          onThaanaInputChange={setThaanaInput}
           onChange={(patch) => {
             // Toolbar already reports fontSize in PDF points — store
             // it directly on the insertion, no scale conversion.
@@ -432,6 +446,15 @@ export function InsertedTextOverlay({
             // auto-detection. `dir="auto"` is the browser's own
             // detector — used when the user hasn't picked a side.
             dir={style.dir ?? "auto"}
+            // Mobile + DV mode: suppress the soft keyboard's autocorrect
+            // / autocapitalise / spellcheck so each keystroke fires a
+            // single-char `insertText` event the Thaana transliterator
+            // can intercept. Off otherwise so Latin typing keeps native
+            // affordances.
+            autoComplete={isMobile && thaanaInput ? "off" : undefined}
+            autoCorrect={isMobile && thaanaInput ? "off" : undefined}
+            autoCapitalize={isMobile && thaanaInput ? "none" : undefined}
+            spellCheck={isMobile && thaanaInput ? false : undefined}
             value={ins.text}
             style={{
               width: "100%",

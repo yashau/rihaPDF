@@ -64,21 +64,36 @@ export async function buildPreviewBytes(
       for (const i of run.contentStreamOpIndices) indicesToRemove.add(i);
     }
     // Then pick up any extra shows that visually fall on the same
-    // baseline as one of the targeted runs. See preview-strip-paragraph
-    // tests for why this is needed (pdf.js bucketing splits a logical
-    // paragraph into multiple Tj's that share a y).
-    const allTargetYs = new Set<number>();
+    // baseline AND inside a targeted run's x-extent. Needed for pdf.js
+    // bucketing where a logical paragraph splits into multiple Tj's
+    // sharing a y (see preview-strip-paragraph tests). Bounding to the
+    // run's x-extent keeps unrelated runs on the same baseline (e.g. a
+    // "ޖަލްސާ:" label sitting outside the value run's box) from being
+    // collateral-stripped.
+    type TargetBox = { y: number; xMin: number; xMax: number };
+    const targetBoxes: TargetBox[] = [];
     for (const runId of spec.runIds) {
       const run = rendered.textRuns.find((r) => r.id === runId);
       if (!run) continue;
-      const runPdfY = pageHeight - run.baselineY / scale;
-      allTargetYs.add(Math.round(runPdfY));
+      targetBoxes.push({
+        y: Math.round(pageHeight - run.baselineY / scale),
+        xMin: run.bounds.left / scale,
+        xMax: (run.bounds.left + run.bounds.width) / scale,
+      });
     }
+    // Slack on the x-extent: a few PDF units to forgive boundary
+    // glyphs whose Tj-baseline x sits a hair outside the run's bounding
+    // box (e.g. when the run was built from items with width=0).
+    const xSlackPdf = 4;
     for (const s of shows) {
       if (indicesToRemove.has(s.index)) continue;
       const ey = Math.round(s.textMatrix[5]);
-      if (allTargetYs.has(ey) || allTargetYs.has(ey - 1) || allTargetYs.has(ey + 1)) {
+      const ex = s.textMatrix[4];
+      for (const box of targetBoxes) {
+        if (Math.abs(ey - box.y) > 1) continue;
+        if (ex < box.xMin - xSlackPdf || ex > box.xMax + xSlackPdf) continue;
         indicesToRemove.add(s.index);
+        break;
       }
     }
 

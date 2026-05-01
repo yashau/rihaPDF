@@ -154,11 +154,21 @@ async function runScenario({
     const inp = h.page.locator("input[data-editor]").first();
     await inp.fill(edit);
     await inp.press("Enter");
-    await h.page.waitForTimeout(300);
+    // Wait for the commit to land instead of sleeping a fixed 300ms:
+    // under full-suite concurrent load on the dev server React's commit
+    // can stretch past 300ms and the Save button stays disabled when
+    // the click below fires. Detach + enabled-poll is bounded by the
+    // 20s deadline below.
+    await h.page.locator("input[data-editor]").first().waitFor({ state: "detached" });
   }
 
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
+  // 20s click timeout: Playwright's default 8s isn't enough when the
+  // dev server is saturated by the full-suite concurrent worker load —
+  // the post-edit React commit AND the post-drag preview rebuild
+  // (debounce + pdf-lib + pdf.js round-trip) can both stretch past
+  // that. Auto-retries until the button is visible + enabled.
+  const dlPromise = h.page.waitForEvent("download", { timeout: 20_000 });
+  await h.page.locator("button").filter({ hasText: /^Save/ }).first().click({ timeout: 20_000 });
   const dl = await dlPromise;
   const out = path.join(SCREENSHOTS, `move-edit-${name}.pdf`);
   await dl.saveAs(out);
