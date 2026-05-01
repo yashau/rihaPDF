@@ -1,4 +1,11 @@
-# Dhivehi PDF Editor
+<br />
+<br />
+
+<p align="center">
+  <img src="public/riha-logo.png" alt="rihaPDF" height="120" />
+</p>
+
+# rihaPDF
 
 Browser-based PDF editor focused on Dhivehi / Thaana documents. Click any
 text run on a page, type a replacement, save. The saved PDF contains

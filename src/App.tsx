@@ -46,6 +46,7 @@ export default function App() {
   >(new Map());
   const [pageOps, setPageOps] = useState<PageOp[]>([]);
   const [busy, setBusy] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   /** Per-page replacement canvases produced by the live preview pipeline.
    *  When present, PdfPage paints `previewCanvases.get(pageIndex)`
@@ -488,7 +489,15 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-zinc-100">
       <header className="flex items-center gap-3 px-4 py-3 bg-white border-b">
-        <h1 className="text-lg font-semibold mr-4">Dhivehi PDF Editor</h1>
+        <button
+          type="button"
+          onClick={() => setAboutOpen(true)}
+          className="flex items-center gap-2 mr-4 cursor-pointer rounded hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          aria-label="About rihaPDF"
+        >
+          <img src="/riha-logo.png" alt="" className="h-7 w-auto" />
+          <h1 className="text-lg font-semibold">rihaPDF</h1>
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -632,6 +641,114 @@ export default function App() {
           </div>
         )}
       </main>
+      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+    </div>
+  );
+}
+
+function AboutModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="about-heading"
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-lg w-[92vw] max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center px-6 pt-4 pb-2 border-b">
+          <h2 id="about-heading" className="text-xl font-semibold">
+            rihaPDF
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="ml-auto text-zinc-500 hover:text-zinc-900 cursor-pointer text-2xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 text-sm text-zinc-800">
+          <section className="flex flex-col items-center text-center gap-3">
+            <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
+            <p>
+              Browser-based PDF editor focused on Dhivehi / Thaana documents.
+              Click any text run on a page, type a replacement, save. The saved
+              PDF contains real, selectable, searchable text — original glyphs
+              are surgically removed and replaced with new ones rendered in the
+              correct font. rihaPDF is{" "}
+              <a
+                href="https://github.com/yashau/rihaPDF"
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                open source
+              </a>{" "}
+              and contributions are welcome.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="font-semibold text-zinc-900 mb-1">Features</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+              <li>Edit existing text runs in place</li>
+              <li>Insert new text and images anywhere on a page</li>
+              <li>Move and resize inserted images; move text and image runs</li>
+              <li>Saved PDFs keep real, selectable, searchable text</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="font-semibold text-zinc-900 mb-1">Built with</h3>
+            <ul className="list-disc list-inside space-y-0.5 text-zinc-700">
+              <li>React 19 + TypeScript + Vite</li>
+              <li>Tailwind CSS + HeroUI</li>
+              <li>pdf-lib (write) and pdfjs-dist (render)</li>
+              <li>bidi-js for bidirectional text</li>
+              <li>Runs entirely in the browser — no server, no upload</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="font-semibold text-zinc-900 mb-1">Author</h3>
+            <p className="text-zinc-700">Ibrahim Yashau</p>
+            <ul className="mt-1 space-y-0.5">
+              <li>
+                <a
+                  href="https://yashau.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  yashau.com
+                </a>
+              </li>
+              <li>
+                <a
+                  href="mailto:ibrahim@yashau.com"
+                  className="text-blue-600 hover:underline"
+                >
+                  ibrahim@yashau.com
+                </a>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
