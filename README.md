@@ -12,6 +12,8 @@ text run on a page, type a replacement, save. The saved PDF contains
 **real, selectable, searchable** text — original glyphs are surgically
 removed from the content stream, not just covered with a whiteout.
 
+**Live demo:** <https://rihapdf.yashau.com>
+
 ## What works today
 
 - **Edit any text run.** Click → input opens with a floating toolbar
