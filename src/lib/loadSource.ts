@@ -14,6 +14,8 @@ import { extractPageFontShows, type FontShow } from "./sourceFonts";
 import { extractPageGlyphMaps } from "./glyphMap";
 import { extractPageImages } from "./sourceImages";
 import type { ImageInstance } from "./sourceImages";
+import { extractPageShapes } from "./sourceShapes";
+import type { ShapeInstance } from "./sourceShapes";
 
 export type LoadedSource = {
   /** Stable id used everywhere as the source identity. The primary uses
@@ -30,6 +32,7 @@ export type LoadedSource = {
   glyphsDoc: PDFDocument;
   fontShowsByPage: FontShow[][];
   imagesByPage: ImageInstance[][];
+  shapesByPage: ShapeInstance[][];
   /** Per-page pdfjs render + extracted text runs. */
   pages: RenderedPage[];
 };
@@ -50,11 +53,13 @@ export async function loadSource(
   const forFonts = buf.slice(0);
   const forGlyphMaps = buf.slice(0);
   const forImages = buf.slice(0);
-  const [doc, fontShowsByPage, glyphsDoc, imagesByPage] = await Promise.all([
+  const forShapes = buf.slice(0);
+  const [doc, fontShowsByPage, glyphsDoc, imagesByPage, shapesByPage] = await Promise.all([
     loadPdf(forPdfJs),
     extractPageFontShows(forFonts),
     PDFDocument.load(forGlyphMaps, { ignoreEncryption: true }),
     extractPageImages(forImages),
+    extractPageShapes(forShapes),
   ]);
   const pages: RenderedPage[] = [];
   try {
@@ -68,6 +73,7 @@ export async function loadSource(
           fontShowsByPage[i - 1] ?? [],
           glyphMaps,
           imagesByPage[i - 1] ?? [],
+          shapesByPage[i - 1] ?? [],
         ),
       );
     }
@@ -81,6 +87,7 @@ export async function loadSource(
     glyphsDoc,
     fontShowsByPage,
     imagesByPage,
+    shapesByPage,
     pages,
   };
 }

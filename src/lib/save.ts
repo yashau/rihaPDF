@@ -24,6 +24,7 @@ import {
   PDFDocument,
   PDFFont,
   PDFName,
+  PDFPage,
   PDFRef,
   StandardFonts,
   concatTransformationMatrix,
@@ -155,6 +156,15 @@ export type ImageInsert = {
   format: "png" | "jpeg";
 };
 
+/** Vector-shape removal — strip the shape's q…Q block from the source
+ *  page's content stream so the saved PDF no longer paints it. Only
+ *  delete is supported in v1 (no move / resize). */
+export type ShapeDelete = {
+  sourceKey: string;
+  pageIndex: number;
+  shapeId: string;
+};
+
 const standardFontVariants: Record<
   NonNullable<(typeof FONTS)[number]["standardFont"]>,
   Record<"regular" | "bold" | "italic" | "boldItalic", StandardFonts>
@@ -180,6 +190,49 @@ const standardFontVariants: Record<
 };
 const variantKey = (bold: boolean, italic: boolean) =>
   bold && italic ? "boldItalic" : bold ? "bold" : italic ? "italic" : "regular";
+
+/** Standard italic slant: tan(~12°). Used to synthesize italic for fonts
+ *  that don't ship a real italic variant (every bundled Dhivehi family). */
+const ITALIC_SHEAR = 0.21;
+
+/** True iff `family` resolves to a Standard 14 font that has a real
+ *  italic / oblique variant we picked in `makeFontFactory`. For those,
+ *  italic is rendered by the variant's own glyph shapes — no shear
+ *  needed. For everything else (every bundled Dhivehi TTF) we synthesize
+ *  italic via a Tm-equivalent shear `cm`. */
+function fontHasNativeItalic(family: string): boolean {
+  const def = FONTS.find((f) => f.family === family);
+  return !!def?.standardFont;
+}
+
+/** Wrap a `drawText` call with a shear-about-baseline `cm` when we need
+ *  to synthesize italic. The matrix `[1 0 s 1 -s·y 0]` is shear-about-y
+ *  — verticals tilt right while the baseline x at y stays fixed, so the
+ *  glyphs slant forward without drifting horizontally off the run's
+ *  origin. */
+function drawTextWithStyle(
+  page: PDFPage,
+  text: string,
+  opts: { x: number; y: number; size: number; font: PDFFont; family: string; italic: boolean },
+): void {
+  const synth = opts.italic && !fontHasNativeItalic(opts.family);
+  if (synth) {
+    page.pushOperators(
+      pushGraphicsState(),
+      concatTransformationMatrix(1, 0, ITALIC_SHEAR, 1, -ITALIC_SHEAR * opts.y, 0),
+    );
+  }
+  page.drawText(text, {
+    x: opts.x,
+    y: opts.y,
+    size: opts.size,
+    font: opts.font,
+    color: rgb(0, 0, 0),
+  });
+  if (synth) {
+    page.pushOperators(popGraphicsState());
+  }
+}
 
 /** Cached per-(family, bold, italic) embedded font factory bound to a
  *  single PDFDocument — fonts can't be shared across docs because each
@@ -319,10 +372,12 @@ export async function applyEditsAndSave(
   imageMoves: ImageMove[] = [],
   textInserts: TextInsert[] = [],
   imageInserts: ImageInsert[] = [],
+  shapeDeletes: ShapeDelete[] = [],
 ): Promise<Uint8Array> {
   // Bucket ops by source so each source's doc gets surgery in one pass.
   const editsBySource = new Map<string, Edit[]>();
   const movesBySource = new Map<string, ImageMove[]>();
+  const shapeDeletesBySource = new Map<string, ShapeDelete[]>();
   const sourcesNeedingLoad = new Set<string>();
   // Sources referenced by any slot need to be loaded so copyPages can
   // pull from them. Edits / moves / inserts can target a source even
@@ -347,6 +402,11 @@ export async function applyEditsAndSave(
   }
   for (const t of textInserts) sourcesNeedingLoad.add(t.sourceKey);
   for (const i of imageInserts) sourcesNeedingLoad.add(i.sourceKey);
+  for (const d of shapeDeletes) {
+    sourcesNeedingLoad.add(d.sourceKey);
+    if (!shapeDeletesBySource.has(d.sourceKey)) shapeDeletesBySource.set(d.sourceKey, []);
+    shapeDeletesBySource.get(d.sourceKey)!.push(d);
+  }
 
   // Load each source's doc once. We re-load from bytes (rather than
   // reusing any cached PDFDocument) so the save pipeline can't leave
@@ -375,11 +435,15 @@ export async function applyEditsAndSave(
   for (const [sourceKey, ctx] of ctxBySource) {
     const sourceEdits = editsBySource.get(sourceKey) ?? [];
     const sourceMoves = movesBySource.get(sourceKey) ?? [];
-    if (sourceEdits.length === 0 && sourceMoves.length === 0) continue;
+    const sourceShapeDeletes = shapeDeletesBySource.get(sourceKey) ?? [];
+    if (sourceEdits.length === 0 && sourceMoves.length === 0 && sourceShapeDeletes.length === 0) {
+      continue;
+    }
     await applyStreamSurgeryForSource(
       ctx,
       sourceEdits,
       sourceMoves,
+      sourceShapeDeletes,
       sameSourceDraws,
       crossSourceDraws,
       sameSourceImageDraws,
@@ -464,12 +528,13 @@ export async function applyEditsAndSave(
       ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const widthPt = pdfFont.widthOfTextAtSize(ins.text, fontSizePt);
     const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
-    page.drawText(ins.text, {
+    drawTextWithStyle(page, ins.text, {
       x: baseX,
       y: ins.pdfY,
       size: fontSizePt,
       font: pdfFont,
-      color: rgb(0, 0, 0),
+      family,
+      italic,
     });
     if (ins.style?.underline) {
       const underlineY = ins.pdfY - Math.max(1, fontSizePt * 0.08);
@@ -549,6 +614,7 @@ async function applyStreamSurgeryForSource(
   ctx: LoadedSourceContext,
   sourceEdits: Edit[],
   sourceMoves: ImageMove[],
+  sourceShapeDeletes: ShapeDelete[],
   sameSourceDraws: SameSourceDrawPlan[],
   crossSourceDraws: CrossSourceDrawPlan[],
   sameSourceImageDraws: SameSourceImageDrawPlan[],
@@ -565,7 +631,16 @@ async function applyStreamSurgeryForSource(
     if (!movesByPage.has(m.pageIndex)) movesByPage.set(m.pageIndex, []);
     movesByPage.get(m.pageIndex)!.push(m);
   }
-  const pagesToRewrite = new Set<number>([...editsByPage.keys(), ...movesByPage.keys()]);
+  const shapeDeletesByPage = new Map<number, ShapeDelete[]>();
+  for (const d of sourceShapeDeletes) {
+    if (!shapeDeletesByPage.has(d.pageIndex)) shapeDeletesByPage.set(d.pageIndex, []);
+    shapeDeletesByPage.get(d.pageIndex)!.push(d);
+  }
+  const pagesToRewrite = new Set<number>([
+    ...editsByPage.keys(),
+    ...movesByPage.keys(),
+    ...shapeDeletesByPage.keys(),
+  ]);
 
   const docPages = doc.getPages();
 
@@ -776,6 +851,18 @@ async function applyStreamSurgeryForSource(
       insertAfterQ.set(img.qOpIndex, [sx, 0, 0, sy, ex, ey]);
     }
 
+    // Vector-shape deletes — strip each shape's q…Q range. The detector
+    // already validated the block is pure vector (no nested text /
+    // image), so removing it can't take down unrelated content.
+    const pageShapeDeletes = shapeDeletesByPage.get(pageIndex) ?? [];
+    for (const del of pageShapeDeletes) {
+      const shape = rendered.shapes.find((s) => s.id === del.shapeId);
+      if (!shape) continue;
+      for (let k = shape.qOpIndex; k <= shape.QOpIndex; k++) {
+        indicesToRemove.add(k);
+      }
+    }
+
     const newOps: typeof ops = [];
     for (let i = 0; i < ops.length; i++) {
       if (indicesToRemove.has(i)) continue;
@@ -853,12 +940,13 @@ async function emitTextDraw(
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
   const drawY = baselineYPdf;
 
-  targetPage.drawText(edit.newText, {
+  drawTextWithStyle(targetPage, edit.newText, {
     x: baseX,
     y: drawY,
     size: fontSizePt,
     font: pdfFont,
-    color: rgb(0, 0, 0),
+    family,
+    italic,
   });
 
   if (style.underline) {

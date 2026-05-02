@@ -99,6 +99,9 @@ export type RenderedPage = {
   textRuns: TextRun[];
   /** Image / Form XObject placements on this page. Drag-movable. */
   images: import("./sourceImages").ImageInstance[];
+  /** Vector-shape (line / rect / path) blocks on this page. Selectable
+   *  + deletable; not movable in v1. */
+  shapes: import("./sourceShapes").ShapeInstance[];
 };
 
 export async function renderPage(
@@ -116,6 +119,8 @@ export async function renderPage(
   /** Image / Form XObject placements pre-extracted by `extractPageImages`.
    *  Indexed per page in source order; we don't recompute them here. */
   images: import("./sourceImages").ImageInstance[] = [],
+  /** Vector-shape blocks pre-extracted by `extractPageShapes`. */
+  shapes: import("./sourceShapes").ShapeInstance[] = [],
 ): Promise<RenderedPage> {
   const viewport = page.getViewport({ scale });
   // Render the bitmap at scale × devicePixelRatio so retina mobile (DPR
@@ -193,6 +198,7 @@ export async function renderPage(
     textItems: items,
     textRuns: buildTextRuns(items, page.pageNumber, _fontShows, scale, viewport.height),
     images,
+    shapes,
   };
 }
 

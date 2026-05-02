@@ -41,6 +41,10 @@ export const FIXTURE = {
    *  1, and a green image on page 2 so save/reload through copyPages
    *  out of an external source can be verified end-to-end. */
   externalSource: path.join(FIXTURES, "external-source.pdf"),
+  /** Single-page synthetic PDF with two known vector shapes: a
+   *  horizontal rule near y=600pt and a filled rectangle at y=300pt.
+   *  Used by the shape-delete test. */
+  withShapes: path.join(FIXTURES, "with-shapes.pdf"),
 };
 
 export const APP_URL = "http://localhost:5173/";
@@ -50,6 +54,11 @@ export type Harness = {
   browser: Browser;
   context: BrowserContext;
   page: Page;
+  /** Rolling buffer of `[pageerror]` and `console.{error,warn}` lines
+   *  captured from the page since `setupBrowser`. `loadFixture`
+   *  appends recent entries to its timeout error so flake postmortems
+   *  surface app-side errors that would otherwise be invisible. */
+  pageLog: string[];
 };
 
 export async function setupBrowser(opts?: {
@@ -67,7 +76,25 @@ export async function setupBrowser(opts?: {
   });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
-  page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+  const pageLog: string[] = [];
+  // Cap the buffer so a chatty test doesn't balloon memory across the
+  // suite. The most useful entries for flake postmortems are the LAST
+  // few before the timeout, so drop from the front.
+  const PAGE_LOG_CAP = 200;
+  const push = (line: string) => {
+    pageLog.push(`${new Date().toISOString().slice(11, 23)} ${line}`);
+    if (pageLog.length > PAGE_LOG_CAP) pageLog.shift();
+  };
+  page.on("pageerror", (e) => {
+    const line = `[pageerror] ${e.message}`;
+    push(line);
+    console.log(line);
+  });
+  page.on("console", (msg) => {
+    const t = msg.type();
+    if (t !== "error" && t !== "warning") return;
+    push(`[console.${t}] ${msg.text()}`);
+  });
   try {
     await page.goto(APP_URL, { waitUntil: "networkidle" });
   } catch (err) {
@@ -77,7 +104,7 @@ export async function setupBrowser(opts?: {
       { cause: err },
     );
   }
-  return { browser, context, page };
+  return { browser, context, page, pageLog };
 }
 
 export async function tearDown(h: Harness): Promise<void> {
@@ -96,13 +123,27 @@ export async function tearDown(h: Harness): Promise<void> {
  *  appears to stabilise at a lower number first. Prevents the
  *  "stable at 1 page while page 2 was still rendering" flake. */
 export async function loadFixture(
-  page: Page,
+  pageOrHarness: Page | Harness,
   fixturePath: string,
   options: { expectedPages?: number } = {},
 ): Promise<void> {
+  // Backwards compat: callers can pass either the raw Page (older
+  // tests) or the Harness (so timeout messages can include the
+  // pageerror / console buffer).
+  const page: Page =
+    "page" in pageOrHarness && "browser" in pageOrHarness ? pageOrHarness.page : pageOrHarness;
+  const pageLog: string[] | null =
+    "page" in pageOrHarness && "browser" in pageOrHarness ? pageOrHarness.pageLog : null;
   const { expectedPages } = options;
   await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(fixturePath);
-  await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
+  try {
+    await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
+  } catch (err) {
+    throw new Error(
+      `loadFixture(${fixturePath}): no [data-page-index] appeared after 25s.${formatPageLog(pageLog)}`,
+      { cause: err },
+    );
+  }
   // Poll the page count: it should grow as renderPage finishes for
   // each page, then plateau. Treat 1.5s of unchanged count as "done"
   // — but never declare done while count < expectedPages.
@@ -142,7 +183,7 @@ export async function loadFixture(
   }
   if (expectedPages != null && lastCount < expectedPages) {
     throw new Error(
-      `loadFixture(${fixturePath}): expected ≥${expectedPages} pages, got ${lastCount} after 25s`,
+      `loadFixture(${fixturePath}): expected ≥${expectedPages} pages, got ${lastCount} after 25s.${formatPageLog(pageLog)}`,
     );
   }
   // One more beat for the in-flight font / glyph-map work that runs
@@ -153,6 +194,16 @@ export async function loadFixture(
 /** Click the named toolbar button by its visible label. */
 export async function clickToolbarButton(page: Page, label: RegExp): Promise<void> {
   await page.locator("button").filter({ hasText: label }).click();
+}
+
+/** Format the captured pageerror / console buffer for inclusion in a
+ *  timeout error. Returns "" when the buffer is null (caller passed
+ *  a raw `Page` instead of a `Harness`) or empty. */
+function formatPageLog(pageLog: string[] | null): string {
+  if (!pageLog || pageLog.length === 0) return "";
+  // Tail the buffer — earlier entries are usually setup noise.
+  const tail = pageLog.slice(-20);
+  return `\n  --- recent page log (${pageLog.length} total, last ${tail.length}) ---\n  ${tail.join("\n  ")}`;
 }
 
 /** Dynamically import a Vite-served module from inside `page.evaluate`,

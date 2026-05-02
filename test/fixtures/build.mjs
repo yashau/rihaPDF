@@ -6,6 +6,9 @@
 //       positions, plus a tiny piece of text. Used by the image-move
 //       and preview-strip tests so we don't depend on any real-world
 //       PDF for the imageful test path.
+//   - test/fixtures/with-shapes.pdf
+//       A 595×842 page with a known horizontal rule, a filled
+//       rectangle, and a label. Used by the shape-delete test.
 //
 // We DO NOT regenerate test/fixtures/maldivian.pdf — that's the
 // canonical Dhivehi government doc the Thaana-recovery and edit/move
@@ -139,4 +142,41 @@ console.log("wrote", out, fs.statSync(out).size, "bytes");
   const outExt = path.join(__dirname, "external-source.pdf");
   fs.writeFileSync(outExt, await docExt.save());
   console.log("wrote", outExt, fs.statSync(outExt).size, "bytes");
+}
+
+// Vector-shape fixture for the shape-delete test. Two distinct shapes
+// — a horizontal rule (line) at a known y, and a filled rectangle at
+// another known y — let the test target one of them by hit-position
+// while leaving the other in place to assert the delete is scoped.
+{
+  const docS = await PDFDocument.create();
+  const helvS = await docS.embedFont(StandardFonts.Helvetica);
+  const ps = docS.addPage([595, 842]);
+  ps.drawText("SHAPES_FIXTURE", {
+    x: 50,
+    y: 800,
+    size: 14,
+    font: helvS,
+    color: rgb(0, 0, 0),
+  });
+  // Horizontal rule.
+  ps.drawLine({
+    start: { x: 100, y: 600 },
+    end: { x: 400, y: 600 },
+    thickness: 2,
+    color: rgb(0, 0, 0),
+  });
+  // Filled rectangle (different shape so the test can target one
+  // without touching the other).
+  ps.drawRectangle({
+    x: 100,
+    y: 300,
+    width: 200,
+    height: 80,
+    color: rgb(0.2, 0.6, 0.2),
+  });
+
+  const outS = path.join(__dirname, "with-shapes.pdf");
+  fs.writeFileSync(outS, await docS.save());
+  console.log("wrote", outS, fs.statSync(outS).size, "bytes");
 }

@@ -7,6 +7,7 @@ import {
   type Edit,
   type ImageInsert,
   type ImageMove,
+  type ShapeDelete,
   type TextInsert,
 } from "./lib/save";
 import { buildPreviewBytes, renderPagePreviewCanvas, type PageStripSpec } from "./lib/preview";
@@ -106,8 +107,12 @@ export default function App() {
   const [selection, setSelection] = useState<
     | { kind: "image"; slotId: string; imageId: string }
     | { kind: "insertedImage"; slotId: string; id: string }
+    | { kind: "shape"; slotId: string; shapeId: string }
     | null
   >(null);
+  /** Map<slotId, Set<shapeId>> — vector shapes flagged for deletion.
+   *  Shapes are delete-only in v1 (no move / resize) so a Set is enough. */
+  const [shapeDeletes, setShapeDeletes] = useState<Map<string, Set<string>>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -137,6 +142,7 @@ export default function App() {
       );
       setEdits(new Map());
       setImageMoves(new Map());
+      setShapeDeletes(new Map());
       setPreviewCanvases(new Map());
       setInsertedTexts(new Map());
       setInsertedImages(new Map());
@@ -181,6 +187,9 @@ export default function App() {
   const onSelectInsertedImage = useCallback((slotId: string, id: string) => {
     setSelection({ kind: "insertedImage", slotId, id });
   }, []);
+  const onSelectShape = useCallback((slotId: string, shapeId: string) => {
+    setSelection({ kind: "shape", slotId, shapeId });
+  }, []);
 
   const onDeleteSelection = useCallback(() => {
     setSelection((current) => {
@@ -199,6 +208,14 @@ export default function App() {
           const next = new Map(prev);
           const arr = (next.get(current.slotId) ?? []).filter((m) => m.id !== current.id);
           next.set(current.slotId, arr);
+          return next;
+        });
+      } else if (current.kind === "shape") {
+        setShapeDeletes((prev) => {
+          const next = new Map(prev);
+          const set = new Set(next.get(current.slotId) ?? []);
+          set.add(current.shapeId);
+          next.set(current.slotId, set);
           return next;
         });
       }
@@ -271,12 +288,17 @@ export default function App() {
     type SourceBuckets = {
       runIdsByPage: Map<number, Set<string>>;
       imageIdsByPage: Map<number, Set<string>>;
+      shapeIdsByPage: Map<number, Set<string>>;
     };
     const bySource = new Map<string, SourceBuckets>();
     const get = (sourceKey: string): SourceBuckets => {
       let b = bySource.get(sourceKey);
       if (!b) {
-        b = { runIdsByPage: new Map(), imageIdsByPage: new Map() };
+        b = {
+          runIdsByPage: new Map(),
+          imageIdsByPage: new Map(),
+          shapeIdsByPage: new Map(),
+        };
         bySource.set(sourceKey, b);
       }
       return b;
@@ -292,6 +314,12 @@ export default function App() {
       const set = b.imageIdsByPage.get(pageIndex) ?? new Set<string>();
       set.add(imageId);
       b.imageIdsByPage.set(pageIndex, set);
+    };
+    const addShape = (sourceKey: string, pageIndex: number, shapeId: string) => {
+      const b = get(sourceKey);
+      const set = b.shapeIdsByPage.get(pageIndex) ?? new Set<string>();
+      set.add(shapeId);
+      b.shapeIdsByPage.set(pageIndex, set);
     };
     const sourceTupleFor = (slotId: string): [string, number] | null => {
       const slot = slotById.get(slotId);
@@ -323,16 +351,26 @@ export default function App() {
       if (!t) continue;
       addRun(t[0], t[1], runId);
     }
+    for (const [slotId, shapes] of shapeDeletes) {
+      const t = sourceTupleFor(slotId);
+      if (!t) continue;
+      for (const shapeId of shapes) addShape(t[0], t[1], shapeId);
+    }
 
     const tasks: Array<{ sourceKey: string; specs: PageStripSpec[] }> = [];
     for (const [sourceKey, b] of bySource) {
-      const affected = new Set<number>([...b.runIdsByPage.keys(), ...b.imageIdsByPage.keys()]);
+      const affected = new Set<number>([
+        ...b.runIdsByPage.keys(),
+        ...b.imageIdsByPage.keys(),
+        ...b.shapeIdsByPage.keys(),
+      ]);
       const specs: PageStripSpec[] = [];
       for (const pageIndex of affected) {
         const runIds = b.runIdsByPage.get(pageIndex) ?? new Set<string>();
         const imageIds = b.imageIdsByPage.get(pageIndex) ?? new Set<string>();
-        if (runIds.size === 0 && imageIds.size === 0) continue;
-        specs.push({ pageIndex, runIds, imageIds });
+        const shapeIds = b.shapeIdsByPage.get(pageIndex) ?? new Set<string>();
+        if (runIds.size === 0 && imageIds.size === 0 && shapeIds.size === 0) continue;
+        specs.push({ pageIndex, runIds, imageIds, shapeIds });
       }
       if (specs.length > 0) tasks.push({ sourceKey, specs });
     }
@@ -375,7 +413,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [sources, slotById, edits, imageMoves, editingByPage, isMobile]);
+  }, [sources, slotById, edits, imageMoves, shapeDeletes, editingByPage, isMobile]);
 
   const onEditingChange = useCallback((slotId: string, runId: string | null) => {
     setEditingByPage((prev) => {
@@ -722,6 +760,18 @@ export default function App() {
           });
         }
       }
+      const flatShapeDeletes: ShapeDelete[] = [];
+      for (const [slotId, set] of shapeDeletes) {
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
+        for (const shapeId of set) {
+          flatShapeDeletes.push({
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
+            shapeId,
+          });
+        }
+      }
       const out = await applyEditsAndSave(
         sources,
         slots,
@@ -729,13 +779,23 @@ export default function App() {
         flatImageMoves,
         flatTextInserts,
         flatImageInserts,
+        flatShapeDeletes,
       );
       const baseName = primaryFilename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
     } finally {
       setBusy(false);
     }
-  }, [sources, primaryFilename, slots, edits, imageMoves, insertedTexts, insertedImages]);
+  }, [
+    sources,
+    primaryFilename,
+    slots,
+    edits,
+    imageMoves,
+    shapeDeletes,
+    insertedTexts,
+    insertedImages,
+  ]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
   const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
@@ -745,6 +805,10 @@ export default function App() {
   );
   const totalInsertedImages = Array.from(insertedImages.values()).reduce(
     (sum, arr) => sum + arr.length,
+    0,
+  );
+  const totalShapeDeletes = Array.from(shapeDeletes.values()).reduce(
+    (sum, set) => sum + set.size,
     0,
   );
   // Count structural changes vs the initial slots-from-primary state:
@@ -780,7 +844,12 @@ export default function App() {
   // of truth (`structuralOpCount + …`). The boolean below drives the
   // disabled state in both layouts.
   const totalChangeCount =
-    totalEdits + totalImageMoves + structuralOpCount + totalInsertedTexts + totalInsertedImages;
+    totalEdits +
+    totalImageMoves +
+    structuralOpCount +
+    totalInsertedTexts +
+    totalInsertedImages +
+    totalShapeDeletes;
   const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
   const toolTip =
     tool === "addText"
@@ -1155,6 +1224,11 @@ export default function App() {
                   selection?.kind === "insertedImage" && selection.slotId === slot.id
                     ? selection.id
                     : null;
+                const selectedShapeId =
+                  selection?.kind === "shape" && selection.slotId === slot.id
+                    ? selection.shapeId
+                    : null;
+                const deletedShapeIds = shapeDeletes.get(slot.id) ?? new Set<string>();
                 return (
                   <PageWithToolbar
                     key={slot.id}
@@ -1173,6 +1247,8 @@ export default function App() {
                     editingId={editingByPage.get(slot.id) ?? null}
                     selectedImageId={selectedImageId}
                     selectedInsertedImageId={selectedInsertedImageId}
+                    selectedShapeId={selectedShapeId}
+                    deletedShapeIds={deletedShapeIds}
                     onEdit={(runId, value) => onEdit(slot.id, runId, value)}
                     onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
                     onEditingChange={(runId) => onEditingChange(slot.id, runId)}
@@ -1183,6 +1259,7 @@ export default function App() {
                     onImageInsertDelete={(id) => onImageInsertDelete(slot.id, id)}
                     onSelectImage={(imageId) => onSelectImage(slot.id, imageId)}
                     onSelectInsertedImage={(id) => onSelectInsertedImage(slot.id, id)}
+                    onSelectShape={(shapeId) => onSelectShape(slot.id, shapeId)}
                   />
                 );
               })}
@@ -1297,6 +1374,8 @@ function PageWithToolbar({
   editingId,
   selectedImageId,
   selectedInsertedImageId,
+  selectedShapeId,
+  deletedShapeIds,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -1307,6 +1386,7 @@ function PageWithToolbar({
   onImageInsertDelete,
   onSelectImage,
   onSelectInsertedImage,
+  onSelectShape,
 }: {
   slotId: string;
   page: RenderedPage;
@@ -1321,6 +1401,8 @@ function PageWithToolbar({
   editingId: string | null;
   selectedImageId: string | null;
   selectedInsertedImageId: string | null;
+  selectedShapeId: string | null;
+  deletedShapeIds: Set<string>;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
   onEditingChange: (runId: string | null) => void;
@@ -1331,6 +1413,7 @@ function PageWithToolbar({
   onImageInsertDelete: (id: string) => void;
   onSelectImage: (imageId: string) => void;
   onSelectInsertedImage: (id: string) => void;
+  onSelectShape: (shapeId: string) => void;
 }) {
   return (
     <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
@@ -1350,6 +1433,8 @@ function PageWithToolbar({
         editingId={editingId}
         selectedImageId={selectedImageId}
         selectedInsertedImageId={selectedInsertedImageId}
+        selectedShapeId={selectedShapeId}
+        deletedShapeIds={deletedShapeIds}
         onEdit={onEdit}
         onImageMove={onImageMove}
         onEditingChange={onEditingChange}
@@ -1360,6 +1445,7 @@ function PageWithToolbar({
         onImageInsertDelete={onImageInsertDelete}
         onSelectImage={onSelectImage}
         onSelectInsertedImage={onSelectInsertedImage}
+        onSelectShape={onSelectShape}
       />
     </div>
   );

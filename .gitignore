@@ -30,6 +30,7 @@ dist-ssr
 !test/fixtures/*.pdf
 scripts/screenshots/
 test/e2e/screenshots/
+test-logs/
 
 # Stash dir from font import — slugified copies live in public/fonts/dhivehi/
 Proper_Thaana_Fonts/

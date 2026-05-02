@@ -4,7 +4,7 @@ import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import type { ToolMode } from "../../App";
 import { clickSuppressMs, useDragGesture } from "../../lib/useDragGesture";
 import { EditField } from "./EditField";
-import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay } from "./overlays";
+import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
 import { findPageAtPoint } from "./helpers";
 import type { EditValue, ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
 
@@ -48,10 +48,16 @@ type Props = {
   selectedImageId: string | null;
   /** ID of the inserted image currently selected on this page. */
   selectedInsertedImageId: string | null;
+  /** ID of the source vector shape currently selected on this page. */
+  selectedShapeId: string | null;
+  /** Set of shape ids on this page already flagged for delete — their
+   *  overlays are hidden so the user can't re-grab them. */
+  deletedShapeIds: Set<string>;
   /** Single-click on an image overlay → app marks it selected so
    *  Delete/Backspace targets it. */
   onSelectImage: (imageId: string) => void;
   onSelectInsertedImage: (id: string) => void;
+  onSelectShape: (shapeId: string) => void;
 };
 
 export function PdfPage({
@@ -67,6 +73,8 @@ export function PdfPage({
   editingId,
   selectedImageId,
   selectedInsertedImageId,
+  selectedShapeId,
+  deletedShapeIds,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -77,6 +85,7 @@ export function PdfPage({
   onImageInsertDelete,
   onSelectImage,
   onSelectInsertedImage,
+  onSelectShape,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
    *  (= natural × displayScale) so the document scroll container can
@@ -627,6 +636,22 @@ export function PdfPage({
           />
         ) : null}
         <div className="absolute inset-0">
+          {/* Source vector-shape overlays render BEFORE runs / images
+            so runs and images intercept clicks first when they overlap
+            — text under a decorative background still gets edited
+            normally. Already-deleted shapes don't render. */}
+          {page.shapes.map((shape) => {
+            if (deletedShapeIds.has(shape.id)) return null;
+            return (
+              <ShapeOverlay
+                key={shape.id}
+                shape={shape}
+                page={page}
+                isSelected={selectedShapeId === shape.id}
+                onSelect={() => onSelectShape(shape.id)}
+              />
+            );
+          })}
           {/* Per-run + per-image overlays handle their own pointer-events.
             We don't switch the parent off while editing — the EditField's
             onBlur commits the current edit when the user clicks another

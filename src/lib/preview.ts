@@ -29,6 +29,10 @@ export type PageStripSpec = {
   /** Image IDs whose Do op should be removed (the HTML overlay paints
    *  the image at its new position via the sprite cache). */
   imageIds: Set<string>;
+  /** Shape IDs whose entire q…Q block should be removed. Vector shapes
+   *  carry no overlay-rendered replacement, so the live preview shows
+   *  the page minus the shape — the user sees the deletion immediately. */
+  shapeIds: Set<string>;
 };
 
 /** Build a lightweight preview PDF where the specified runs/images are
@@ -45,7 +49,7 @@ export async function buildPreviewBytes(
     const page = docPages[spec.pageIndex];
     const rendered = pages[spec.pageIndex];
     if (!page || !rendered) continue;
-    if (spec.runIds.size === 0 && spec.imageIds.size === 0) continue;
+    if (spec.runIds.size === 0 && spec.imageIds.size === 0 && spec.shapeIds.size === 0) continue;
 
     const content = getPageContentBytes(doc.context, page.node);
     const ops = parseContentStream(content);
@@ -101,6 +105,17 @@ export async function buildPreviewBytes(
       const img = rendered.images.find((i) => i.id === imageId);
       if (!img) continue;
       indicesToRemove.add(img.doOpIndex);
+    }
+
+    // Vector-shape deletes strip the entire q…Q block. The detector
+    // guarantees the block is pure-vector (no nested text or image)
+    // so removing it can't take down unrelated content.
+    for (const shapeId of spec.shapeIds) {
+      const shape = rendered.shapes.find((s) => s.id === shapeId);
+      if (!shape) continue;
+      for (let i = shape.qOpIndex; i <= shape.QOpIndex; i++) {
+        indicesToRemove.add(i);
+      }
     }
 
     if (indicesToRemove.size === 0) continue;
