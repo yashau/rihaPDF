@@ -61,11 +61,19 @@ export async function buildPreviewBytes(
 
     // Each TextRun carries the content-stream Tj/TJ op indices its
     // glyphs come from (propagated from FontShow → TextItem →
-    // TextRun in pdf.ts). Start there.
+    // TextRun in pdf.ts). Start there. Source-detected underline /
+    // strikethrough q…Q blocks ride alongside on `decorationOpRanges`
+    // so the preview also sheds them — otherwise the old line stays
+    // visible while the HTML overlay redraws the text on top of it.
     for (const runId of spec.runIds) {
       const run = rendered.textRuns.find((r) => r.id === runId);
       if (!run) continue;
       for (const i of run.contentStreamOpIndices) indicesToRemove.add(i);
+      for (const range of run.decorationOpRanges ?? []) {
+        for (let i = range.qOpIndex; i <= range.QOpIndex; i++) {
+          indicesToRemove.add(i);
+        }
+      }
     }
     // Then pick up any extra shows that visually fall on the same
     // baseline AND inside a targeted run's x-extent. Needed for pdf.js

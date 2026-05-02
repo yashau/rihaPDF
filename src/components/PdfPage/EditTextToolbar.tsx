@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bold,
   Italic,
+  Strikethrough,
   Trash2,
   Underline,
   X,
@@ -27,6 +28,7 @@ export function EditTextToolbar({
   bold,
   italic,
   underline,
+  strikethrough,
   dir,
   thaanaInput,
   onThaanaInputChange,
@@ -42,6 +44,7 @@ export function EditTextToolbar({
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  strikethrough: boolean;
   /** Explicit text direction. `undefined` = auto-detect from text. */
   dir: "rtl" | "ltr" | undefined;
   /** Mobile-only DV/EN toggle. When `true`, the input transliterates
@@ -56,6 +59,7 @@ export function EditTextToolbar({
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    strikethrough?: boolean;
     /** `null` clears an explicit direction back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
   }) => void;
@@ -192,6 +196,12 @@ export function EditTextToolbar({
         isSelected={underline}
         onChange={(v) => onChange({ underline: v })}
         icon={<Underline size={14} />}
+      />
+      <StyleToggle
+        label="Strikethrough"
+        isSelected={strikethrough}
+        onChange={(v) => onChange({ strikethrough: v })}
+        icon={<Strikethrough size={14} />}
       />
       {/* Direction button — cycles auto → rtl → ltr → auto. Lets the
           user override the codepoint-based auto-detection used by the

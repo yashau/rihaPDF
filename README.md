@@ -17,8 +17,11 @@ removed from the content stream, not just covered with a whiteout.
 ## What works today
 
 - **Edit any text run.** Click → input opens with a floating toolbar
-  (font, size, B/I/U, RTL/LTR direction). Bold and italic overrides
-  survive close/reopen. Source-detected style (Office's `Tr 2`
+  (font, size, B/I/U/S, RTL/LTR direction). Bold, italic, underline,
+  and strikethrough overrides survive close/reopen — and underline /
+  strikethrough are tied to the run on re-edit, so toggling them off
+  strips the saved-PDF rule alongside the text rather than orphaning
+  it. Source-detected style (Office's `Tr 2`
   fake-bold included) is the starting point; user toggles are tracked
   separately so an explicit _un_-bold sticks even if the run was
   source-bold. The direction button cycles auto → RTL → LTR → auto so
@@ -172,11 +175,16 @@ save
       4. embed the chosen font (subset:false)
       5. append a fresh content stream drawing the replacement via
          pdf-lib drawText (real text, encoded by pdf-lib)
-  → Underline = a separate drawLine; bold = double-pass with x-offset for
-    fonts without a bold variant; italic = shear-about-baseline `cm`
-    matrix `[1 0 0.21 1 -0.21·y 0]` wrapping the drawText call for
-    bundled Dhivehi TTFs (which ship no italic variant); Standard 14
-    fonts use their real oblique variant instead.
+  → Underline / strikethrough = thin horizontal `drawLine`s under or
+    through the run, but tied to the run on re-edit: load-time pairing
+    (`runDecorations.ts`) matches each thin q…Q vector block against
+    the run it visually decorates, so toggling the decoration off on a
+    re-edit strips the original line alongside the run's Tj's. Bold =
+    double-pass with x-offset for fonts without a bold variant; italic
+    = shear-about-baseline `cm` matrix `[1 0 0.21 1 -0.21·y 0]`
+    wrapping the drawText call for bundled Dhivehi TTFs (which ship no
+    italic variant); Standard 14 fonts use their real oblique variant
+    instead.
 
 The actual content-stream surgery is a small custom tokenizer / serializer
 in [src/lib/contentStream.ts](src/lib/contentStream.ts) — pdf-lib doesn't
@@ -268,22 +276,23 @@ pnpm dev          # in one terminal
 pnpm test         # in another — runs every spec
 ```
 
-| File                               | What it covers                                                              |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `move-edit.test.ts`                | move-only / edit-only / move+edit on the Maldivian PDF                      |
-| `image-move.test.ts`               | drag image → cm rewrite, neighbours untouched                               |
-| `image-resize.test.ts`             | corner-drag resize anchors the opposite corner across save+reload           |
-| `preview-strip.test.ts`            | original glyphs removed from canvas during edits (no whiteout cover)        |
-| `preview-strip-paragraph.test.ts`  | every line under agenda item 6 strips cleanly when dragged                  |
-| `edit-text-includes-punct.test.ts` | parens / slash / digits land in the edit box for the 14/2019 line           |
-| `edit-format.test.ts`              | bold OFF override persists across editor close/reopen (existing + inserted) |
-| `insert.test.ts`                   | drop text + image → both persist after save                                 |
-| `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                |
-| `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages  |
-| `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable    |
-| `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip   |
-| `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload      |
-| `undo.test.ts`                     | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch |
+| File                               | What it covers                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `move-edit.test.ts`                | move-only / edit-only / move+edit on the Maldivian PDF                       |
+| `image-move.test.ts`               | drag image → cm rewrite, neighbours untouched                                |
+| `image-resize.test.ts`             | corner-drag resize anchors the opposite corner across save+reload            |
+| `preview-strip.test.ts`            | original glyphs removed from canvas during edits (no whiteout cover)         |
+| `preview-strip-paragraph.test.ts`  | every line under agenda item 6 strips cleanly when dragged                   |
+| `edit-text-includes-punct.test.ts` | parens / slash / digits land in the edit box for the 14/2019 line            |
+| `edit-format.test.ts`              | bold OFF override persists across editor close/reopen (existing + inserted)  |
+| `decoration-roundtrip.test.ts`     | underline + strikethrough save → reopen → toggle off → save → no orphan line |
+| `insert.test.ts`                   | drop text + image → both persist after save                                  |
+| `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                 |
+| `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages   |
+| `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable     |
+| `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip    |
+| `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload       |
+| `undo.test.ts`                     | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch  |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -293,6 +302,20 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Underline / strikethrough as re-editable run properties.**
+      Adds a Strikethrough toggle to the formatting toolbar (next to
+      B/I/U) and ties both decorations to the run on save. Load-time
+      pairing in [runDecorations.ts](src/lib/runDecorations.ts) walks
+      every thin horizontal q…Q vector block on a page and pairs it
+      with the run it visually decorates (containment + offset from
+      baseline), stamping `underline` / `strikethrough` flags + the
+      block's op-index range onto `TextRun`. Edit-time strip in
+      [save.ts](src/lib/save.ts) drops that range alongside the run's
+      Tj/TJ ops; the redraw resolves `style.underline ?? run.underline`
+      (and same for strikethrough) so a re-edit that toggles the
+      decoration off cleanly removes the original line instead of
+      leaving an orphan rule. Same strip runs through the live
+      preview canvas so the user sees the line vanish during the edit.
 - [x] **Italic in saved PDFs.** Bundled Dhivehi TTFs ship no italic
       variant, so italic is synthesized at save time via a
       shear-about-baseline `cm` matrix `[1 0 0.21 1 -0.21·y 0]` wrapping
@@ -414,9 +437,6 @@ dev-server-on-localhost:5173 assumption.
       Thaana path with a custom Type 0 / Identity-H emitter that takes
       pre-shaped glyph IDs from harfbuzzjs and writes raw Tj
       operators. Unblocks correct GPOS mark positioning.
-- [ ] **Underline / strikethrough as a re-editable property** carried
-      on the run rather than a separate `drawLine` (today's path
-      works but breaks if the run gets re-edited and the line stays).
 
 ### Overlay / interaction
 

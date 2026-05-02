@@ -16,6 +16,7 @@ import { extractPageImages } from "./sourceImages";
 import type { ImageInstance } from "./sourceImages";
 import { extractPageShapes } from "./sourceShapes";
 import type { ShapeInstance } from "./sourceShapes";
+import { pairDecorationsWithRuns } from "./runDecorations";
 
 export type LoadedSource = {
   /** Stable id used everywhere as the source identity. The primary uses
@@ -66,16 +67,21 @@ export async function loadSource(
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const glyphMaps = extractPageGlyphMaps(glyphsDoc, i - 1);
-      pages.push(
-        await renderPage(
-          page,
-          scale,
-          fontShowsByPage[i - 1] ?? [],
-          glyphMaps,
-          imagesByPage[i - 1] ?? [],
-          shapesByPage[i - 1] ?? [],
-        ),
+      const rendered = await renderPage(
+        page,
+        scale,
+        fontShowsByPage[i - 1] ?? [],
+        glyphMaps,
+        imagesByPage[i - 1] ?? [],
+        shapesByPage[i - 1] ?? [],
       );
+      // Pair thin horizontal q…Q blocks with the runs they decorate
+      // (underline / strikethrough). Mutates `rendered.shapes` and the
+      // matched runs' `underline` / `strikethrough` / `decorationOpRanges`
+      // in place so the editor's toolbar starts in the right state and
+      // save can strip the decoration alongside the run on re-edit.
+      pairDecorationsWithRuns(rendered);
+      pages.push(rendered);
     }
   } finally {
     void doc.destroy();

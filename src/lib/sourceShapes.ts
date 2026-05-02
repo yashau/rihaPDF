@@ -216,21 +216,57 @@ function findShapesInOps(ops: ContentOp[], pageNumber: number): ShapeInstance[] 
               pdfHeight: h,
             });
           } else if (Number.isFinite(w) && Number.isFinite(h)) {
-            // Zero-extent paths (e.g. a stroke that's a single point)
-            // — give them a small hit zone so the user can still click
-            // to delete. We pad symmetrically around the centroid.
-            const cx = (child.minX + child.maxX) / 2;
-            const cy = (child.minY + child.maxY) / 2;
-            const pad = 1;
-            out.push({
-              id: `p${pageNumber}-s${counter++}`,
-              qOpIndex: child.qIdx,
-              QOpIndex: i,
-              pdfX: cx - pad,
-              pdfY: cy - pad,
-              pdfWidth: pad * 2,
-              pdfHeight: pad * 2,
-            });
+            // Path geometry has zero extent in at least one axis. Two
+            // sub-cases that look the same in the bbox but should not
+            // collapse to the same shape:
+            //   - true horizontal / vertical line (one axis > 0)
+            //     → keep the long axis, pad the short axis by ~1pt so
+            //       it has a real visual extent the run-decoration
+            //       pairer (`runDecorations.ts`) can see and downstream
+            //       hit-test math can grab. Without this, an underline
+            //       drawn as `m / l / S` collapses to a 2×2 dot at the
+            //       segment centroid and the pairer finds nothing.
+            //   - true point path (both axes ≤ 0.01) → pad to a small
+            //     square around the centroid so the user can still
+            //     click to delete.
+            const isHorizontal = w > 0.01 && h <= 0.01;
+            const isVertical = h > 0.01 && w <= 0.01;
+            if (isHorizontal) {
+              const pad = 0.5;
+              out.push({
+                id: `p${pageNumber}-s${counter++}`,
+                qOpIndex: child.qIdx,
+                QOpIndex: i,
+                pdfX: child.minX,
+                pdfY: child.minY - pad,
+                pdfWidth: w,
+                pdfHeight: pad * 2,
+              });
+            } else if (isVertical) {
+              const pad = 0.5;
+              out.push({
+                id: `p${pageNumber}-s${counter++}`,
+                qOpIndex: child.qIdx,
+                QOpIndex: i,
+                pdfX: child.minX - pad,
+                pdfY: child.minY,
+                pdfWidth: pad * 2,
+                pdfHeight: h,
+              });
+            } else {
+              const cx = (child.minX + child.maxX) / 2;
+              const cy = (child.minY + child.maxY) / 2;
+              const pad = 1;
+              out.push({
+                id: `p${pageNumber}-s${counter++}`,
+                qOpIndex: child.qIdx,
+                QOpIndex: i,
+                pdfX: cx - pad,
+                pdfY: cy - pad,
+                pdfWidth: pad * 2,
+                pdfHeight: pad * 2,
+              });
+            }
           }
         }
         break;

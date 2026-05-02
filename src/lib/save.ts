@@ -55,6 +55,8 @@ export type EditStyle = {
   italic?: boolean;
   /** Underline drawn as a thin horizontal line under the text. */
   underline?: boolean;
+  /** Strikethrough drawn as a thin horizontal line through the text. */
+  strikethrough?: boolean;
   /** Explicit text direction. When `undefined` (the default), the
    *  draw / overlay paths auto-detect from the codepoints — Thaana
    *  / Hebrew / Arabic → "rtl", Latin → "ltr". Set explicitly when
@@ -203,6 +205,46 @@ const ITALIC_SHEAR = 0.21;
 function fontHasNativeItalic(family: string): boolean {
   const def = FONTS.find((f) => f.family === family);
   return !!def?.standardFont;
+}
+
+/** Emit underline / strikethrough rules under a freshly-drawn text run.
+ *  Both decorations are simple thin horizontal lines:
+ *    underline    : ~0.08 × size below the baseline
+ *    strikethrough: ~0.30 × size above the baseline (mid-x-height)
+ *  Pulled into a single helper so the run-edit and text-insert paths
+ *  share one place to keep the geometry in sync. The pairing logic in
+ *  `runDecorations.ts` uses matching offsets so a re-loaded saved PDF
+ *  re-detects these as the run's decoration. */
+function drawDecorations(
+  page: PDFPage,
+  opts: {
+    x: number;
+    y: number;
+    width: number;
+    size: number;
+    underline: boolean;
+    strikethrough: boolean;
+  },
+): void {
+  const thickness = Math.max(0.5, opts.size * 0.05);
+  if (opts.underline) {
+    const underlineY = opts.y - Math.max(1, opts.size * 0.08);
+    page.drawLine({
+      start: { x: opts.x, y: underlineY },
+      end: { x: opts.x + opts.width, y: underlineY },
+      thickness,
+      color: rgb(0, 0, 0),
+    });
+  }
+  if (opts.strikethrough) {
+    const strikeY = opts.y + opts.size * 0.3;
+    page.drawLine({
+      start: { x: opts.x, y: strikeY },
+      end: { x: opts.x + opts.width, y: strikeY },
+      thickness,
+      color: rgb(0, 0, 0),
+    });
+  }
 }
 
 /** Wrap a `drawText` call with a shear-about-baseline `cm` when we need
@@ -536,15 +578,14 @@ export async function applyEditsAndSave(
       family,
       italic,
     });
-    if (ins.style?.underline) {
-      const underlineY = ins.pdfY - Math.max(1, fontSizePt * 0.08);
-      page.drawLine({
-        start: { x: baseX, y: underlineY },
-        end: { x: baseX + widthPt, y: underlineY },
-        thickness: Math.max(0.5, fontSizePt * 0.05),
-        color: rgb(0, 0, 0),
-      });
-    }
+    drawDecorations(page, {
+      x: baseX,
+      y: ins.pdfY,
+      width: widthPt,
+      size: fontSizePt,
+      underline: !!ins.style?.underline,
+      strikethrough: !!ins.style?.strikethrough,
+    });
   }
 
   // Embed each unique image once per (doc, byte-buffer) pair so a
@@ -708,14 +749,29 @@ async function applyStreamSurgeryForSource(
         });
       }
 
+      // Whatever the path, if the run carries source-detected
+      // decoration ops (underline / strikethrough q…Q blocks paired
+      // with this run at load time), strip those alongside the Tj's so
+      // the line never desyncs from the text. The redraw paths re-emit
+      // a fresh decoration that tracks the new geometry.
+      const stripDecoration = () => {
+        for (const range of run.decorationOpRanges ?? []) {
+          for (let k = range.qOpIndex; k <= range.QOpIndex; k++) {
+            indicesToRemove.add(k);
+          }
+        }
+      };
+
       if (edit.deleted) {
         for (const s of matched) indicesToRemove.add(s.index);
+        stripDecoration();
         continue;
       }
 
       const isCross = isCrossPageEdit(edit, source.sourceKey, pageIndex);
       if (isCross) {
         for (const s of matched) indicesToRemove.add(s.index);
+        stripDecoration();
         const targetSourceKey = edit.targetSourceKey ?? source.sourceKey;
         if (targetSourceKey === source.sourceKey) {
           sameSourceDraws.push({
@@ -743,8 +799,18 @@ async function applyStreamSurgeryForSource(
         continue;
       }
 
+      // A pure-translation move can normally keep the original Tj's in
+      // place and emit a single Tm to relocate them — cheaper, exact.
+      // But that path leaves any source-detected decoration q…Q at the
+      // OLD position, so once a run has decoration we fall through to
+      // the full strip-and-redraw path which will re-emit a fresh line
+      // at the new position.
+      const hasDecoration = (run.decorationOpRanges?.length ?? 0) > 0;
       const isMoveOnly =
-        edit.newText === run.text && !edit.style && ((edit.dx ?? 0) !== 0 || (edit.dy ?? 0) !== 0);
+        edit.newText === run.text &&
+        !edit.style &&
+        !hasDecoration &&
+        ((edit.dx ?? 0) !== 0 || (edit.dy ?? 0) !== 0);
       if (isMoveOnly && matched.length > 0) {
         const moveX = (edit.dx ?? 0) / scale;
         const moveY = -(edit.dy ?? 0) / scale;
@@ -759,6 +825,7 @@ async function applyStreamSurgeryForSource(
       }
 
       for (const s of matched) indicesToRemove.add(s.index);
+      stripDecoration();
 
       const moveX = (edit.dx ?? 0) / scale;
       const moveY = -(edit.dy ?? 0) / scale;
@@ -949,15 +1016,21 @@ async function emitTextDraw(
     italic,
   });
 
-  if (style.underline) {
-    const underlineY = drawY - Math.max(1, fontSizePt * 0.08);
-    targetPage.drawLine({
-      start: { x: baseX, y: underlineY },
-      end: { x: baseX + widthPt, y: underlineY },
-      thickness: Math.max(0.5, fontSizePt * 0.05),
-      color: rgb(0, 0, 0),
-    });
-  }
+  // Effective decoration: the user's toolbar override wins; otherwise
+  // inherit the source-detected run decoration so a fresh save of an
+  // already-decorated run keeps its line. The strip phase removed the
+  // run's `decorationOpRanges` already, so we re-emit a fresh line that
+  // tracks the new geometry (text moved, font changed, etc.).
+  const underline = style.underline ?? run.underline ?? false;
+  const strikethrough = style.strikethrough ?? run.strikethrough ?? false;
+  drawDecorations(targetPage, {
+    x: baseX,
+    y: drawY,
+    width: widthPt,
+    size: fontSizePt,
+    underline,
+    strikethrough,
+  });
 }
 
 /** Pull raw image-XObject bytes (and format hint) out of a page's

@@ -6,7 +6,12 @@ import { useDragGesture } from "../../lib/useDragGesture";
 import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
-import { chooseToolbarTop, findPageAtPoint, isFocusMovingToToolbar } from "./helpers";
+import {
+  chooseToolbarTop,
+  cssTextDecoration,
+  findPageAtPoint,
+  isFocusMovingToToolbar,
+} from "./helpers";
 import type { ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
 
 /** Drag-movable image overlay. Two visual layers when moved:
@@ -260,6 +265,7 @@ export function InsertedTextOverlay({
   const bold = !!style.bold;
   const italic = !!style.italic;
   const underline = !!style.underline;
+  const strikethrough = !!style.strikethrough;
   const fontSizePt = ins.fontSize;
   const fontSizePx = fontSizePt * page.scale;
   // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
@@ -284,6 +290,7 @@ export function InsertedTextOverlay({
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    strikethrough?: boolean;
     /** `null` clears an explicit dir back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
   }) => {
@@ -295,6 +302,7 @@ export function InsertedTextOverlay({
     if (patch.bold !== undefined) nextStyle.bold = patch.bold;
     if (patch.italic !== undefined) nextStyle.italic = patch.italic;
     if (patch.underline !== undefined) nextStyle.underline = patch.underline;
+    if (patch.strikethrough !== undefined) nextStyle.strikethrough = patch.strikethrough;
     if (patch.dir !== undefined) {
       // null = clear back to auto; "rtl"/"ltr" = explicit override.
       if (patch.dir === null) delete nextStyle.dir;
@@ -369,6 +377,7 @@ export function InsertedTextOverlay({
           bold={bold}
           italic={italic}
           underline={underline}
+          strikethrough={strikethrough}
           dir={style.dir}
           thaanaInput={thaanaInput}
           onThaanaInputChange={setThaanaInput}
@@ -466,7 +475,7 @@ export function InsertedTextOverlay({
               lineHeight: `${height}px`,
               fontWeight: bold ? 700 : 400,
               fontStyle: italic ? "italic" : "normal",
-              textDecoration: underline ? "underline" : "none",
+              textDecoration: cssTextDecoration(underline, strikethrough),
               background: "transparent",
               // Wrapper paints rgba(255,255,255,0.9) — without explicit
               // color, dark mode lets text inherit the page's near-white
@@ -505,7 +514,7 @@ export function InsertedTextOverlay({
               lineHeight: `${height}px`,
               fontWeight: bold ? 700 : 400,
               fontStyle: italic ? "italic" : "normal",
-              textDecoration: underline ? "underline" : "none",
+              textDecoration: cssTextDecoration(underline, strikethrough),
               paddingLeft: 4,
               paddingRight: 4,
               color: "black",

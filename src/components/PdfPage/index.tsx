@@ -5,7 +5,7 @@ import type { ToolMode } from "../../App";
 import { clickSuppressMs, useDragGesture } from "../../lib/useDragGesture";
 import { EditField } from "./EditField";
 import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
-import { findPageAtPoint } from "./helpers";
+import { cssTextDecoration, findPageAtPoint } from "./helpers";
 import type { EditValue, ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
 
 export type { EditValue, ImageMoveValue, ToolbarBlocker } from "./types";
@@ -787,7 +787,10 @@ export function PdfPage({
                       lineHeight: `${run.bounds.height}px`,
                       fontWeight: (style.bold ?? run.bold) ? 700 : 400,
                       fontStyle: (style.italic ?? run.italic) ? "italic" : "normal",
-                      textDecoration: style.underline ? "underline" : "none",
+                      textDecoration: cssTextDecoration(
+                        style.underline ?? run.underline ?? false,
+                        style.strikethrough ?? run.strikethrough ?? false,
+                      ),
                       color: "black",
                       width: "100%",
                       whiteSpace: "pre",

@@ -5,7 +5,7 @@ import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
 import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
-import { chooseToolbarTop, hasStyle, isFocusMovingToToolbar } from "./helpers";
+import { chooseToolbarTop, cssTextDecoration, hasStyle, isFocusMovingToToolbar } from "./helpers";
 import type { EditValue, ToolbarBlocker } from "./types";
 
 export function EditField({
@@ -53,6 +53,8 @@ export function EditField({
   const fontFamilyCss = `"${effectiveFamily}"`;
   const effectiveBold = style.bold ?? run.bold;
   const effectiveItalic = style.italic ?? run.italic;
+  const effectiveUnderline = style.underline ?? run.underline ?? false;
+  const effectiveStrikethrough = style.strikethrough ?? run.strikethrough ?? false;
   // style.fontSize is stored in PDF points (the same unit as the saved
   // PDF). Default to the run's measured height, which buildTextRuns
   // returns in viewport pixels — divide by scale to convert.
@@ -119,7 +121,8 @@ export function EditField({
         fontSize={fontSizePt}
         bold={effectiveBold}
         italic={effectiveItalic}
-        underline={!!style.underline}
+        underline={effectiveUnderline}
+        strikethrough={effectiveStrikethrough}
         dir={style.dir}
         thaanaInput={thaanaInput}
         onThaanaInputChange={setThaanaInput}
@@ -132,6 +135,7 @@ export function EditField({
             if (patch.bold !== undefined) next.bold = patch.bold;
             if (patch.italic !== undefined) next.italic = patch.italic;
             if (patch.underline !== undefined) next.underline = patch.underline;
+            if (patch.strikethrough !== undefined) next.strikethrough = patch.strikethrough;
             if (patch.dir !== undefined) {
               // null = clear back to auto-detect; "rtl"/"ltr" = override.
               if (patch.dir === null) delete next.dir;
@@ -171,7 +175,7 @@ export function EditField({
           lineHeight: `${run.bounds.height}px`,
           fontWeight: effectiveBold ? 700 : 400,
           fontStyle: effectiveItalic ? "italic" : "normal",
-          textDecoration: style.underline ? "underline" : "none",
+          textDecoration: cssTextDecoration(effectiveUnderline, effectiveStrikethrough),
           padding: "0 4px",
           border: "none",
           outline: "2px solid rgb(59, 130, 246)",

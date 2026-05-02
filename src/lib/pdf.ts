@@ -82,6 +82,17 @@ export type TextRun = {
   /** Detected from the original font's flags / name suffix. */
   bold: boolean;
   italic: boolean;
+  /** Source-detected horizontal-line decorations under / through the
+   *  run's glyphs. Set by `pairDecorationsWithRuns` during load when a
+   *  thin vector q…Q block is geometrically associated with this run.
+   *  The matching content-stream op range lives in `decorationOpRanges`
+   *  so save can strip it on re-edit. */
+  underline?: boolean;
+  strikethrough?: boolean;
+  /** Op-index ranges of vector q…Q blocks paired with this run as
+   *  underline / strikethrough decoration. Stripped together with the
+   *  run's Tj/TJ ops on edit so the line never desyncs from the text. */
+  decorationOpRanges?: Array<{ qOpIndex: number; QOpIndex: number }>;
 };
 
 export type RenderedPage = {

@@ -82,10 +82,10 @@ export function findPageAtPoint(
 
 /** True when the user has explicitly set ANY of the toolbar's style
  *  fields. We deliberately use `!== undefined` rather than truthiness
- *  so that `bold: false` / `italic: false` / `underline: false`
- *  count as a change — that's the toggle-off-an-already-bold-run
- *  case where the override would otherwise get stripped on commit
- *  and the original run.bold would silently come back. */
+ *  so that `bold: false` / `italic: false` / `underline: false` /
+ *  `strikethrough: false` count as a change — that's the toggle-off-an-
+ *  already-bold-run case where the override would otherwise get stripped
+ *  on commit and the original run.bold would silently come back. */
 export function hasStyle(s: EditStyle): boolean {
   return (
     s.fontFamily !== undefined ||
@@ -93,8 +93,19 @@ export function hasStyle(s: EditStyle): boolean {
     s.bold !== undefined ||
     s.italic !== undefined ||
     s.underline !== undefined ||
+    s.strikethrough !== undefined ||
     s.dir !== undefined
   );
+}
+
+/** Compose a CSS `text-decoration-line` value from the underline /
+ *  strikethrough booleans. Returns `"none"` when neither is set so
+ *  the property explicitly clears any inherited decoration. */
+export function cssTextDecoration(underline: boolean, strikethrough: boolean): string {
+  const parts: string[] = [];
+  if (underline) parts.push("underline");
+  if (strikethrough) parts.push("line-through");
+  return parts.length > 0 ? parts.join(" ") : "none";
 }
 
 /** True when a `blur` event is moving focus into the formatting
