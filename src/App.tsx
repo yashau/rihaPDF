@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Image as ImageIcon,
   MousePointer2,
+  PanelLeft,
   Redo2,
   Save,
   Type,
@@ -31,6 +32,7 @@ import type { RenderedPage } from "./lib/pdf";
 import { useTheme } from "./lib/theme";
 import { useIsMobile } from "./lib/useMediaQuery";
 import { useVisualViewportFollow } from "./lib/useVisualViewport";
+import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "./lib/polyfills";
 
 export type ToolMode = "select" | "addText" | "addImage";
 
@@ -1655,11 +1657,118 @@ function AboutModal({
                   </li>
                 </ul>
               </section>
+
+              <BrowserSupportSection />
             </Modal.Body>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
     </Modal>
+  );
+}
+
+type BrowserId = "ios-safari" | "safari" | "firefox" | "chromium";
+
+function detectBrowser(ua: string): BrowserId {
+  // iOS forces every browser onto WebKit, so iPhone/iPad UAs are
+  // grouped as ios-safari regardless of brand.
+  if (/iPhone|iPad|iPod/.test(ua)) return "ios-safari";
+  if (/Firefox\//.test(ua)) return "firefox";
+  // Desktop Safari has "Safari/" but not "Chrome/" or "Chromium/".
+  if (/Safari\//.test(ua) && !/Chrom(e|ium)\//.test(ua)) return "safari";
+  return "chromium";
+}
+
+const BROWSER_LABEL: Record<BrowserId, string> = {
+  "ios-safari": "iOS Safari",
+  safari: "Safari",
+  firefox: "Firefox",
+  chromium: "Chrome",
+};
+
+function BrowserSupportSection() {
+  const [shown, setShown] = useState(false);
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const browser = detectBrowser(ua);
+  const label = BROWSER_LABEL[browser];
+  // Min version per check for the detected browser. Sources: MDN compat
+  // tables. Each tuple is [iosSafari, safari, firefox, chromium].
+  const minVersion = (per: Record<BrowserId, string>) => `${label} ${per[browser]}+`;
+
+  const checks: { label: string; status: "ok" | "missing" | "polyfilled" }[] = [
+    {
+      label: `ReadableStream async iterator (${minVersion({ "ios-safari": "—", safari: "—", firefox: "131", chromium: "124" })})`,
+      status: READABLE_STREAM_ASYNC_ITER_POLYFILLED ? "polyfilled" : "ok",
+    },
+    {
+      label: `Promise.withResolvers (${minVersion({ "ios-safari": "17.4", safari: "17.4", firefox: "121", chromium: "119" })})`,
+      status:
+        typeof (Promise as { withResolvers?: unknown }).withResolvers === "function"
+          ? "ok"
+          : "missing",
+    },
+    {
+      label: `Set.prototype.intersection (${minVersion({ "ios-safari": "17", safari: "17", firefox: "127", chromium: "122" })})`,
+      status:
+        typeof (Set.prototype as { intersection?: unknown }).intersection === "function"
+          ? "ok"
+          : "missing",
+    },
+    {
+      label: `Iterator.prototype.toArray (${minVersion({ "ios-safari": "18.4", safari: "18.4", firefox: "131", chromium: "122" })})`,
+      status:
+        typeof (globalThis as { Iterator?: { prototype?: { toArray?: unknown } } }).Iterator
+          ?.prototype?.toArray === "function"
+          ? "ok"
+          : "missing",
+    },
+    {
+      label: `Array.prototype.findLast (${minVersion({ "ios-safari": "15.4", safari: "15.4", firefox: "104", chromium: "97" })})`,
+      status: typeof Array.prototype.findLast === "function" ? "ok" : "missing",
+    },
+    {
+      label: `Object.groupBy (${minVersion({ "ios-safari": "17.4", safari: "17.4", firefox: "119", chromium: "117" })})`,
+      status: typeof (Object as { groupBy?: unknown }).groupBy === "function" ? "ok" : "missing",
+    },
+    {
+      label: `OffscreenCanvas (${minVersion({ "ios-safari": "16.4", safari: "16.4", firefox: "105", chromium: "69" })})`,
+      status: typeof globalThis.OffscreenCanvas === "function" ? "ok" : "missing",
+    },
+    {
+      label: `structuredClone (${minVersion({ "ios-safari": "15.4", safari: "15.4", firefox: "94", chromium: "98" })})`,
+      status: typeof globalThis.structuredClone === "function" ? "ok" : "missing",
+    },
+  ];
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 underline underline-offset-2"
+      >
+        {shown ? "Hide browser diagnostics" : "Show browser diagnostics"}
+      </button>
+      {shown && (
+        <div className="mt-2">
+          <ul className="space-y-0.5 text-zinc-700 dark:text-zinc-300 font-mono text-xs">
+            {checks.map((c) => {
+              const color =
+                c.status === "ok"
+                  ? "text-green-600 dark:text-green-400"
+                  : c.status === "polyfilled"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-red-600 dark:text-red-400";
+              return (
+                <li key={c.label}>
+                  <span className={color}>[{c.status}]</span> {c.label}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400 break-all">UA: {ua}</p>
+        </div>
+      )}
+    </section>
   );
 }
 

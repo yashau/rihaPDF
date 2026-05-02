@@ -265,6 +265,23 @@ pnpm exec wrangler login   # first time only
 pnpm cf:deploy             # pnpm build && wrangler deploy
 ```
 
+## Debugging on devices without devtools
+
+Append `?debug=1` to any URL (dev or prod) to install an on-page error
+overlay that surfaces uncaught errors, unhandled promise rejections,
+worker errors / `messageerror`s, and any `console.error` output as a
+fixed-position red panel at the bottom of the viewport. Implemented in
+[src/lib/errorOverlay.ts](src/lib/errorOverlay.ts) and wired in
+[src/main.tsx](src/main.tsx); zero overhead when the flag is absent.
+
+The About modal (`?` in the header) also exposes a **Show browser
+diagnostics** toggle that lists feature-detection results for the JS
+features rihaPDF relies on (per detected browser, with the minimum
+version each feature shipped in), plus whether
+`ReadableStream`'s async-iterator was natively present or polyfilled by
+[src/lib/polyfills.ts](src/lib/polyfills.ts) — useful for triaging "it
+works on my laptop, not on my iPhone" reports.
+
 ## Tests
 
 End-to-end vitest suite under [test/e2e/](test/e2e/) drives the running
