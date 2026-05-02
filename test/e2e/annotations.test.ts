@@ -234,4 +234,67 @@ describe("annotation round-trip", () => {
     ).toBeGreaterThanOrEqual(4);
     expect(ink.borderWidth, "/BS /W is the stroke thickness").toBeGreaterThan(0);
   }, 60_000);
+
+  test("drag a comment → saved /Rect reflects the new position", async () => {
+    await loadFixture(h, FIXTURE.withImages);
+    const SENTINEL = "ANNOT_MOVE_PROBE_99";
+
+    // Drop a comment at a known origin, type the sentinel, blur to
+    // commit out of edit mode (drag only fires when not editing).
+    await h.page.locator('[data-testid="tool-comment"]').click();
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    const originX = pageBox!.x + pageBox!.width * 0.3;
+    const originY = pageBox!.y + pageBox!.height * 0.3;
+    await h.page.mouse.click(originX, originY);
+    await h.page.waitForTimeout(200);
+    await h.page.keyboard.type(SENTINEL);
+    await h.page.waitForTimeout(150);
+    // Click outside to blur; then click the box once to be safely out
+    // of the textarea (clicking outside an empty box deletes it, but
+    // since we typed the sentinel it persists).
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
+    await h.page.waitForTimeout(200);
+
+    // Save once at origin so we can assert the saved /Rect changes
+    // after the drag.
+    const beforeSaved = await saveAndDownload("annotation-move-before.pdf");
+    const beforeAnnots = (await readAnnotations(beforeSaved)).filter(
+      (a) => a.subtype === "FreeText",
+    );
+    expect(beforeAnnots).toHaveLength(1);
+    const beforeRect = beforeAnnots[0].rect!;
+
+    // Drag the comment box ~120px right and ~80px down. The drag must
+    // start ON the comment overlay, so re-find it via [data-annotation-id].
+    const commentBox = h.page.locator("[data-annotation-id]").first();
+    const commentBB = await commentBox.boundingBox();
+    expect(commentBB).not.toBeNull();
+    const dragStartX = commentBB!.x + commentBB!.width / 2;
+    const dragStartY = commentBB!.y + commentBB!.height / 2;
+    await h.page.mouse.move(dragStartX, dragStartY);
+    await h.page.mouse.down();
+    // Multi-step move past the drag threshold (3px for mouse).
+    await h.page.mouse.move(dragStartX + 60, dragStartY + 40, { steps: 4 });
+    await h.page.mouse.move(dragStartX + 120, dragStartY + 80, { steps: 4 });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(200);
+
+    const afterSaved = await saveAndDownload("annotation-move-after.pdf");
+    const afterAnnots = (await readAnnotations(afterSaved)).filter((a) => a.subtype === "FreeText");
+    expect(afterAnnots).toHaveLength(1);
+    const afterRect = afterAnnots[0].rect!;
+
+    // /Rect = [llx, lly, urx, ury]. Dragging right increases llx; dragging
+    // down in viewport space decreases lly (PDF y-up, viewport y-down).
+    expect(afterRect[0], "/Rect llx should move right after dragging right").toBeGreaterThan(
+      beforeRect[0] + 50,
+    );
+    expect(afterRect[1], "/Rect lly should decrease after dragging down").toBeLessThan(
+      beforeRect[1] - 30,
+    );
+    // The text content must survive the drag — we're moving the
+    // annotation, not recreating it.
+    expect(afterAnnots[0].contents).toBe(SENTINEL);
+  }, 60_000);
 });

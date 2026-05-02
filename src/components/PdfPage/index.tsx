@@ -994,6 +994,7 @@ export function PdfPage({
             annotations={annotations}
             pageScale={page.scale}
             viewHeight={page.viewHeight}
+            displayScale={displayScale}
             pageIndex={pageIndex}
             sourceKey={sourceKey}
             tool={tool}

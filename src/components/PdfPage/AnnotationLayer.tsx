@@ -2,13 +2,13 @@
 //
 // Renders three things visually:
 //   - highlight rects (translucent fill, one rect per quad)
-//   - sticky-note markers (small square icon + click-to-edit popup)
+//   - comment boxes (FreeText with inline textarea editor + drag-to-move)
 //   - ink polylines (SVG, one path per stroke)
 //
 // Plus, when the active tool is "ink", captures pointer events to
 // build a new InkAnnotation: pointerdown starts a stroke, pointermove
 // extends it, pointerup commits via onAnnotationAdd. Highlight and
-// note tools route through PdfPage's existing run-click and
+// comment tools route through PdfPage's existing run-click and
 // onCanvasClick paths respectively, so this layer only has to render
 // for those two.
 //
@@ -16,7 +16,9 @@
 // (y-up). We convert to NATURAL viewport pixels (y-down) for layout,
 // matching the rest of PdfPage's overlays. The outer container is
 // already CSS-transformed by displayScale; we don't need to deal with
-// fit-to-width in this file.
+// fit-to-width in this file except when interpreting raw screen-pixel
+// pointer deltas during a drag — those divide by `effectivePdfScale`
+// (= page.scale × displayScale) to land in PDF user space.
 
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -26,12 +28,17 @@ import {
   DEFAULT_INK_COLOR,
   newAnnotationId,
 } from "../../lib/annotations";
+import { useDragGesture } from "../../lib/useDragGesture";
 import type { ToolMode } from "../../App";
 
 type Props = {
   annotations: Annotation[];
   pageScale: number;
   viewHeight: number;
+  /** Source page's natural→displayed ratio. Drag pointer deltas in
+   *  screen pixels divide by `pageScale * displayScale` to land in PDF
+   *  user space — same convention as the InsertedTextOverlay drag. */
+  displayScale: number;
   /** Page index within slots — written into the new annotation so save
    *  can re-address it to the slot's source page. App rewrites
    *  sourceKey/pageIndex at flatten time, but we still need a value. */
@@ -60,6 +67,7 @@ export function AnnotationLayer({
   annotations,
   pageScale,
   viewHeight,
+  displayScale,
   pageIndex,
   sourceKey,
   tool,
@@ -78,6 +86,39 @@ export function AnnotationLayer({
    *  needs to outlive the typing-driven re-renders so we don't keep
    *  re-triggering the open after every keystroke. */
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
+  /** Set when a comment drag just ended, cleared a tick later. The
+   *  comment's onClick checks this and bails so a drag-to-move doesn't
+   *  also pop the editor open. */
+  const justDraggedCommentRef = useRef<string | null>(null);
+
+  // Screen-pixel pointer deltas divide by this to land in PDF user
+  // space. (page.scale = PDF→viewport-natural; displayScale =
+  // natural→displayed-screen. Their product = PDF→displayed-screen.)
+  const effectivePdfScale = pageScale * displayScale;
+
+  type CommentDragCtx = { id: string; baseX: number; baseY: number };
+  const beginCommentDrag = useDragGesture<CommentDragCtx>({
+    onMove: (ctx, info) => {
+      // viewport y-down → PDF y-up: subtract dy.
+      onAnnotationChange(ctx.id, {
+        pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
+        pdfY: ctx.baseY - info.dyRaw / effectivePdfScale,
+      });
+    },
+    onEnd: (ctx, info) => {
+      if (!info.moved) return;
+      // Suppress the trailing click that would otherwise toggle the
+      // editor open immediately after the drag releases. One tick is
+      // enough — React's synthetic click fires synchronously after
+      // pointerup but before the next event-loop turn.
+      justDraggedCommentRef.current = ctx.id;
+      setTimeout(() => {
+        if (justDraggedCommentRef.current === ctx.id) {
+          justDraggedCommentRef.current = null;
+        }
+      }, 50);
+    },
+  });
 
   // Close the inline editor when the user switches tool — keeps the
   // textarea from sticking around as a stale overlay during a tool change.
@@ -289,11 +330,26 @@ export function AnnotationLayer({
               background: rgba(a.color, 0.95),
               zIndex: 20,
               pointerEvents: tool === "select" ? "auto" : "none",
-              cursor: "text",
+              // While editing, the textarea owns the cursor for text
+              // selection; otherwise we show a move cursor since
+              // pointerdown initiates a drag-to-move (and a clean
+              // click-without-drag still falls through to edit mode).
+              cursor: isEditing ? "text" : "move",
+              touchAction: "pinch-zoom",
+            }}
+            onPointerDown={(e) => {
+              if (tool !== "select") return;
+              // While the textarea is mounted, let it handle pointer
+              // events normally — caret placement, selection, etc.
+              if (isEditing) return;
+              beginCommentDrag(e, { id: a.id, baseX: a.pdfX, baseY: a.pdfY });
             }}
             onClick={(e) => {
               if (tool !== "select") return;
               e.stopPropagation();
+              // A click that immediately follows a drag is the trailing
+              // pointerup's synthetic click — don't open the editor.
+              if (justDraggedCommentRef.current === a.id) return;
               setEditingCommentId(a.id);
             }}
           >
