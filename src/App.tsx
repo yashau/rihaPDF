@@ -1308,9 +1308,65 @@ export default function App() {
                 </sup>
               </h1>
             </button>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate min-w-0 flex-1">
-              {toolTip ?? primaryFilename ?? "No file loaded"}
-            </span>
+            {/* Filename slot doubles as the open-file affordance.
+                Three render branches:
+                  - mid-action: plain hint text (e.g. "Tap a page…").
+                  - file loaded: subtle tappable filename with a
+                    folder-icon prefix to hint it swaps files.
+                  - empty: the primary "Open" Button itself sits in
+                    the slot — same styling as the old second-row
+                    button so it pulls the eye on first paint.
+                The standalone Open button is omitted from the
+                second row on mobile in all branches; this slot is
+                the only path. */}
+            {toolTip ? (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate min-w-0 flex-1">
+                {toolTip}
+              </span>
+            ) : primaryFilename ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+                className="flex items-center gap-1 min-w-0 flex-1 truncate text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 cursor-pointer rounded px-1 -mx-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={`Open a different PDF (current file: ${primaryFilename})`}
+                style={{ touchAction: "manipulation" }}
+                data-testid="mobile-open-target"
+              >
+                <FolderOpen size={12} aria-hidden className="shrink-0" />
+                <span className="truncate">{primaryFilename}</span>
+              </button>
+            ) : (
+              <div className="min-w-0 flex-1">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  isDisabled={busy}
+                  onPress={() => fileInputRef.current?.click()}
+                  aria-label="Open PDF"
+                  data-testid="mobile-open-target"
+                >
+                  <FolderOpen size={14} aria-hidden />
+                  Open
+                </Button>
+              </div>
+            )}
+            {/* Save sits adjacent to the filename so the two
+                file-level controls cluster on the first row.
+                Rendered only when a file is loaded; in the empty
+                state the Open button takes the whole slot. */}
+            {primaryFilename && (
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={saveDisabled}
+                onPress={() => void onSave()}
+                aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
+              >
+                <Save size={14} aria-hidden />
+                Save
+              </Button>
+            )}
             <div className="shrink-0">
               <ThemeToggle mode={themeMode} onChange={setThemeMode} cycle />
             </div>
@@ -1327,26 +1383,6 @@ export default function App() {
               data-testid="mobile-sidebar-toggle"
             >
               <PanelLeft size={14} aria-hidden />
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              isDisabled={busy}
-              onPress={() => fileInputRef.current?.click()}
-              aria-label="Open PDF"
-            >
-              <FolderOpen size={14} aria-hidden />
-              Open
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={saveDisabled}
-              onPress={() => void onSave()}
-              aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
-            >
-              <Save size={14} aria-hidden />
-              Save
             </Button>
             <Button
               isIconOnly

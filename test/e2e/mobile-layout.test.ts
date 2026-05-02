@@ -64,15 +64,17 @@ describe("mobile layout (390×844)", () => {
     expect(await iconBtn.isVisible(), "mobile-only icon button should be present").toBe(true);
   });
 
-  test("Open / Save / Select / +Text / +Image / sidebar toggle are all reachable", async () => {
+  test("empty state: Open / Select / +Text / +Image / sidebar toggle are reachable; Save is not rendered", async () => {
     // Mobile tool buttons are icon-only — locate by aria-label.
     for (const label of ["Open PDF", "Select tool", "Add text", "Add image"]) {
       const btn = h.page.locator(`button[aria-label="${label}"]`);
       expect(await btn.isVisible(), `button "${label}" should be visible`).toBe(true);
     }
-    // Save button label includes a count suffix so match by prefix.
+    // Save isn't rendered before a file is loaded — there's nothing to
+    // save, so the slot stays clean. The button reappears next to the
+    // filename once primaryFilename is set (asserted in the load test).
     const saveBtn = h.page.locator("button[aria-label^='Save']");
-    expect(await saveBtn.first().isVisible(), "Save button should be visible").toBe(true);
+    expect(await saveBtn.count(), "Save should not be in DOM before load").toBe(0);
     // Sidebar toggle is mobile-only (desktop renders the rail inline).
     // Initial label is "Open pages sidebar" since the drawer starts
     // closed; it's disabled until a PDF is loaded but still rendered.
@@ -82,6 +84,9 @@ describe("mobile layout (390×844)", () => {
 
   test("loading a PDF: page canvas fits viewport width, sidebar drawer closed", async () => {
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    // Save now sits next to the filename once a file is loaded.
+    const saveBtn = h.page.locator("button[aria-label^='Save']");
+    expect(await saveBtn.first().isVisible(), "Save should appear after load").toBe(true);
     // Sidebar IS mounted on mobile now (inside the drawer wrapper)
     // but the drawer starts closed: the wrapper is translated fully
     // off-screen left and marked aria-hidden. Both the visual and the
