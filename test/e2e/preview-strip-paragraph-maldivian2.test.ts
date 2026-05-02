@@ -129,13 +129,13 @@ async function stripCheck(target: RunInfo): Promise<string | null> {
   const screenshot = path.join(SCREENSHOTS, `maldivian2-drag-${id}.png`);
   await h.page.locator('[data-page-index="1"]').screenshot({ path: screenshot });
 
-  const saveLabel = await h.page
-    .locator("button")
-    .filter({ hasText: /^Save/ })
-    .first()
-    .textContent();
-  if (saveLabel == null || /\(0\b/.test(saveLabel)) {
-    return `[${id}] drag did not commit an edit (saveLabel="${saveLabel}", text="${text.slice(0, 40)}", screenshot=${screenshot})`;
+  // Save button no longer carries the per-category count in its
+  // visible label (kept fixed-width to stop toolbar jitter); use the
+  // disabled bit instead — disabled iff there are no pending edits.
+  const saveBtn = h.page.locator("button").filter({ hasText: /^Save/ }).first();
+  const saveIsDisabled = await saveBtn.isDisabled();
+  if (saveIsDisabled) {
+    return `[${id}] drag did not commit an edit (Save button still disabled, text="${text.slice(0, 40)}", screenshot=${screenshot})`;
   }
 
   const sampleAfter = await samplePixelsAt(beforeRect);
