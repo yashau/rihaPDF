@@ -91,12 +91,7 @@ describe("deletion", () => {
       "inserted-image overlay should be gone",
     ).toBe(0);
 
-    // No edits remain — Save button reverts to disabled / "0 edits".
-    const saveLabel = await h.page
-      .locator("header button")
-      .filter({ hasText: /^Save/ })
-      .innerText();
-    expect(saveLabel).toContain("0 edits");
+    // No edits remain — Save button reverts to disabled.
     const saveDisabled = await h.page
       .locator("header button")
       .filter({ hasText: /^Save/ })
@@ -165,12 +160,7 @@ describe("deletion", () => {
       "inserted-text overlay should be gone",
     ).toBe(0);
 
-    // Save resets to disabled / "0 edits".
-    const saveLabel = await h.page
-      .locator("header button")
-      .filter({ hasText: /^Save/ })
-      .innerText();
-    expect(saveLabel).toContain("0 edits");
+    // Save resets to disabled.
     const saveDisabled = await h.page
       .locator("header button")
       .filter({ hasText: /^Save/ })

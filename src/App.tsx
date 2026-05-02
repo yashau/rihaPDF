@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal } from "@heroui/react";
-import { Check, FolderOpen, Image as ImageIcon, MousePointer2, Save, Type } from "lucide-react";
+import {
+  Check,
+  FolderOpen,
+  Image as ImageIcon,
+  MousePointer2,
+  Redo2,
+  Save,
+  Type,
+  Undo2,
+} from "lucide-react";
 import {
   applyEditsAndSave,
   downloadBlob,
@@ -26,6 +35,33 @@ import { useVisualViewportFollow } from "./lib/useVisualViewport";
 export type ToolMode = "select" | "addText" | "addImage";
 
 const RENDER_SCALE = 1.5;
+/** Debounce window for the undo/redo coalescing rule: a second
+ *  change to the same coalesce key (e.g. typing in the same text
+ *  field, dragging the same image) within this window does NOT
+ *  push a new history entry — the original pre-change snapshot
+ *  is reused. After this much idle time, the next change starts
+ *  a fresh history entry. */
+const UNDO_COALESCE_MS = 500;
+/** Hard cap on history depth so a long editing session can't
+ *  grow the snapshot stack without bound. Snapshots are mostly
+ *  Map shells with values shared by reference (image bytes,
+ *  source bytes), so the cap is generous. */
+const UNDO_MAX_HISTORY = 100;
+
+/** One undoable point-in-time of all document-mutating state.
+ *  Selection / tool / pendingImage / editingByPage are excluded
+ *  — they're UI state, not document state, and rolling them back
+ *  would feel surprising. Sources is included so undoing an
+ *  external-PDF add removes the just-added source as well. */
+type UndoSnapshot = {
+  edits: Map<string, Map<string, EditValue>>;
+  imageMoves: Map<string, Map<string, ImageMoveValue>>;
+  insertedTexts: Map<string, TextInsertion[]>;
+  insertedImages: Map<string, ImageInsertion[]>;
+  shapeDeletes: Map<string, Set<string>>;
+  slots: PageSlot[];
+  sources: Map<string, LoadedSource>;
+};
 
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -123,63 +159,220 @@ export default function App() {
   } | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleFile = useCallback(async (file: File) => {
-    setBusy(true);
-    try {
-      const source = await loadSource(file, RENDER_SCALE, PRIMARY_SOURCE_KEY);
-      setPrimaryFilename(file.name);
-      setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
-      setSlots(slotsFromSource(source));
-      // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
-      // probe can inspect what the strip pipeline thinks each run owns
-      // without re-running the whole extractor in the browser.
-      (
-        window as unknown as {
-          __runOpIndices?: Map<string, number[]>;
-        }
-      ).__runOpIndices = new Map(
-        source.pages.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
-      );
-      setEdits(new Map());
-      setImageMoves(new Map());
-      setShapeDeletes(new Map());
-      setPreviewCanvases(new Map());
-      setInsertedTexts(new Map());
-      setInsertedImages(new Map());
-      setTool("select");
-      setPendingImage(null);
-    } finally {
-      setBusy(false);
-    }
+  // --- Undo / redo: snapshot stack with debounce-and-replace coalescing ---
+  // The tradeoff: per-keystroke snapshots flood the stack and undo
+  // feels broken; one snapshot per "user action" (typing session,
+  // drag, click-to-place) is what people actually mean by Ctrl+Z.
+  // We capture pre-mutation state at the START of each mutating
+  // callback, but *only* push it if the coalesce key differs from
+  // the in-flight one (or the debounce window has elapsed). Native
+  // textarea / input undo still handles per-character undo while
+  // a field is focused; this stack is for app-level actions.
+  const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoSnapshot[]>([]);
+  // Mirror refs so `recordHistory` can read current state without
+  // taking every state slice as a useCallback dep (which would
+  // re-create every callback on every keystroke). slotsRef already
+  // exists above; the rest are added here.
+  const editsRef = useRef(edits);
+  const imageMovesRef = useRef(imageMoves);
+  const insertedTextsRef = useRef(insertedTexts);
+  const insertedImagesRef = useRef(insertedImages);
+  const shapeDeletesRef = useRef(shapeDeletes);
+  const sourcesRef = useRef(sources);
+  useEffect(() => {
+    editsRef.current = edits;
+  }, [edits]);
+  useEffect(() => {
+    imageMovesRef.current = imageMoves;
+  }, [imageMoves]);
+  useEffect(() => {
+    insertedTextsRef.current = insertedTexts;
+  }, [insertedTexts]);
+  useEffect(() => {
+    insertedImagesRef.current = insertedImages;
+  }, [insertedImages]);
+  useEffect(() => {
+    shapeDeletesRef.current = shapeDeletes;
+  }, [shapeDeletes]);
+  useEffect(() => {
+    sourcesRef.current = sources;
+  }, [sources]);
+  /** In-flight coalesce window: when the next `recordHistory` call
+   *  arrives with the same `key` before `timer` fires, the call is
+   *  dropped (the existing pre-change snapshot is still the right
+   *  one to revert to). A different key, or a fired timer, ends
+   *  the window. */
+  const coalesceRef = useRef<{ key: string; timer: number } | null>(null);
+
+  const captureSnapshot = useCallback(
+    (): UndoSnapshot => ({
+      edits: editsRef.current,
+      imageMoves: imageMovesRef.current,
+      insertedTexts: insertedTextsRef.current,
+      insertedImages: insertedImagesRef.current,
+      shapeDeletes: shapeDeletesRef.current,
+      slots: slotsRef.current,
+      sources: sourcesRef.current,
+    }),
+    [],
+  );
+
+  /** Call BEFORE a state mutation. `coalesceKey` of `null` always
+   *  pushes (use for one-shot actions like click-to-place);
+   *  a string key coalesces consecutive same-key calls within
+   *  `UNDO_COALESCE_MS`. Always clears the redo stack — once you
+   *  branch the timeline, redo is gone. */
+  const recordHistory = useCallback(
+    (coalesceKey: string | null) => {
+      if (coalesceKey !== null && coalesceRef.current?.key === coalesceKey) {
+        // Same-key follow-up within the window: keep the original
+        // pre-change snapshot, just extend the window.
+        window.clearTimeout(coalesceRef.current.timer);
+        coalesceRef.current.timer = window.setTimeout(() => {
+          coalesceRef.current = null;
+        }, UNDO_COALESCE_MS);
+        return;
+      }
+      const snapshot = captureSnapshot();
+      setUndoStack((prev) => {
+        const next = [...prev, snapshot];
+        if (next.length > UNDO_MAX_HISTORY) next.splice(0, next.length - UNDO_MAX_HISTORY);
+        return next;
+      });
+      setRedoStack((r) => (r.length === 0 ? r : []));
+      if (coalesceRef.current) window.clearTimeout(coalesceRef.current.timer);
+      coalesceRef.current =
+        coalesceKey === null
+          ? null
+          : {
+              key: coalesceKey,
+              timer: window.setTimeout(() => {
+                coalesceRef.current = null;
+              }, UNDO_COALESCE_MS),
+            };
+    },
+    [captureSnapshot],
+  );
+
+  const restoreSnapshot = useCallback((s: UndoSnapshot) => {
+    setEdits(s.edits);
+    setImageMoves(s.imageMoves);
+    setInsertedTexts(s.insertedTexts);
+    setInsertedImages(s.insertedImages);
+    setShapeDeletes(s.shapeDeletes);
+    setSlots(s.slots);
+    setSources(s.sources);
+    setSelection(null);
   }, []);
 
-  const onEdit = useCallback((slotId: string, runId: string, value: EditValue) => {
-    // Convert PdfPage's drop-time `targetPageIndex` (current slot
-    // index) to the stable `targetSlotId` so the cross-page target
-    // survives reorder. PdfPage never reads `targetSlotId`; App
-    // re-derives `targetPageIndex` per render before passing back.
-    let stored: EditValue = value;
-    if (value.targetPageIndex !== undefined) {
-      const targetSlot = slotsRef.current[value.targetPageIndex];
-      stored = {
-        ...value,
-        targetPageIndex: undefined,
-        // targetSourceKey is preserved as the authoritative source
-        // identity for the drop; targetSlotId carries the slot's
-        // stable id so reorder doesn't strand it.
-        targetSlotId: targetSlot?.id,
-      };
-    } else {
-      stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    if (coalesceRef.current) {
+      window.clearTimeout(coalesceRef.current.timer);
+      coalesceRef.current = null;
     }
-    setEdits((prev) => {
-      const next = new Map(prev);
-      const pageMap = new Map<string, EditValue>(next.get(slotId) ?? []);
-      pageMap.set(runId, stored);
-      next.set(slotId, pageMap);
-      return next;
-    });
+    const target = undoStack[undoStack.length - 1];
+    const current = captureSnapshot();
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, current]);
+    restoreSnapshot(target);
+  }, [undoStack, captureSnapshot, restoreSnapshot]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    if (coalesceRef.current) {
+      window.clearTimeout(coalesceRef.current.timer);
+      coalesceRef.current = null;
+    }
+    const target = redoStack[redoStack.length - 1];
+    const current = captureSnapshot();
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, current]);
+    restoreSnapshot(target);
+  }, [redoStack, captureSnapshot, restoreSnapshot]);
+
+  const clearHistory = useCallback(() => {
+    if (coalesceRef.current) {
+      window.clearTimeout(coalesceRef.current.timer);
+      coalesceRef.current = null;
+    }
+    setUndoStack([]);
+    setRedoStack([]);
   }, []);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      try {
+        const source = await loadSource(file, RENDER_SCALE, PRIMARY_SOURCE_KEY);
+        setPrimaryFilename(file.name);
+        setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
+        setSlots(slotsFromSource(source));
+        // Opening a new primary file is a fresh start, not an
+        // undoable mutation — drop any history from the previous
+        // document so Ctrl+Z can't accidentally resurrect it.
+        clearHistory();
+        // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
+        // probe can inspect what the strip pipeline thinks each run owns
+        // without re-running the whole extractor in the browser.
+        (
+          window as unknown as {
+            __runOpIndices?: Map<string, number[]>;
+          }
+        ).__runOpIndices = new Map(
+          source.pages.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
+        );
+        setEdits(new Map());
+        setImageMoves(new Map());
+        setShapeDeletes(new Map());
+        setPreviewCanvases(new Map());
+        setInsertedTexts(new Map());
+        setInsertedImages(new Map());
+        setTool("select");
+        setPendingImage(null);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [clearHistory],
+  );
+
+  const onEdit = useCallback(
+    (slotId: string, runId: string, value: EditValue) => {
+      // Coalesce key: same (slot, run) within UNDO_COALESCE_MS
+      // collapses into one history entry — typing into one field
+      // is one undo step. Cross-page target updates also coalesce
+      // because the key is the source (slot, run), not the target.
+      recordHistory(`edit:${slotId}:${runId}`);
+      // Convert PdfPage's drop-time `targetPageIndex` (current slot
+      // index) to the stable `targetSlotId` so the cross-page target
+      // survives reorder. PdfPage never reads `targetSlotId`; App
+      // re-derives `targetPageIndex` per render before passing back.
+      let stored: EditValue = value;
+      if (value.targetPageIndex !== undefined) {
+        const targetSlot = slotsRef.current[value.targetPageIndex];
+        stored = {
+          ...value,
+          targetPageIndex: undefined,
+          // targetSourceKey is preserved as the authoritative source
+          // identity for the drop; targetSlotId carries the slot's
+          // stable id so reorder doesn't strand it.
+          targetSlotId: targetSlot?.id,
+        };
+      } else {
+        stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
+      }
+      setEdits((prev) => {
+        const next = new Map(prev);
+        const pageMap = new Map<string, EditValue>(next.get(slotId) ?? []);
+        pageMap.set(runId, stored);
+        next.set(slotId, pageMap);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
 
   const onSelectImage = useCallback((slotId: string, imageId: string) => {
     setSelection({ kind: "image", slotId, imageId });
@@ -192,36 +385,37 @@ export default function App() {
   }, []);
 
   const onDeleteSelection = useCallback(() => {
-    setSelection((current) => {
-      if (!current) return null;
-      if (current.kind === "image") {
-        setImageMoves((prev) => {
-          const next = new Map(prev);
-          const pageMap = new Map<string, ImageMoveValue>(next.get(current.slotId) ?? []);
-          const existing = pageMap.get(current.imageId) ?? {};
-          pageMap.set(current.imageId, { ...existing, deleted: true });
-          next.set(current.slotId, pageMap);
-          return next;
-        });
-      } else if (current.kind === "insertedImage") {
-        setInsertedImages((prev) => {
-          const next = new Map(prev);
-          const arr = (next.get(current.slotId) ?? []).filter((m) => m.id !== current.id);
-          next.set(current.slotId, arr);
-          return next;
-        });
-      } else if (current.kind === "shape") {
-        setShapeDeletes((prev) => {
-          const next = new Map(prev);
-          const set = new Set(next.get(current.slotId) ?? []);
-          set.add(current.shapeId);
-          next.set(current.slotId, set);
-          return next;
-        });
-      }
-      return null;
-    });
-  }, []);
+    if (!selection) return;
+    // Each delete is its own undo step — Delete is a discrete user
+    // action, not continuous like typing or dragging.
+    recordHistory(null);
+    if (selection.kind === "image") {
+      setImageMoves((prev) => {
+        const next = new Map(prev);
+        const pageMap = new Map<string, ImageMoveValue>(next.get(selection.slotId) ?? []);
+        const existing = pageMap.get(selection.imageId) ?? {};
+        pageMap.set(selection.imageId, { ...existing, deleted: true });
+        next.set(selection.slotId, pageMap);
+        return next;
+      });
+    } else if (selection.kind === "insertedImage") {
+      setInsertedImages((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(selection.slotId) ?? []).filter((m) => m.id !== selection.id);
+        next.set(selection.slotId, arr);
+        return next;
+      });
+    } else if (selection.kind === "shape") {
+      setShapeDeletes((prev) => {
+        const next = new Map(prev);
+        const set = new Set(next.get(selection.slotId) ?? []);
+        set.add(selection.shapeId);
+        next.set(selection.slotId, set);
+        return next;
+      });
+    }
+    setSelection(null);
+  }, [selection, recordHistory]);
 
   useEffect(() => {
     if (!selection) return;
@@ -255,26 +449,56 @@ export default function App() {
     return () => window.removeEventListener("click", onClick);
   }, [selection]);
 
-  const onImageMove = useCallback((slotId: string, imageId: string, value: ImageMoveValue) => {
-    let stored: ImageMoveValue = value;
-    if (value.targetPageIndex !== undefined) {
-      const targetSlot = slotsRef.current[value.targetPageIndex];
-      stored = {
-        ...value,
-        targetPageIndex: undefined,
-        targetSlotId: targetSlot?.id,
-      };
-    } else {
-      stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
-    }
-    setImageMoves((prev) => {
-      const next = new Map(prev);
-      const pageMap = new Map<string, ImageMoveValue>(next.get(slotId) ?? []);
-      pageMap.set(imageId, stored);
-      next.set(slotId, pageMap);
-      return next;
-    });
-  }, []);
+  // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo, Ctrl+Y = redo
+  // (Windows convention). When focus is in a text input / textarea
+  // / contenteditable, defer to the browser's native per-character
+  // undo so users can step keystroke-by-keystroke inside one field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "z";
+      const isRedoY = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "y";
+      if (!isUndo && !isRedoY) return;
+      const active = document.activeElement;
+      if (active) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (active as HTMLElement).isContentEditable) {
+          return;
+        }
+      }
+      e.preventDefault();
+      if (isRedoY || (isUndo && e.shiftKey)) redo();
+      else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
+  const onImageMove = useCallback(
+    (slotId: string, imageId: string, value: ImageMoveValue) => {
+      // Coalesce a continuous drag of the same image into one
+      // undo step — onImageMove fires per pointermove.
+      recordHistory(`image-move:${slotId}:${imageId}`);
+      let stored: ImageMoveValue = value;
+      if (value.targetPageIndex !== undefined) {
+        const targetSlot = slotsRef.current[value.targetPageIndex];
+        stored = {
+          ...value,
+          targetPageIndex: undefined,
+          targetSlotId: targetSlot?.id,
+        };
+      } else {
+        stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
+      }
+      setImageMoves((prev) => {
+        const next = new Map(prev);
+        const pageMap = new Map<string, ImageMoveValue>(next.get(slotId) ?? []);
+        pageMap.set(imageId, stored);
+        next.set(slotId, pageMap);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
 
   // Resolve a slotId to (sourceKey, sourcePageIndex). Used in the save
   // flatten phase + the preview strip useEffect.
@@ -431,6 +655,8 @@ export default function App() {
       const slot = slotsRef.current[pageIndex];
       if (!slot || slot.kind !== "page") return;
       if (tool === "addText") {
+        // Click-to-place is a discrete action — no coalesce.
+        recordHistory(null);
         const id = `p${pageIndex + 1}-t${Date.now().toString(36)}`;
         const ins: TextInsertion = {
           id,
@@ -457,6 +683,7 @@ export default function App() {
         return;
       }
       if (tool === "addImage" && pendingImage) {
+        recordHistory(null);
         const id = `p${pageIndex + 1}-ni${Date.now().toString(36)}`;
         const targetW = Math.min(Math.max(pendingImage.naturalWidth, 30), 200);
         const aspect = pendingImage.naturalHeight / pendingImage.naturalWidth;
@@ -483,7 +710,7 @@ export default function App() {
         setTool("select");
       }
     },
-    [tool, pendingImage],
+    [tool, pendingImage, recordHistory],
   );
 
   /** Update an inserted text box (text/style/position changes). When
@@ -495,6 +722,9 @@ export default function App() {
    *  `patch.sourceKey`). */
   const onTextInsertChange = useCallback(
     (sourceSlotId: string, id: string, patch: Partial<TextInsertion>) => {
+      // Same-(slot,id) coalesces — typing into the inserted text
+      // box, or dragging it, is one undo step.
+      recordHistory(`text-insert:${sourceSlotId}:${id}`);
       setInsertedTexts((prev) => {
         const next = new Map(prev);
         const fromArr = next.get(sourceSlotId) ?? [];
@@ -541,18 +771,25 @@ export default function App() {
         return next;
       });
     },
-    [],
+    [recordHistory],
   );
-  const onTextInsertDelete = useCallback((slotId: string, id: string) => {
-    setInsertedTexts((prev) => {
-      const next = new Map(prev);
-      const arr = (next.get(slotId) ?? []).filter((t) => t.id !== id);
-      next.set(slotId, arr);
-      return next;
-    });
-  }, []);
+  const onTextInsertDelete = useCallback(
+    (slotId: string, id: string) => {
+      recordHistory(null);
+      setInsertedTexts((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(slotId) ?? []).filter((t) => t.id !== id);
+        next.set(slotId, arr);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
   const onImageInsertChange = useCallback(
     (sourceSlotId: string, id: string, patch: Partial<ImageInsertion>) => {
+      // Same-(slot,id) coalesces — drag/resize of an inserted
+      // image is one undo step.
+      recordHistory(`image-insert:${sourceSlotId}:${id}`);
       setInsertedImages((prev) => {
         const next = new Map(prev);
         const fromArr = next.get(sourceSlotId) ?? [];
@@ -595,40 +832,51 @@ export default function App() {
         return next;
       });
     },
-    [],
+    [recordHistory],
   );
-  const onImageInsertDelete = useCallback((slotId: string, id: string) => {
-    setInsertedImages((prev) => {
-      const next = new Map(prev);
-      const arr = (next.get(slotId) ?? []).filter((m) => m.id !== id);
-      next.set(slotId, arr);
-      return next;
-    });
-  }, []);
+  const onImageInsertDelete = useCallback(
+    (slotId: string, id: string) => {
+      recordHistory(null);
+      setInsertedImages((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(slotId) ?? []).filter((m) => m.id !== id);
+        next.set(slotId, arr);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
 
   /** "+ From PDF" handler: load one or more external PDFs and append
    *  their pages as full first-class slots. Each external goes through
    *  `loadSource` so its pages get the same font / glyph-map / image
    *  extraction as the primary — the user can edit, drag, insert,
    *  delete on them just like primary pages. */
-  const onAddExternalPdfs = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    setBusy(true);
-    try {
-      for (const file of files) {
-        const sourceKey = nextExternalSourceKey(file);
-        const source = await loadSource(file, RENDER_SCALE, sourceKey);
-        setSources((prev) => {
-          const next = new Map(prev);
-          next.set(sourceKey, source);
-          return next;
-        });
-        setSlots((prev) => [...prev, ...source.pages.map((_, i) => pageSlot(sourceKey, i))]);
+  const onAddExternalPdfs = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      setBusy(true);
+      try {
+        // Record once before the whole batch — undo removes all
+        // pages added by this single "+ From PDF" action together,
+        // not one external file at a time.
+        recordHistory(null);
+        for (const file of files) {
+          const sourceKey = nextExternalSourceKey(file);
+          const source = await loadSource(file, RENDER_SCALE, sourceKey);
+          setSources((prev) => {
+            const next = new Map(prev);
+            next.set(sourceKey, source);
+            return next;
+          });
+          setSlots((prev) => [...prev, ...source.pages.map((_, i) => pageSlot(sourceKey, i))]);
+        }
+      } finally {
+        setBusy(false);
       }
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+    },
+    [recordHistory],
+  );
 
   const onPickImageFile = useCallback(async (file: File) => {
     const parsed = await readImageFile(file);
@@ -639,6 +887,18 @@ export default function App() {
     setPendingImage(parsed);
     setTool("addImage");
   }, []);
+
+  // Wrap setSlots for PageSidebar so reorder / blank-insert /
+  // remove-page actions all push a snapshot before mutating.
+  // PageSidebar always passes an array (no functional updater),
+  // so a value-only signature is safe.
+  const onSlotsChange = useCallback(
+    (next: PageSlot[]) => {
+      recordHistory(null);
+      setSlots(next);
+    },
+    [recordHistory],
+  );
 
   const onSave = useCallback(async () => {
     if (sources.size === 0 || !primaryFilename) return;
@@ -919,22 +1179,38 @@ export default function App() {
             <FolderOpen size={16} aria-hidden />
             Open PDF
           </Button>
-          <Button variant="secondary" isDisabled={saveDisabled} onPress={() => void onSave()}>
+          <Button
+            variant="secondary"
+            isDisabled={saveDisabled}
+            onPress={() => void onSave()}
+            // Keep the visible label fixed-width — the change-count
+            // breakdown lives only in aria-label so the button can't
+            // grow and shift the toolbar to its right when the user
+            // accumulates edits.
+            aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
+          >
             <Save size={16} aria-hidden />
-            Save ({totalEdits} edit{totalEdits === 1 ? "" : "s"}
-            {totalImageMoves
-              ? `, ${totalImageMoves} image move${totalImageMoves === 1 ? "" : "s"}`
-              : ""}
-            {totalInsertedTexts
-              ? `, +${totalInsertedTexts} text${totalInsertedTexts === 1 ? "" : "s"}`
-              : ""}
-            {totalInsertedImages
-              ? `, +${totalInsertedImages} image${totalInsertedImages === 1 ? "" : "s"}`
-              : ""}
-            {removedSourceCount ? `, -${removedSourceCount} page` : ""}
-            {blankSlotCount ? `, +${blankSlotCount} blank` : ""}
-            {externalSlotCount ? `, +${externalSlotCount} from PDF` : ""}
-            {slotsReordered ? ", reordered" : ""})
+            Save
+          </Button>
+          <Button
+            variant="ghost"
+            isDisabled={busy || undoStack.length === 0}
+            onPress={() => undo()}
+            aria-label="Undo"
+            data-testid="undo"
+          >
+            <Undo2 size={16} aria-hidden />
+            Undo
+          </Button>
+          <Button
+            variant="ghost"
+            isDisabled={busy || redoStack.length === 0}
+            onPress={() => redo()}
+            aria-label="Redo"
+            data-testid="redo"
+          >
+            <Redo2 size={16} aria-hidden />
+            Redo
           </Button>
           <div className="flex items-center gap-1 ml-2 border-l pl-3">
             <Button
@@ -1040,7 +1316,29 @@ export default function App() {
               aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
             >
               <Save size={14} aria-hidden />
-              Save{totalChangeCount > 0 ? ` (${totalChangeCount})` : ""}
+              Save
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              isDisabled={busy || undoStack.length === 0}
+              onPress={() => undo()}
+              aria-label="Undo"
+              data-testid="undo-mobile"
+            >
+              <Undo2 size={14} aria-hidden />
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              isDisabled={busy || redoStack.length === 0}
+              onPress={() => redo()}
+              aria-label="Redo"
+              data-testid="redo-mobile"
+            >
+              <Redo2 size={14} aria-hidden />
             </Button>
             <div className="flex items-center gap-1 ml-1 pl-1 border-l border-zinc-200 dark:border-zinc-800">
               <Button
@@ -1103,7 +1401,7 @@ export default function App() {
             <PageSidebar
               slots={slots}
               sources={sources}
-              onSlotsChange={setSlots}
+              onSlotsChange={onSlotsChange}
               onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
             />
           </div>

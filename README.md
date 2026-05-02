@@ -53,6 +53,16 @@ removed from the content stream, not just covered with a whiteout.
   content stream and removes deleted images' `q…Q` blocks; deleted
   inserted items just don't reach save. The keyboard handler bails
   out when an `<input>` is focused so it never hijacks text editing.
+- **Undo / redo.** Header buttons (and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y)
+  step through every document mutation: text edits / moves / deletes,
+  image moves / resizes / deletes, inserted text and image add / edit /
+  delete, shape deletes, page reorder / insert / remove, and external
+  PDF additions. Continuous gestures coalesce — typing in one field is
+  one undo step, dragging an image is one undo step — but each new
+  field, each new drag, each click-to-place is its own step. While a
+  text input is focused, Ctrl+Z falls through to the browser's native
+  per-character undo so the inside of one edit field still steps
+  keystroke-by-keystroke. History clears on opening a new file.
 - **Page sidebar with reorder, delete, insert blank, insert from PDF.**
   Left rail shows a thumbnail per page. Drag thumbs to reorder
   (`@dnd-kit`), hover to delete, click `+ Blank` to insert a fresh
@@ -272,6 +282,7 @@ pnpm test         # in another — runs every spec
 | `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable    |
 | `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip   |
 | `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload      |
+| `undo.test.ts`                     | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -281,6 +292,17 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Undo / redo with debounce-and-replace coalescing.** Snapshot
+      stack covering all seven document-state slices (edits,
+      imageMoves, insertedTexts, insertedImages, shapeDeletes, slots,
+      sources). Each mutating callback in `App.tsx` calls
+      `recordHistory(coalesceKey)` before its setter; same-key calls
+      within 500ms reuse the original pre-change snapshot, so a typing
+      session or a drag is one undo step. Ctrl/Cmd+Z and
+      Ctrl/Cmd+Shift+Z are wired at the window level but bail when an
+      input is focused, leaving native per-character undo intact
+      inside an edit field. Selection / tool / pendingImage are
+      excluded from snapshots — UI state, not document state.
 - [x] **PdfPage refactor.** The 2358-line `PdfPage.tsx` got split into
       six per-concern files under
       [src/components/PdfPage/](src/components/PdfPage/) — types,
