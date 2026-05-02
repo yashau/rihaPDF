@@ -333,7 +333,7 @@ dev-server-on-localhost:5173 assumption.
       that should stay RTL).
 - [x] **Cloudflare Workers deploy.** `pnpm cf:deploy` ships the built
       bundle as a Worker via Workers Static Assets with SPA fallback;
-      live at <https://rihapdf.ibrahim-yashau.workers.dev>.
+      live at <https://rihapdf.yashau.com>.
 - [x] **First-class external pages.** "+ From PDF" now goes through the
       same `loadSource` extraction (fonts, glyph maps, images, runs) as
       the primary file. The slot model collapsed `original` + `external`
