@@ -479,6 +479,16 @@ dev-server-on-localhost:5173 assumption.
       binary cmap (already wired) but those fonts often have a
       stripped cmap too. Need a glyph-name → codepoint table covering
       the common Maldivian Adobe glyph names beyond fili.
+      Surveyed ~140 gazette.gov.mv PDFs (modern + 1..200 step 2 +
+      200..7700 step 75) via [scripts/sweepGazette.mjs](scripts/sweepGazette.mjs) + [scripts/probeMaldivian2Fonts.mjs](scripts/probeMaldivian2Fonts.mjs):
+      every Maldivian font is either a Word TrueType subset with an
+      intact Microsoft Unicode `cmap` (so the existing fallback
+      handles it) or carries `/ToUnicode` already. The only named
+      `/Differences` arrays in the archive use synthetic `/gN` glyph-id
+      names or Wingdings dingbats — no Adobe Thaana glyph names. So
+      this case is rare enough in the wild that it's deprioritised
+      until a real example shows up; the probe scripts are kept so a
+      future fixture can be classified against the same criteria.
 - [ ] **Smarter source-font matching.** Today the replacement run
       picks one of the bundled families based on `BaseFont` keyword
       hints; weight + width matching could be tighter.
