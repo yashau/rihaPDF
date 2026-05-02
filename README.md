@@ -173,8 +173,10 @@ save
       5. append a fresh content stream drawing the replacement via
          pdf-lib drawText (real text, encoded by pdf-lib)
   → Underline = a separate drawLine; bold = double-pass with x-offset for
-    fonts without a bold variant; italic = CSS preview, doesn't carry to
-    the saved PDF (deferred — needs raw operators with Tm shear).
+    fonts without a bold variant; italic = shear-about-baseline `cm`
+    matrix `[1 0 0.21 1 -0.21·y 0]` wrapping the drawText call for
+    bundled Dhivehi TTFs (which ship no italic variant); Standard 14
+    fonts use their real oblique variant instead.
 
 The actual content-stream surgery is a small custom tokenizer / serializer
 in [src/lib/contentStream.ts](src/lib/contentStream.ts) — pdf-lib doesn't
@@ -220,9 +222,6 @@ shape that App.tsx persists per slot.
   blocked on pdf-lib renumbering glyph IDs during embed even with
   `subset: false`, so HarfBuzz-shaped CIDs cannot be written through
   `drawText`.
-- **Italic carries to editor preview only** — saved PDF italic needs
-  raw-operator emission (a `Tm` with a shear matrix); same code path as
-  the HarfBuzz work above, deferred together.
 
 ## Scripts
 
@@ -294,6 +293,12 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Italic in saved PDFs.** Bundled Dhivehi TTFs ship no italic
+      variant, so italic is synthesized at save time via a
+      shear-about-baseline `cm` matrix `[1 0 0.21 1 -0.21·y 0]` wrapping
+      the `drawText` call (run-edit and text-insert paths share a
+      `drawTextWithStyle` helper). Standard 14 fonts keep using their
+      real oblique variant instead.
 - [x] **Undo / redo with debounce-and-replace coalescing.** Snapshot
       stack covering all seven document-state slices (edits,
       imageMoves, insertedTexts, insertedImages, shapeDeletes, slots,
@@ -409,9 +414,6 @@ dev-server-on-localhost:5173 assumption.
       Thaana path with a custom Type 0 / Identity-H emitter that takes
       pre-shaped glyph IDs from harfbuzzjs and writes raw Tj
       operators. Unblocks correct GPOS mark positioning.
-- [ ] **Italic in saved PDFs.** Emit raw `Tm` with a shear matrix
-      `(1, 0, tan(θ), 1, x, y)` for italic runs (currently italic is
-      preview-only — visible in the editor, not in the saved file).
 - [ ] **Underline / strikethrough as a re-editable property** carried
       on the run rather than a separate `drawLine` (today's path
       works but breaks if the run gets re-edited and the line stays).
