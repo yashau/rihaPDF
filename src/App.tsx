@@ -75,6 +75,11 @@ export default function App() {
   // to keep page content from sliding under it on first paint.
   const mobileHeaderRef = useRef<HTMLElement | null>(null);
   const [mobileHeaderH, setMobileHeaderH] = useState(0);
+  // Mobile-only sidebar drawer. Desktop renders the sidebar inline as
+  // a rail; on mobile it's a fixed overlay toggled from the header.
+  // Auto-closes when the viewport flips back to desktop or the doc is
+  // closed, so reopening on mobile starts in a clean state.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   useEffect(() => {
     if (!isMobile) return;
     const el = mobileHeaderRef.current;
@@ -92,6 +97,12 @@ export default function App() {
   // Counter pinch-zoom: keep the header visually fixed-size at the top
   // of the visual viewport even when the user pinches the page.
   useVisualViewportFollow(mobileHeaderRef, "top", isMobile);
+  // Close the mobile drawer if the viewport widens past sm or the
+  // document is closed — both states make the toggle invisible/disabled
+  // and a stuck-open drawer would be unrecoverable.
+  useEffect(() => {
+    if (!isMobile) setMobileSidebarOpen(false);
+  }, [isMobile]);
   /** All loaded sources keyed by sourceKey. The primary file uses the
    *  fixed key from `PRIMARY_SOURCE_KEY`; externals use per-pick keys
    *  from `nextExternalSourceKey`. Promoting external pages to first-
@@ -1301,10 +1312,22 @@ export default function App() {
               {toolTip ?? primaryFilename ?? "No file loaded"}
             </span>
             <div className="shrink-0">
-              <ThemeToggle mode={themeMode} onChange={setThemeMode} />
+              <ThemeToggle mode={themeMode} onChange={setThemeMode} cycle />
             </div>
           </div>
           <div className="flex items-center gap-1 flex-wrap">
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              isDisabled={slots.length === 0}
+              onPress={() => setMobileSidebarOpen((v) => !v)}
+              aria-label={mobileSidebarOpen ? "Close pages sidebar" : "Open pages sidebar"}
+              aria-expanded={mobileSidebarOpen}
+              data-testid="mobile-sidebar-toggle"
+            >
+              <PanelLeft size={14} aria-hidden />
+            </Button>
             <Button
               size="sm"
               variant="primary"
@@ -1397,22 +1420,50 @@ export default function App() {
         </header>
       )}
       <div className="flex flex-1 overflow-hidden">
-        {/* Hide the sidebar entirely on mobile — it's a thumbnail rail
-            sized for desktop, and a phone viewport doesn't have the
-            horizontal budget for both rail + page. Page-management
-            (reorder / blank-insert / delete) is therefore desktop-
-            only for now. Mobile users get full editing on the visible
-            pages, which is the priority. */}
-        {slots.length > 0 && (
-          <div className="hidden sm:block">
+        {/* Sidebar is a static left rail on desktop and an overlay
+            drawer on mobile. We keep a single PageSidebar instance and
+            swap the wrapper styling so the thumbnail cache survives
+            open/close on mobile. The drawer sits below the fixed
+            mobile header (z-20) so the toggle button stays tappable
+            even while the drawer covers the page area. */}
+        {slots.length > 0 &&
+          (isMobile ? (
+            <>
+              <div
+                onClick={() => setMobileSidebarOpen(false)}
+                aria-hidden
+                className={`fixed inset-0 z-10 bg-black/40 transition-opacity ${
+                  mobileSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
+                style={{ top: mobileHeaderH }}
+              />
+              <div
+                className={`fixed left-0 bottom-0 z-10 w-[85vw] max-w-sm transition-transform duration-200 ease-out ${
+                  mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+                }`}
+                style={{ top: mobileHeaderH }}
+                role="dialog"
+                aria-label="Pages"
+                aria-hidden={!mobileSidebarOpen}
+              >
+                <PageSidebar
+                  slots={slots}
+                  sources={sources}
+                  onSlotsChange={onSlotsChange}
+                  onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
+                  widthClass="w-full"
+                  onSlotActivate={() => setMobileSidebarOpen(false)}
+                />
+              </div>
+            </>
+          ) : (
             <PageSidebar
               slots={slots}
               sources={sources}
               onSlotsChange={onSlotsChange}
               onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
             />
-          </div>
-        )}
+          ))}
         <main
           className="flex-1 overflow-auto px-2 py-3 sm:px-6 sm:py-6"
           // Mobile header is `position: fixed` (out of flow), so push

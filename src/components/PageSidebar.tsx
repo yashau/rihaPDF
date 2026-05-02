@@ -29,12 +29,27 @@ type Props = {
   sources: Map<string, LoadedSource>;
   onSlotsChange: (next: PageSlot[]) => void;
   onAddExternalPdfs: (files: File[]) => void;
+  /** Tailwind width class for the <aside>. Defaults to a desktop-rail
+   *  size; the mobile drawer wrapper passes "w-full" so the aside
+   *  fills the drawer's own width budget. */
+  widthClass?: string;
+  /** Called after a thumbnail tap scrolls the main view. The mobile
+   *  drawer uses this to auto-close — otherwise the user taps a
+   *  thumb, the page scrolls behind a drawer they can't see. */
+  onSlotActivate?: () => void;
 };
 
 const THUMB_SCALE = 0.18;
 const SOURCE_RENDER_SCALE = 1.5;
 
-export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }: Props) {
+export function PageSidebar({
+  slots,
+  sources,
+  onSlotsChange,
+  onAddExternalPdfs,
+  widthClass = "w-56",
+  onSlotActivate,
+}: Props) {
   const externalFileInputRef = useRef<HTMLInputElement | null>(null);
   /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are PNG
    *  data URLs so multiple <img> tags can share one entry. */
@@ -148,7 +163,9 @@ export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }
   const sourcesLoaded = sources.size > 0;
 
   return (
-    <aside className="flex-shrink-0 w-56 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]">
+    <aside
+      className={`flex-shrink-0 ${widthClass} h-full border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]`}
+    >
       <div className="flex flex-col gap-2 px-3 mb-2">
         <span className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           Pages
@@ -204,6 +221,7 @@ export function PageSidebar({ slots, sources, onSlotsChange, onAddExternalPdfs }
                   onActivate={() => {
                     const el = document.getElementById(`page-slot-${slot.id}`);
                     el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    onSlotActivate?.();
                   }}
                 />
               </div>
