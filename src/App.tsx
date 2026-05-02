@@ -1899,28 +1899,27 @@ function AboutModal({
               <section className="flex flex-col items-center text-center gap-3">
                 <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
                 <p>
-                  Browser-based PDF editor focused on Dhivehi / Thaana documents. Click any text run
-                  on a page, type a replacement, save. The saved PDF contains real, selectable,
-                  searchable text — original glyphs are surgically removed and replaced with new
-                  ones rendered in the correct font. rihaPDF is{" "}
+                  Browser-based PDF editor for Dhivehi / Thaana, with full RTL support.{" "}
                   <a
                     href="https://github.com/yashau/rihaPDF"
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-600 dark:text-blue-400 hover:underline"
                   >
-                    open source
+                    Open source
                   </a>{" "}
-                  and contributions are welcome.
+                  — contributions welcome.
                 </p>
               </section>
 
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
                 <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
-                  <li>Edit existing text runs in place</li>
-                  <li>Insert new text and images anywhere on a page</li>
-                  <li>Move and resize inserted images; move text and image runs</li>
+                  <li>Edit text in place — RTL/LTR, italic, underline, strikethrough</li>
+                  <li>Insert and move text or images; delete any object</li>
+                  <li>Highlight, comment, and ink annotations</li>
+                  <li>Reorder, delete, or insert pages (blank or from another PDF)</li>
+                  <li>Undo / redo, dark mode, mobile Thaana keyboard</li>
                   <li>Saved PDFs keep real, selectable, searchable text</li>
                 </ul>
               </section>
