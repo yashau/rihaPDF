@@ -24,7 +24,7 @@ const TITLE_TEXT = "ރައްޔިތުންގެ މަޖިލިސް";
 beforeAll(async () => {
   fs.mkdirSync(SCREENSHOTS, { recursive: true });
   h = await setupBrowser();
-  await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+  await loadFixture(h, FIXTURE.maldivian, { expectedPages: 2 });
   originalRuns = await captureRuns(h.page);
   const found = originalRuns.find((r) => r.text === TITLE_TEXT);
   if (!found) throw new Error(`title run "${TITLE_TEXT}" not in extracted runs`);
@@ -102,7 +102,7 @@ async function runScenario({
   expectTitleText: string;
 }): Promise<{ titleOk: boolean; titleNote: string; drift: string[] }> {
   // Reload fresh each run so previous edits don't bleed.
-  await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+  await loadFixture(h, FIXTURE.maldivian, { expectedPages: 2 });
 
   // Find the run id whose text matches the title, since the index can
   // shift between runs of the extractor as we change recovery logic.
@@ -175,7 +175,7 @@ async function runScenario({
 
   // The saved PDF inherits maldivian's page count, so reuse the same
   // expectedPages guard to keep the post-load screenshot reliable.
-  await loadFixture(h.page, out, { expectedPages: 2 });
+  await loadFixture(h, out, { expectedPages: 2 });
   const savedRuns = await captureRuns(h.page);
   await h.page
     .locator('[data-page-index="0"] canvas')

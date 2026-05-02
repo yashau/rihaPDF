@@ -1133,7 +1133,12 @@ export default function App() {
         data-testid="open-pdf-input"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) void handleFile(f);
+          // Surface load errors via console.error so E2E `loadFixture`
+          // postmortems pick them up (the timeout error includes the
+          // captured page log). Without this catch the rejection from
+          // handleFile is silently dropped and the test just sees
+          // "0 pages after 25s" with no clue why.
+          if (f) handleFile(f).catch((err) => console.error("handleFile failed:", err));
           e.target.value = "";
         }}
       />

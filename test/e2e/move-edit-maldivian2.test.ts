@@ -42,7 +42,7 @@ const SHORT_EDIT = "މާލެ";
 beforeAll(async () => {
   fs.mkdirSync(SCREENSHOTS, { recursive: true });
   h = await setupBrowser();
-  await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: PAGES });
+  await loadFixture(h, FIXTURE.maldivian2, { expectedPages: PAGES });
   originalRuns = await captureRuns(h.page);
   const found = originalRuns.find((r) => r.text === TITLE_TEXT);
   if (!found) {
@@ -123,7 +123,7 @@ async function runScenario({
   expectTitleText: string;
 }): Promise<{ titleOk: boolean; titleNote: string; drift: string[] }> {
   // Reload fresh each run so previous edits don't bleed.
-  await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: PAGES });
+  await loadFixture(h, FIXTURE.maldivian2, { expectedPages: PAGES });
 
   const titleRunId = await h.page.evaluate((title) => {
     for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
@@ -176,7 +176,7 @@ async function runScenario({
   const out = path.join(SCREENSHOTS, `move-edit-maldivian2-${name}.pdf`);
   await dl.saveAs(out);
 
-  await loadFixture(h.page, out, { expectedPages: PAGES });
+  await loadFixture(h, out, { expectedPages: PAGES });
   const savedRuns = await captureRuns(h.page);
   await h.page
     .locator('[data-page-index="0"] canvas')

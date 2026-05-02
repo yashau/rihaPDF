@@ -135,12 +135,20 @@ export async function loadFixture(
   const pageLog: string[] | null =
     "page" in pageOrHarness && "browser" in pageOrHarness ? pageOrHarness.pageLog : null;
   const { expectedPages } = options;
+  // `loadSource` renders each page serially through pdf.js (~1-2s
+  // per page on the dev box). A flat 25s budget was enough for 2-page
+  // fixtures but flaked on the 14-page maldivian2 under accumulated
+  // dev-server pressure (the post-save load lands while the previous
+  // doc's worker is still draining). Scale the deadline with the
+  // expected page count so multi-page fixtures get proportional time;
+  // single/unknown-page fixtures keep the original 25s budget.
+  const LOAD_DEADLINE_MS = Math.max(25_000, (expectedPages ?? 1) * 3_000);
   await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(fixturePath);
   try {
-    await page.waitForSelector("[data-page-index]", { timeout: 25_000 });
+    await page.waitForSelector("[data-page-index]", { timeout: LOAD_DEADLINE_MS });
   } catch (err) {
     throw new Error(
-      `loadFixture(${fixturePath}): no [data-page-index] appeared after 25s.${formatPageLog(pageLog)}`,
+      `loadFixture(${fixturePath}): no [data-page-index] appeared after ${LOAD_DEADLINE_MS}ms.${formatPageLog(pageLog)}`,
       { cause: err },
     );
   }
@@ -149,7 +157,7 @@ export async function loadFixture(
   // — but never declare done while count < expectedPages.
   const STABLE_MS = 1_500;
   const POLL_MS = 200;
-  const DEADLINE = Date.now() + 25_000;
+  const DEADLINE = Date.now() + LOAD_DEADLINE_MS;
   let lastCount = -1;
   let stableSince = Date.now();
   while (Date.now() < DEADLINE) {
@@ -183,7 +191,7 @@ export async function loadFixture(
   }
   if (expectedPages != null && lastCount < expectedPages) {
     throw new Error(
-      `loadFixture(${fixturePath}): expected ≥${expectedPages} pages, got ${lastCount} after 25s.${formatPageLog(pageLog)}`,
+      `loadFixture(${fixturePath}): expected ≥${expectedPages} pages, got ${lastCount} after ${LOAD_DEADLINE_MS}ms.${formatPageLog(pageLog)}`,
     );
   }
   // One more beat for the in-flight font / glyph-map work that runs
