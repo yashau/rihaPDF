@@ -40,6 +40,8 @@ import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
 import type { PageSlot } from "./slots";
 import type { LoadedSource } from "./loadSource";
+import type { Annotation } from "./annotations";
+import { applyAnnotationsToDoc } from "./saveAnnotations";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -415,6 +417,7 @@ export async function applyEditsAndSave(
   textInserts: TextInsert[] = [],
   imageInserts: ImageInsert[] = [],
   shapeDeletes: ShapeDelete[] = [],
+  annotations: Annotation[] = [],
 ): Promise<Uint8Array> {
   // Bucket ops by source so each source's doc gets surgery in one pass.
   const editsBySource = new Map<string, Edit[]>();
@@ -444,6 +447,7 @@ export async function applyEditsAndSave(
   }
   for (const t of textInserts) sourcesNeedingLoad.add(t.sourceKey);
   for (const i of imageInserts) sourcesNeedingLoad.add(i.sourceKey);
+  for (const a of annotations) sourcesNeedingLoad.add(a.sourceKey);
   for (const d of shapeDeletes) {
     sourcesNeedingLoad.add(d.sourceKey);
     if (!shapeDeletesBySource.has(d.sourceKey)) shapeDeletesBySource.set(d.sourceKey, []);
@@ -615,6 +619,24 @@ export async function applyEditsAndSave(
       width: ins.pdfWidth,
       height: ins.pdfHeight,
     });
+  }
+
+  // Annotations - native PDF /Annot dicts appended to each source
+  // page's /Annots array. Bucket by source so we only pay one pass per
+  // doc; pdf-lib copyPages then carries the new /Annots through to the
+  // output along with any pre-existing source annotations.
+  if (annotations.length > 0) {
+    const annotsBySource = new Map<string, Annotation[]>();
+    for (const a of annotations) {
+      const list = annotsBySource.get(a.sourceKey) ?? [];
+      list.push(a);
+      annotsBySource.set(a.sourceKey, list);
+    }
+    for (const [sourceKey, list] of annotsBySource) {
+      const ctx = ctxBySource.get(sourceKey);
+      if (!ctx) continue;
+      applyAnnotationsToDoc(ctx.doc, list);
+    }
   }
 
   // Build the output by walking `slots[]` in order. Edits are baked

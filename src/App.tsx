@@ -3,9 +3,12 @@ import { Button, Modal } from "@heroui/react";
 import {
   Check,
   FolderOpen,
+  Highlighter,
   Image as ImageIcon,
+  MessageSquare,
   MousePointer2,
   PanelLeft,
+  Pencil,
   Redo2,
   Save,
   Type,
@@ -22,6 +25,14 @@ import {
 } from "./lib/save";
 import { buildPreviewBytes, renderPagePreviewCanvas, type PageStripSpec } from "./lib/preview";
 import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
+import {
+  type Annotation,
+  COMMENT_DEFAULT_FONT_SIZE,
+  COMMENT_DEFAULT_HEIGHT,
+  COMMENT_DEFAULT_WIDTH,
+  DEFAULT_COMMENT_COLOR,
+  newAnnotationId,
+} from "./lib/annotations";
 import { PdfPage, type EditValue, type ImageMoveValue } from "./components/PdfPage";
 import { PageSidebar } from "./components/PageSidebar";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -34,7 +45,7 @@ import { useIsMobile } from "./lib/useMediaQuery";
 import { useVisualViewportFollow } from "./lib/useVisualViewport";
 import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "./lib/polyfills";
 
-export type ToolMode = "select" | "addText" | "addImage";
+export type ToolMode = "select" | "addText" | "addImage" | "highlight" | "comment" | "ink";
 
 const RENDER_SCALE = 1.5;
 /** Debounce window for the undo/redo coalescing rule: a second
@@ -61,6 +72,7 @@ type UndoSnapshot = {
   insertedTexts: Map<string, TextInsertion[]>;
   insertedImages: Map<string, ImageInsertion[]>;
   shapeDeletes: Map<string, Set<string>>;
+  annotations: Map<string, Annotation[]>;
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
 };
@@ -101,6 +113,7 @@ export default function App() {
   // document is closed — both states make the toggle invisible/disabled
   // and a stuck-open drawer would be unrecoverable.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isMobile) setMobileSidebarOpen(false);
   }, [isMobile]);
   /** All loaded sources keyed by sourceKey. The primary file uses the
@@ -162,6 +175,10 @@ export default function App() {
   /** Map<slotId, Set<shapeId>> — vector shapes flagged for deletion.
    *  Shapes are delete-only in v1 (no move / resize) so a Set is enough. */
   const [shapeDeletes, setShapeDeletes] = useState<Map<string, Set<string>>>(new Map());
+  /** Map<slotId, Annotation[]> — user-added highlights / sticky notes /
+   *  ink strokes. Keyed by slotId so an annotation follows its page
+   *  through reorder, same as the insertion / edit maps. */
+  const [annotations, setAnnotations] = useState<Map<string, Annotation[]>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -192,6 +209,7 @@ export default function App() {
   const insertedTextsRef = useRef(insertedTexts);
   const insertedImagesRef = useRef(insertedImages);
   const shapeDeletesRef = useRef(shapeDeletes);
+  const annotationsRef = useRef(annotations);
   const sourcesRef = useRef(sources);
   useEffect(() => {
     editsRef.current = edits;
@@ -209,6 +227,9 @@ export default function App() {
     shapeDeletesRef.current = shapeDeletes;
   }, [shapeDeletes]);
   useEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
+  useEffect(() => {
     sourcesRef.current = sources;
   }, [sources]);
   /** In-flight coalesce window: when the next `recordHistory` call
@@ -225,6 +246,7 @@ export default function App() {
       insertedTexts: insertedTextsRef.current,
       insertedImages: insertedImagesRef.current,
       shapeDeletes: shapeDeletesRef.current,
+      annotations: annotationsRef.current,
       slots: slotsRef.current,
       sources: sourcesRef.current,
     }),
@@ -274,6 +296,7 @@ export default function App() {
     setInsertedTexts(s.insertedTexts);
     setInsertedImages(s.insertedImages);
     setShapeDeletes(s.shapeDeletes);
+    setAnnotations(s.annotations);
     setSlots(s.slots);
     setSources(s.sources);
     setSelection(null);
@@ -339,6 +362,7 @@ export default function App() {
         setEdits(new Map());
         setImageMoves(new Map());
         setShapeDeletes(new Map());
+        setAnnotations(new Map());
         setPreviewCanvases(new Map());
         setInsertedTexts(new Map());
         setInsertedImages(new Map());
@@ -721,6 +745,38 @@ export default function App() {
         });
         setPendingImage(null);
         setTool("select");
+        return;
+      }
+      if (tool === "comment") {
+        // Drop a FreeText comment box. The click point becomes the
+        // bottom-left of the box (matches PDF /Rect convention).
+        // After dropping, we switch back to Select so the user can
+        // immediately type into the freshly-created box without the
+        // capture layer eating their clicks.
+        const id = newAnnotationId("comment");
+        recordHistory(null);
+        setAnnotations((prev) => {
+          const next = new Map(prev);
+          const arr = [
+            ...(next.get(slotId) ?? []),
+            {
+              kind: "comment",
+              id,
+              sourceKey: slot.sourceKey,
+              pageIndex: slot.sourcePageIndex,
+              pdfX,
+              pdfY: pdfY - COMMENT_DEFAULT_HEIGHT,
+              pdfWidth: COMMENT_DEFAULT_WIDTH,
+              pdfHeight: COMMENT_DEFAULT_HEIGHT,
+              color: DEFAULT_COMMENT_COLOR,
+              text: "",
+              fontSize: COMMENT_DEFAULT_FONT_SIZE,
+            } satisfies Annotation,
+          ];
+          next.set(slotId, arr);
+          return next;
+        });
+        setTool("select");
       }
     },
     [tool, pendingImage, recordHistory],
@@ -853,6 +909,52 @@ export default function App() {
       setInsertedImages((prev) => {
         const next = new Map(prev);
         const arr = (next.get(slotId) ?? []).filter((m) => m.id !== id);
+        next.set(slotId, arr);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+
+  /** Add a new annotation to a slot. One snapshot per add — discrete
+   *  user action like click-to-place. Returns the created annotation's
+   *  id so callers can immediately open the comment editor for notes. */
+  const onAnnotationAdd = useCallback(
+    (slotId: string, annotation: Annotation) => {
+      recordHistory(null);
+      setAnnotations((prev) => {
+        const next = new Map(prev);
+        const arr = [...(next.get(slotId) ?? []), annotation];
+        next.set(slotId, arr);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+  /** Patch an existing annotation by id (used by the note-comment
+   *  editor and color picker). Coalesces same-(slot,id) updates within
+   *  the undo window so typing into a comment is one undo step. */
+  const onAnnotationChange = useCallback(
+    (slotId: string, id: string, patch: Partial<Annotation>) => {
+      recordHistory(`annotation:${slotId}:${id}`);
+      setAnnotations((prev) => {
+        const next = new Map(prev);
+        const arr = next.get(slotId) ?? [];
+        next.set(
+          slotId,
+          arr.map((a) => (a.id === id ? ({ ...a, ...patch } as Annotation) : a)),
+        );
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+  const onAnnotationDelete = useCallback(
+    (slotId: string, id: string) => {
+      recordHistory(null);
+      setAnnotations((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(slotId) ?? []).filter((a) => a.id !== id);
         next.set(slotId, arr);
         return next;
       });
@@ -1045,6 +1147,21 @@ export default function App() {
           });
         }
       }
+      const flatAnnotations: Annotation[] = [];
+      for (const [slotId, arr] of annotations) {
+        const addr = slotAddr.get(slotId);
+        if (!addr) continue;
+        for (const a of arr) {
+          // Re-address each annotation to the slot's current source
+          // page so a slot reorder / move rewrites the destination
+          // before save (mirrors how text inserts work).
+          flatAnnotations.push({
+            ...a,
+            sourceKey: addr.sourceKey,
+            pageIndex: addr.pageIndex,
+          });
+        }
+      }
       const out = await applyEditsAndSave(
         sources,
         slots,
@@ -1053,6 +1170,7 @@ export default function App() {
         flatTextInserts,
         flatImageInserts,
         flatShapeDeletes,
+        flatAnnotations,
       );
       const baseName = primaryFilename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
@@ -1068,6 +1186,7 @@ export default function App() {
     shapeDeletes,
     insertedTexts,
     insertedImages,
+    annotations,
   ]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
@@ -1082,6 +1201,10 @@ export default function App() {
   );
   const totalShapeDeletes = Array.from(shapeDeletes.values()).reduce(
     (sum, set) => sum + set.size,
+    0,
+  );
+  const totalAnnotations = Array.from(annotations.values()).reduce(
+    (sum, arr) => sum + arr.length,
     0,
   );
   // Count structural changes vs the initial slots-from-primary state:
@@ -1122,14 +1245,21 @@ export default function App() {
     structuralOpCount +
     totalInsertedTexts +
     totalInsertedImages +
-    totalShapeDeletes;
+    totalShapeDeletes +
+    totalAnnotations;
   const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
   const toolTip =
     tool === "addText"
       ? "Tap a page to drop a text box"
       : tool === "addImage" && pendingImage
         ? "Tap a page to place the image"
-        : null;
+        : tool === "highlight"
+          ? "Tap a text run to highlight"
+          : tool === "comment"
+            ? "Tap a page to drop a comment"
+            : tool === "ink"
+              ? "Drag on a page to draw"
+              : null;
 
   // The hidden file inputs are rendered ONCE outside both header
   // subtrees so the desktop / mobile layouts can target the same
@@ -1269,6 +1399,48 @@ export default function App() {
             >
               <ImageIcon size={14} aria-hidden />+ Image
               {pendingImage ? <Check size={14} aria-label="image queued" /> : null}
+            </Button>
+            <Button
+              size="sm"
+              variant={tool === "highlight" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
+                setTool((t) => (t === "highlight" ? "select" : "highlight"));
+                setPendingImage(null);
+              }}
+              aria-label="Highlight"
+              data-testid="tool-highlight"
+            >
+              <Highlighter size={14} aria-hidden />
+              Highlight
+            </Button>
+            <Button
+              size="sm"
+              variant={tool === "comment" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
+                setTool((t) => (t === "comment" ? "select" : "comment"));
+                setPendingImage(null);
+              }}
+              aria-label="Comment"
+              data-testid="tool-comment"
+            >
+              <MessageSquare size={14} aria-hidden />
+              Comment
+            </Button>
+            <Button
+              size="sm"
+              variant={tool === "ink" ? "primary" : "ghost"}
+              isDisabled={busy || sources.size === 0}
+              onPress={() => {
+                setTool((t) => (t === "ink" ? "select" : "ink"));
+                setPendingImage(null);
+              }}
+              aria-label="Draw"
+              data-testid="tool-ink"
+            >
+              <Pencil size={14} aria-hidden />
+              Draw
             </Button>
           </div>
           <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto">
@@ -1451,6 +1623,45 @@ export default function App() {
                 <ImageIcon size={14} aria-hidden />
                 {pendingImage ? <Check size={12} aria-label="image queued" /> : null}
               </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "highlight" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  setTool((t) => (t === "highlight" ? "select" : "highlight"));
+                  setPendingImage(null);
+                }}
+                aria-label="Highlight"
+              >
+                <Highlighter size={14} aria-hidden />
+              </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "comment" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  setTool((t) => (t === "comment" ? "select" : "comment"));
+                  setPendingImage(null);
+                }}
+                aria-label="Comment"
+              >
+                <MessageSquare size={14} aria-hidden />
+              </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                variant={tool === "ink" ? "primary" : "ghost"}
+                isDisabled={busy || sources.size === 0}
+                onPress={() => {
+                  setTool((t) => (t === "ink" ? "select" : "ink"));
+                  setPendingImage(null);
+                }}
+                aria-label="Draw"
+              >
+                <Pencil size={14} aria-hidden />
+              </Button>
             </div>
           </div>
         </header>
@@ -1632,6 +1843,7 @@ export default function App() {
                     imageMoves={imageMovesForSlot}
                     insertedTexts={insertedTexts.get(slot.id) ?? []}
                     insertedImages={insertedImages.get(slot.id) ?? []}
+                    annotations={annotations.get(slot.id) ?? []}
                     previewCanvas={
                       previewCanvases.get(`${slot.sourceKey}:${slot.sourcePageIndex}`) ?? null
                     }
@@ -1652,6 +1864,9 @@ export default function App() {
                     onSelectImage={(imageId) => onSelectImage(slot.id, imageId)}
                     onSelectInsertedImage={(id) => onSelectInsertedImage(slot.id, id)}
                     onSelectShape={(shapeId) => onSelectShape(slot.id, shapeId)}
+                    onAnnotationAdd={(a) => onAnnotationAdd(slot.id, a)}
+                    onAnnotationChange={(id, patch) => onAnnotationChange(slot.id, id, patch)}
+                    onAnnotationDelete={(id) => onAnnotationDelete(slot.id, id)}
                   />
                 );
               })}
@@ -1868,6 +2083,7 @@ function PageWithToolbar({
   imageMoves,
   insertedTexts,
   insertedImages,
+  annotations,
   previewCanvas,
   tool,
   editingId,
@@ -1886,6 +2102,9 @@ function PageWithToolbar({
   onSelectImage,
   onSelectInsertedImage,
   onSelectShape,
+  onAnnotationAdd,
+  onAnnotationChange,
+  onAnnotationDelete,
 }: {
   slotId: string;
   page: RenderedPage;
@@ -1895,6 +2114,7 @@ function PageWithToolbar({
   imageMoves: Map<string, ImageMoveValue>;
   insertedTexts: TextInsertion[];
   insertedImages: ImageInsertion[];
+  annotations: Annotation[];
   previewCanvas: HTMLCanvasElement | null;
   tool: ToolMode;
   editingId: string | null;
@@ -1913,6 +2133,9 @@ function PageWithToolbar({
   onSelectImage: (imageId: string) => void;
   onSelectInsertedImage: (id: string) => void;
   onSelectShape: (shapeId: string) => void;
+  onAnnotationAdd: (annotation: Annotation) => void;
+  onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
+  onAnnotationDelete: (id: string) => void;
 }) {
   return (
     <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
@@ -1927,6 +2150,7 @@ function PageWithToolbar({
         imageMoves={imageMoves}
         insertedTexts={insertedTexts}
         insertedImages={insertedImages}
+        annotations={annotations}
         previewCanvas={previewCanvas}
         tool={tool}
         editingId={editingId}
@@ -1945,6 +2169,9 @@ function PageWithToolbar({
         onSelectImage={onSelectImage}
         onSelectInsertedImage={onSelectInsertedImage}
         onSelectShape={onSelectShape}
+        onAnnotationAdd={onAnnotationAdd}
+        onAnnotationChange={onAnnotationChange}
+        onAnnotationDelete={onAnnotationDelete}
       />
     </div>
   );

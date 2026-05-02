@@ -108,6 +108,27 @@ removed from the content stream, not just covered with a whiteout.
   edit toolbar flips between transliterated input (Faruma editing) and
   raw passthrough (digits, Latin words). Implemented in
   [src/lib/thaanaKeyboard.ts](src/lib/thaanaKeyboard.ts).
+- **Annotations: highlight, comment, draw.** Three toolbar tools that
+  drop native PDF `/Annot` objects (not flattened into the content
+  stream, so other PDF tools recognize them as markup). All three live
+  in [src/lib/annotations.ts](src/lib/annotations.ts) +
+  [src/lib/saveAnnotations.ts](src/lib/saveAnnotations.ts) + the
+  [src/components/PdfPage/AnnotationLayer.tsx](src/components/PdfPage/AnnotationLayer.tsx)
+  overlay.
+  - **Highlight** — click any text run to add a translucent yellow
+    overlay; saves as `/Subtype /Highlight` with the run's bbox in
+    `/QuadPoints`.
+  - **Comment** — click anywhere to drop a yellow text box that
+    auto-focuses for typing; saves as `/Subtype /FreeText` with the
+    typed text in `/Contents` (UTF-16BE so non-ASCII round-trips),
+    `/IC` for the fill, and `/BS /W 0` to suppress the viewer's
+    default 1pt black border. Distinct from `+ Text`, which writes
+    real content-stream text — comments stay on the annotation layer
+    and don't print by default.
+  - **Draw** — drag on a page to paint a freehand stroke; saves as
+    `/Subtype /Ink` with the polyline in `/InkList` and a `/BS /W`
+    stroke thickness. Adjacent samples within ~0.5pt are dropped to
+    keep stroke files compact.
 
 ## Stack
 
@@ -310,6 +331,7 @@ pnpm test         # in another — runs every spec
 | `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip    |
 | `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload       |
 | `undo.test.ts`                     | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch  |
+| `annotations.test.ts`              | highlight / comment / ink → save → parse `/Annots` → fields round-trip       |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -319,6 +341,16 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Annotations: highlight, comment (FreeText), and ink.** Three
+      toolbar tools that emit native PDF `/Annot` objects on save —
+      `/Highlight` over text runs, `/FreeText` for visible inline
+      comment boxes, `/Ink` for freehand strokes. The save path lives
+      in [src/lib/saveAnnotations.ts](src/lib/saveAnnotations.ts) and
+      builds `PDFDict` / `PDFArray` directly (pdf-lib has no annotation
+      builder). Comments default to no print flag (`/F` omitted) and a
+      zero-width border (`/BS /W 0`) so they show as markup on screen
+      but don't print, matching what reviewers expect. Round-tripped
+      via [test/e2e/annotations.test.ts](test/e2e/annotations.test.ts).
 - [x] **Underline / strikethrough as re-editable run properties.**
       Adds a Strikethrough toggle to the formatting toolbar (next to
       B/I/U) and ties both decorations to the run on save. Load-time
@@ -470,7 +502,32 @@ dev-server-on-localhost:5173 assumption.
 
 ### Document-level
 
-- [ ] **Annotations** — rect, highlight, freehand.
+- [ ] **Thaana inside `/FreeText` comments.** Today the comment tool
+      writes `/DA "/Helv NN Tf 0 0 0 rg"`, which renders Latin
+      correctly but Helvetica has no Thaana glyphs — typing Dhivehi
+      into a comment shows up blank or as `.notdef` boxes in viewers.
+      Two paths to fix: - **Quick partial:** embed Faruma in the saved doc, register it
+      in `/AcroForm/DR/Font`, switch `/DA` to reference it. Thaana
+      codepoints render with correct glyphs but no GPOS / GSUB / BiDi
+      — same approximation as the existing content-stream save path,
+      since `/FreeText` viewers don't run a shaping pipeline on
+      `/Contents`. - **Proper fix:** ship a custom `/AP` appearance stream per
+      annotation — pre-shape via HarfBuzz, emit raw `Tj` operators
+      with positioned glyphs into the appearance content stream so
+      the viewer doesn't regenerate. Same blocker as
+      _HarfBuzz-shaped output_ above (pdf-lib renumbers glyph IDs
+      during embed even with `subset: false`). Once that lands, the
+      comment annotation just reuses the same emitter.
+- [ ] **Annotation extras** — `/Square` / `/Circle` shape annotations,
+      multi-line highlight quads (one annotation, N quads spanning
+      wrapped lines), `/FreeTextCallout` with a draggable leader line,
+      colour picker for highlight / comment / ink.
+- [ ] **Round-trip existing `/Annots`.** Source PDFs that already
+      carry annotations pass through `copyPages` today, but the editor
+      doesn't surface them as editable / deletable items. Parse
+      `/Annots` in [src/lib/loadSource.ts](src/lib/loadSource.ts) so
+      they appear in `AnnotationLayer` and can be selected, edited,
+      or removed.
 - [ ] **Form fields** (text + checkbox).
 
 ### Source-PDF support

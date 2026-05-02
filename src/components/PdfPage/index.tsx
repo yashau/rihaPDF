@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
+import { type Annotation, DEFAULT_HIGHLIGHT_COLOR, newAnnotationId } from "../../lib/annotations";
 import type { ToolMode } from "../../App";
 import { clickSuppressMs, useDragGesture } from "../../lib/useDragGesture";
 import { EditField } from "./EditField";
 import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
+import { AnnotationLayer } from "./AnnotationLayer";
 import { cssTextDecoration, findPageAtPoint } from "./helpers";
 import type { EditValue, ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
 
@@ -21,6 +23,7 @@ type Props = {
   imageMoves: Map<string, ImageMoveValue>;
   insertedTexts: TextInsertion[];
   insertedImages: ImageInsertion[];
+  annotations: Annotation[];
   /** Live-preview canvas — when present, paint this in place of
    *  page.canvas. The preview has the currently-edited runs and moved
    *  images stripped from its content stream so HTML overlays don't
@@ -58,6 +61,9 @@ type Props = {
   onSelectImage: (imageId: string) => void;
   onSelectInsertedImage: (id: string) => void;
   onSelectShape: (shapeId: string) => void;
+  onAnnotationAdd: (annotation: Annotation) => void;
+  onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
+  onAnnotationDelete: (id: string) => void;
 };
 
 export function PdfPage({
@@ -68,6 +74,7 @@ export function PdfPage({
   imageMoves,
   insertedTexts,
   insertedImages,
+  annotations,
   previewCanvas,
   tool,
   editingId,
@@ -86,6 +93,9 @@ export function PdfPage({
   onSelectImage,
   onSelectInsertedImage,
   onSelectShape,
+  onAnnotationAdd,
+  onAnnotationChange,
+  onAnnotationDelete,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
    *  (= natural × displayScale) so the document scroll container can
@@ -519,6 +529,39 @@ export function PdfPage({
     });
   };
 
+  /** Add a highlight annotation covering a single run. The run's bbox
+   *  lives in viewport pixels (y-down); we convert to PDF user space
+   *  (y-up) and emit a single quad in TL/TR/BL/BR order. Multi-line
+   *  highlight (one annotation, many quads) is a Phase 2 feature; one
+   *  click currently means one quad over the clicked run. */
+  const addHighlightForRun = (run: {
+    bounds: { left: number; top: number; width: number; height: number };
+  }) => {
+    const pdfLeft = run.bounds.left / page.scale;
+    const pdfRight = (run.bounds.left + run.bounds.width) / page.scale;
+    const pdfTop = (page.viewHeight - run.bounds.top) / page.scale;
+    const pdfBottom = (page.viewHeight - run.bounds.top - run.bounds.height) / page.scale;
+    onAnnotationAdd({
+      kind: "highlight",
+      id: newAnnotationId("highlight"),
+      sourceKey,
+      pageIndex,
+      quads: [
+        {
+          x1: pdfLeft,
+          y1: pdfTop,
+          x2: pdfRight,
+          y2: pdfTop,
+          x3: pdfLeft,
+          y3: pdfBottom,
+          x4: pdfRight,
+          y4: pdfBottom,
+        },
+      ],
+      color: DEFAULT_HIGHLIGHT_COLOR,
+    });
+  };
+
   // Blocker rects the formatting toolbar must avoid. Computed once per
   // render so EditField + InsertedTextOverlay can decide whether to
   // place the toolbar above or below the editor without each rebuilding
@@ -597,11 +640,15 @@ export function PdfPage({
         data-view-height={page.viewHeight}
       >
         <div data-canvas-slot />
-        {tool !== "select" ? (
+        {tool === "addText" || tool === "addImage" || tool === "comment" ? (
           // Placement-mode capture layer: sits above all other overlays
           // so a tap/click goes to onCanvasClick regardless of what's
           // underneath. The user is in "drop a new thing here" mode;
           // existing items shouldn't react to the click.
+          //   - "highlight" excluded: click should hit a text run, not
+          //     this layer (the run's onClick branches on tool).
+          //   - "ink" excluded: AnnotationLayer captures pointer events
+          //     itself for stroke drawing.
           // `touch-action: manipulation` suppresses iOS' 300ms double-
           // tap-zoom delay on the layer so the placement click fires
           // immediately on a finger tap.
@@ -741,7 +788,7 @@ export function PdfPage({
                       ? "1px dashed rgba(255, 180, 30, 0.9)"
                       : "1px solid rgba(255, 200, 60, 0.5)",
                     pointerEvents: "auto",
-                    cursor: isDragging ? "grabbing" : "grab",
+                    cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
                     display: "flex",
                     alignItems: "center",
                     overflow: "visible",
@@ -769,12 +816,20 @@ export function PdfPage({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (drag || justDraggedRef.current === run.id) return;
+                    if (tool === "highlight") {
+                      addHighlightForRun(run);
+                      return;
+                    }
                     setEditingId(run.id);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       e.stopPropagation();
+                      if (tool === "highlight") {
+                        addHighlightForRun(run);
+                        return;
+                      }
                       setEditingId(run.id);
                     }
                   }}
@@ -837,7 +892,7 @@ export function PdfPage({
                   pointerEvents: "auto",
                   whiteSpace: "pre",
                   overflow: "visible",
-                  cursor: isDragging ? "grabbing" : "grab",
+                  cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
                   // `pinch-zoom` so two-finger pinch zooms the page
                   // while one-finger drag still fires pointermove.
                   touchAction: "pinch-zoom",
@@ -852,12 +907,20 @@ export function PdfPage({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (drag || justDraggedRef.current === run.id) return;
+                  if (tool === "highlight") {
+                    addHighlightForRun(run);
+                    return;
+                  }
                   setEditingId(run.id);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     e.stopPropagation();
+                    if (tool === "highlight") {
+                      addHighlightForRun(run);
+                      return;
+                    }
                     setEditingId(run.id);
                   }
                 }}
@@ -924,6 +987,20 @@ export function PdfPage({
               onSelect={() => onSelectInsertedImage(ins.id)}
             />
           ))}
+          {/* Annotations: highlight rects, sticky-note markers, ink
+            strokes. The layer also captures pointer events when the
+            ink tool is active. */}
+          <AnnotationLayer
+            annotations={annotations}
+            pageScale={page.scale}
+            viewHeight={page.viewHeight}
+            pageIndex={pageIndex}
+            sourceKey={sourceKey}
+            tool={tool}
+            onAnnotationAdd={onAnnotationAdd}
+            onAnnotationChange={onAnnotationChange}
+            onAnnotationDelete={onAnnotationDelete}
+          />
         </div>
       </div>
     </div>

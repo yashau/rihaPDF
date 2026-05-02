@@ -39,7 +39,6 @@ export function ThemeToggle({ mode, onChange, cycle = false }: Props) {
         size="sm"
         variant="ghost"
         aria-label={`Theme: ${current.label}. Tap to switch to ${next.label}.`}
-        title={`Theme: ${current.label}`}
         data-testid={`theme-cycle-${current.mode}`}
         onPress={() => onChange(next.mode)}
       >
