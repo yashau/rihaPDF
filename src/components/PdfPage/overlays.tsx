@@ -122,11 +122,11 @@ export function ImageOverlay({
         backgroundRepeat: "no-repeat",
         cursor: movable ? (isDragging ? "grabbing" : "grab") : "not-allowed",
         pointerEvents: "auto",
-        // `pinch-zoom` on movable images: one-finger drag fires
-        // pointermove (move/resize); two-finger pinch zooms the
-        // document. Un-movable images keep default behaviour so a
-        // pan starting on them scrolls the document.
-        touchAction: movable ? "pinch-zoom" : undefined,
+        // Movable images: `pan-y pinch-zoom` lets the page scroll on
+        // a quick finger swipe; the 400ms touch-hold gate in
+        // useDragGesture is what actually claims the image as a drag.
+        // Un-movable images keep default behaviour.
+        touchAction: movable ? "pan-y pinch-zoom" : undefined,
       }}
       title={
         movable
@@ -422,12 +422,11 @@ export function InsertedTextOverlay({
           display: "flex",
           alignItems: "center",
           zIndex: 20,
-          // Allow native gestures while in editing mode (so the user
-          // can scroll the on-screen keyboard / select text); on the
-          // drag-affordance state, allow pinch-zoom so two-finger
-          // pinch passes through to the browser, but suppress single-
-          // finger pan so a one-finger drag fires pointermove.
-          touchAction: isEditing ? "auto" : "pinch-zoom",
+          // Allow native gestures while editing; in drag-affordance
+          // state, `pan-y pinch-zoom` lets the page scroll on a quick
+          // swipe — the 400ms touch-hold gate in useDragGesture
+          // promotes the gesture to a drag.
+          touchAction: isEditing ? "auto" : "pan-y pinch-zoom",
         }}
         onPointerDown={startDrag}
         onDoubleClick={(e) => {
@@ -684,7 +683,7 @@ export function InsertedImageOverlay({
         cursor: "grab",
         pointerEvents: "auto",
         zIndex: 20,
-        touchAction: "pinch-zoom",
+        touchAction: "pan-y pinch-zoom",
       }}
       title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
       onPointerDown={startDrag}

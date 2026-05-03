@@ -335,7 +335,7 @@ export function AnnotationLayer({
               // pointerdown initiates a drag-to-move (and a clean
               // click-without-drag still falls through to edit mode).
               cursor: isEditing ? "text" : "move",
-              touchAction: "pinch-zoom",
+              touchAction: "pan-y pinch-zoom",
             }}
             onPointerDown={(e) => {
               if (tool !== "select") return;

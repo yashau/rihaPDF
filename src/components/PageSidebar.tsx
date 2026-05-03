@@ -4,7 +4,8 @@ import { FilePlus2, Plus, Trash2 } from "lucide-react";
 import type React from "react";
 import {
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -147,9 +148,16 @@ export function PageSidebar({
     onSlotsChange(slots.filter((s) => s.id !== slotId));
   };
 
-  // 5px activation distance keeps a click on the delete X from being
-  // misread as the start of a drag.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  // Mouse: 5px activation distance keeps a click on the delete X from
+  // being misread as the start of a drag.
+  // Touch: 400ms hold-to-drag so a finger swipe scrolls the sidebar
+  // (which is a common reflex on phones) instead of immediately
+  // grabbing whichever thumb sits under the finger. The 8px tolerance
+  // lets the browser fire pan-y and abort the would-be drag.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 400, tolerance: 8 } }),
+  );
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -279,7 +287,7 @@ function SortableSlotThumb({
       {...attributes}
       {...listeners}
       onClick={onActivate}
-      className="group relative bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded shadow-sm overflow-hidden cursor-pointer active:cursor-grabbing touch-none"
+      className="group relative bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded shadow-sm overflow-hidden cursor-pointer active:cursor-grabbing touch-pan-y"
     >
       <div className="absolute top-1 left-1 z-10 bg-zinc-700/75 dark:bg-zinc-950/75 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
         {displayIndex + 1}

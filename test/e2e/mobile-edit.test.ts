@@ -123,20 +123,38 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     // touchscreen helper only exposes tap, so we synthesise the move
     // chain ourselves. The hook listens on `window.pointermove` /
     // `pointerup`, so we dispatch on the window for those phases.
+    //
+    // Touch drags are gated by a 400ms hold in useDragGesture (so a
+    // tap-and-pan doesn't hijack page scrolling). We split the
+    // synthesised gesture in two: pointerdown, then a wait past the
+    // hold timer before any move events, so the gate releases and the
+    // hook switches into active drag mode.
     const DXV = 30; // screen pixels — well over the 10px touch threshold
     const DYV = 18;
     await h.page.evaluate(
-      ({ runId, sx, sy, dx, dy }) => {
+      ({ runId, sx, sy }) => {
         const el = document.querySelector<HTMLElement>(`[data-run-id="${runId}"]`);
         if (!el) throw new Error(`no overlay for ${runId}`);
-        const fire = (
-          ev: EventTarget,
-          type: string,
-          x: number,
-          y: number,
-          extra: PointerEventInit = {},
-        ) => {
-          ev.dispatchEvent(
+        el.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            clientX: sx,
+            clientY: sy,
+            pointerType: "touch",
+            pointerId: 1,
+            isPrimary: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      { runId: target!.id, sx: target!.cx, sy: target!.cy },
+    );
+    // Hold past the touch-hold gate (400ms) so onStart fires.
+    await h.page.waitForTimeout(450);
+    await h.page.evaluate(
+      ({ sx, sy, dx, dy }) => {
+        const fire = (type: string, x: number, y: number) => {
+          window.dispatchEvent(
             new PointerEvent(type, {
               clientX: x,
               clientY: y,
@@ -145,18 +163,16 @@ describe("mobile interaction (390×844, hasTouch)", () => {
               isPrimary: true,
               bubbles: true,
               cancelable: true,
-              ...extra,
             }),
           );
         };
-        fire(el, "pointerdown", sx, sy);
         const STEPS = 8;
         for (let i = 1; i <= STEPS; i++) {
-          fire(window, "pointermove", sx + (dx * i) / STEPS, sy + (dy * i) / STEPS);
+          fire("pointermove", sx + (dx * i) / STEPS, sy + (dy * i) / STEPS);
         }
-        fire(window, "pointerup", sx + dx, sy + dy);
+        fire("pointerup", sx + dx, sy + dy);
       },
-      { runId: target!.id, sx: target!.cx, sy: target!.cy, dx: DXV, dy: DYV },
+      { sx: target!.cx, sy: target!.cy, dx: DXV, dy: DYV },
     );
     await h.page.waitForTimeout(300);
     // The overlay should now sit at a different screen position — the

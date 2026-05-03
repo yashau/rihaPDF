@@ -792,13 +792,12 @@ export function PdfPage({
                     display: "flex",
                     alignItems: "center",
                     overflow: "visible",
-                    // `pinch-zoom` lets two-finger pinch pass through
-                    // to the browser's native zoom while suppressing
-                    // single-finger pan — so a one-finger drag fires
-                    // pointermove (the gesture we want to handle) and
-                    // a two-finger pinch zooms the document (the
-                    // gesture the user expects from a phone).
-                    touchAction: "pinch-zoom",
+                    // `pan-y pinch-zoom` lets the browser scroll the
+                    // page (and pinch-zoom) on a quick finger swipe;
+                    // useDragGesture's touch-hold gate means a single-
+                    // finger drag only claims the run after a 400ms
+                    // hold, so casual taps and scrolls aren't hijacked.
+                    touchAction: "pan-y pinch-zoom",
                     userSelect: "none",
                     WebkitUserSelect: "none",
                   }}
@@ -893,9 +892,10 @@ export function PdfPage({
                   whiteSpace: "pre",
                   overflow: "visible",
                   cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
-                  // `pinch-zoom` so two-finger pinch zooms the page
-                  // while one-finger drag still fires pointermove.
-                  touchAction: "pinch-zoom",
+                  // `pan-y pinch-zoom` so the page scrolls on a quick
+                  // finger swipe; the run is only claimed after the
+                  // 400ms touch-hold gate in useDragGesture.
+                  touchAction: "pan-y pinch-zoom",
                   WebkitUserSelect: "none",
                 }}
                 title={run.text}
