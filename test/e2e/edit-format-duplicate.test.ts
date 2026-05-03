@@ -55,7 +55,7 @@ describe("font change on Form-XObject text", () => {
 
     // Use the toolbar font picker like a real user — open it, then pick.
     const fontInfo = await h.page.evaluate(() => {
-      const s = document.querySelector("[data-edit-toolbar] select") as HTMLSelectElement | null;
+      const s = document.querySelector<HTMLSelectElement>("[data-edit-toolbar] select");
       if (!s) return null;
       return {
         current: s.value,
@@ -64,7 +64,7 @@ describe("font change on Form-XObject text", () => {
     });
     expect(fontInfo?.next).toBeTruthy();
     await h.page.locator("[data-edit-toolbar] select").click();
-    await h.page.locator("[data-edit-toolbar] select").selectOption(fontInfo!.next!);
+    await h.page.locator("[data-edit-toolbar] select").selectOption(fontInfo!.next);
     await h.page.waitForTimeout(150);
 
     // Issue 1: click outside the toolbar/editor must commit.
@@ -82,7 +82,7 @@ describe("font change on Form-XObject text", () => {
     // Issue 2: no visible duplicate. The wrapper span has a white
     // background masking whatever the strip couldn't reach.
     const overlayBg = await h.page.evaluate(({ runId }) => {
-      const el = document.querySelector(`[data-run-id="${runId}"]`) as HTMLElement | null;
+      const el = document.querySelector(`[data-run-id="${runId}"]`);
       if (!el) return null;
       return getComputedStyle(el).backgroundColor;
     }, { runId: target!.id });

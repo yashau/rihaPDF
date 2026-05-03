@@ -92,8 +92,10 @@ export function EditField({
   // below. Without the ref the listener would close over a stale `text`/
   // `style` from the mount render and lose any edits made afterward.
   const commitRef = useRef<() => void>(() => {});
-  commitRef.current = () =>
-    onCommit({ text, style: hasStyle(style) ? style : undefined });
+  useEffect(() => {
+    commitRef.current = () =>
+      onCommit({ text, style: hasStyle(style) ? style : undefined });
+  });
 
   // Click-outside-to-commit. The input's own `onBlur` only fires once —
   // when focus first leaves the input — so opening the toolbar's font
