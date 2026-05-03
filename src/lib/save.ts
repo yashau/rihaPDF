@@ -696,7 +696,7 @@ export async function applyEditsAndSave(
     for (const [sourceKey, list] of annotsBySource) {
       const ctx = ctxBySource.get(sourceKey);
       if (!ctx) continue;
-      applyAnnotationsToDoc(ctx.doc, list);
+      await applyAnnotationsToDoc(ctx.doc, list, { getFont: ctx.getFont });
     }
   }
 

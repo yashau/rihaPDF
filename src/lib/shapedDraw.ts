@@ -37,6 +37,8 @@ import {
   endText,
   PDFFont,
   PDFHexString,
+  PDFName,
+  PDFOperator,
   PDFPage,
   setFontAndSize,
   setTextMatrix,
@@ -81,13 +83,49 @@ export async function drawShapedText(
   opts: ShapedTextOptions,
 ): Promise<ShapedDrawResult> {
   const shape = await shapeText(opts.text, opts.fontBytes, opts.dir);
-
   const fontKey = page.node.newFontDictionary("RihaShaped", opts.font.ref);
-  const upem = shape.unitsPerEm || 1000;
-  const scale = opts.size / upem;
-  const widthPt = shape.totalAdvance * scale;
+  const widthPt = shapedAdvancePt(shape, opts.size);
+  const ops = buildShapedTextOpsFromShape(shape, fontKey, {
+    x: opts.x,
+    y: opts.y,
+    size: opts.size,
+  });
+  page.pushOperators(...ops);
+  return { width: widthPt, shape };
+}
 
-  const ops = [beginText(), setFontAndSize(fontKey, opts.size)];
+/** Shape `text` and return the raw text-show operators *without*
+ *  pushing them anywhere — used by callers that need to splice the
+ *  operators into something other than a page's primary content stream
+ *  (e.g. a `/FreeText` `/AP /N` Form XObject's stream). The caller is
+ *  responsible for registering the font under `fontKey` in whichever
+ *  resource dict its target stream resolves through. */
+export async function buildShapedTextOps(
+  opts: ShapedTextOptions & { fontKey: PDFName | string },
+): Promise<{ ops: PDFOperator[]; width: number; shape: ShapeResult }> {
+  const shape = await shapeText(opts.text, opts.fontBytes, opts.dir);
+  const widthPt = shapedAdvancePt(shape, opts.size);
+  const ops = buildShapedTextOpsFromShape(shape, opts.fontKey, {
+    x: opts.x,
+    y: opts.y,
+    size: opts.size,
+  });
+  return { ops, width: widthPt, shape };
+}
+
+function shapedAdvancePt(shape: ShapeResult, sizePt: number): number {
+  const upem = shape.unitsPerEm || 1000;
+  return shape.totalAdvance * (sizePt / upem);
+}
+
+function buildShapedTextOpsFromShape(
+  shape: ShapeResult,
+  fontKey: PDFName | string,
+  geom: { x: number; y: number; size: number },
+): PDFOperator[] {
+  const upem = shape.unitsPerEm || 1000;
+  const scale = geom.size / upem;
+  const ops: PDFOperator[] = [beginText(), setFontAndSize(fontKey, geom.size)];
   if (shape.direction === "rtl") {
     // Walk the visual-order array in reverse so the emitted Tj sequence
     // is in logical order (matches pdf.js text-extraction expectations).
@@ -99,8 +137,8 @@ export async function drawShapedText(
     for (let i = shape.glyphs.length - 1; i >= 0; i--) {
       const g = shape.glyphs[i];
       cursor -= g.xAdvance;
-      const glyphX = opts.x + (cursor + g.xOffset) * scale;
-      const glyphY = opts.y + g.yOffset * scale;
+      const glyphX = geom.x + (cursor + g.xOffset) * scale;
+      const glyphY = geom.y + g.yOffset * scale;
       ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
       const hex = g.glyphId.toString(16).padStart(4, "0");
       ops.push(showText(PDFHexString.of(hex)));
@@ -108,8 +146,8 @@ export async function drawShapedText(
   } else {
     let cursor = 0;
     for (const g of shape.glyphs) {
-      const glyphX = opts.x + (cursor + g.xOffset) * scale;
-      const glyphY = opts.y + g.yOffset * scale;
+      const glyphX = geom.x + (cursor + g.xOffset) * scale;
+      const glyphY = geom.y + g.yOffset * scale;
       ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
       const hex = g.glyphId.toString(16).padStart(4, "0");
       ops.push(showText(PDFHexString.of(hex)));
@@ -117,9 +155,7 @@ export async function drawShapedText(
     }
   }
   ops.push(endText());
-  page.pushOperators(...ops);
-
-  return { width: widthPt, shape };
+  return ops;
 }
 
 /** Measure the width of `text` rendered with `fontBytes` at `size` via
