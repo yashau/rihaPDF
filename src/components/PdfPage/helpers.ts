@@ -108,6 +108,40 @@ export function cssTextDecoration(underline: boolean, strikethrough: boolean): s
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
+/** Crop a region of a HTMLCanvasElement and return it as a PNG data URL.
+ *  Used by ImageOverlay to paint the source-image pixels at the moved
+ *  position, and by PdfPage's body-portal drag preview / cross-page
+ *  arrival rendering for source images. The returned URL is suitable
+ *  as a CSS `background-image`. */
+export function cropCanvasToDataUrl(
+  src: HTMLCanvasElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): string | null {
+  if (w <= 0 || h <= 0) return null;
+  // Account for high-DPI rendering: pdf.js sets canvas.width / height in
+  // device pixels (often = css pixels × scale), while the (left, top, w,
+  // h) we received are in CSS pixels. Re-scale so we crop the right
+  // region of the underlying bitmap.
+  const sx = src.width / parseFloat(src.style.width || `${src.width}`);
+  const sy = src.height / parseFloat(src.style.height || `${src.height}`);
+  const dst = document.createElement("canvas");
+  dst.width = Math.max(1, Math.round(w * sx));
+  dst.height = Math.max(1, Math.round(h * sy));
+  const ctx = dst.getContext("2d");
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(src, x * sx, y * sy, w * sx, h * sy, 0, 0, dst.width, dst.height);
+    return dst.toDataURL("image/png");
+  } catch {
+    // Cross-origin canvases would taint here, but pdf.js renders into
+    // our own canvas so this should never trip in practice.
+    return null;
+  }
+}
+
 /** True when a `blur` event is moving focus into the formatting
  *  toolbar (so the editor should stay open). Caller passes the blur
  *  event's `relatedTarget`. */

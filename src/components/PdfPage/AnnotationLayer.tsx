@@ -28,8 +28,10 @@ import {
   DEFAULT_INK_COLOR,
   newAnnotationId,
 } from "../../lib/annotations";
+import { createPortal } from "react-dom";
 import { useDragGesture } from "../../lib/useDragGesture";
 import type { ToolMode } from "../../App";
+import { findPageAtPoint } from "./helpers";
 
 type Props = {
   annotations: Annotation[];
@@ -96,28 +98,128 @@ export function AnnotationLayer({
   // natural→displayed-screen. Their product = PDF→displayed-screen.)
   const effectivePdfScale = pageScale * displayScale;
 
-  type CommentDragCtx = { id: string; baseX: number; baseY: number };
+  /** Live drag state for the currently-grabbed comment. We hold this
+   *  locally instead of patching `pdfX/pdfY` on every pointermove so
+   *  (a) the in-place overlay stays put while the body-portal clone
+   *  follows the cursor (escapes the page wrapper's overflow:hidden
+   *  during cross-page drags) and (b) onEnd can pick the right slot /
+   *  PDF coords without intermediate same-page commits leaving stale
+   *  off-page values. Null when no comment is being dragged. */
+  const [commentDragLive, setCommentDragLive] = useState<{
+    id: string;
+    baseX: number;
+    baseY: number;
+    pdfWidth: number;
+    pdfHeight: number;
+    color: AnnotationColor;
+    text: string;
+    fontSize: number;
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    /** Box dimensions in screen pixels (= natural × displayScale). */
+    width: number;
+    height: number;
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null>(null);
+  type CommentDragCtx = {
+    id: string;
+    baseX: number;
+    baseY: number;
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    boxScreenW: number;
+    boxScreenH: number;
+    pdfWidth: number;
+    pdfHeight: number;
+    color: AnnotationColor;
+    text: string;
+    fontSize: number;
+  };
+  const commentDragLiveRef = useRef(commentDragLive);
+  useEffect(() => {
+    commentDragLiveRef.current = commentDragLive;
+  }, [commentDragLive]);
   const beginCommentDrag = useDragGesture<CommentDragCtx>({
-    onMove: (ctx, info) => {
-      // viewport y-down → PDF y-up: subtract dy.
-      onAnnotationChange(ctx.id, {
-        pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
-        pdfY: ctx.baseY - info.dyRaw / effectivePdfScale,
+    onStart: (ctx, e) => {
+      setCommentDragLive({
+        id: ctx.id,
+        baseX: ctx.baseX,
+        baseY: ctx.baseY,
+        pdfWidth: ctx.pdfWidth,
+        pdfHeight: ctx.pdfHeight,
+        color: ctx.color,
+        text: ctx.text,
+        fontSize: ctx.fontSize,
+        cursorOffsetX: ctx.cursorOffsetX,
+        cursorOffsetY: ctx.cursorOffsetY,
+        width: ctx.boxScreenW,
+        height: ctx.boxScreenH,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: false,
       });
     },
+    onMove: (_ctx, info) => {
+      setCommentDragLive((prev) =>
+        prev ? { ...prev, clientX: info.clientX, clientY: info.clientY, moved: true } : prev,
+      );
+    },
     onEnd: (ctx, info) => {
-      if (!info.moved) return;
+      const live = commentDragLiveRef.current;
+      setCommentDragLive(null);
+      if (!info.moved || !live) return;
       // Suppress the trailing click that would otherwise toggle the
-      // editor open immediately after the drag releases. One tick is
-      // enough — React's synthetic click fires synchronously after
-      // pointerup but before the next event-loop turn.
+      // editor open immediately after the drag releases.
       justDraggedCommentRef.current = ctx.id;
       setTimeout(() => {
         if (justDraggedCommentRef.current === ctx.id) {
           justDraggedCommentRef.current = null;
         }
       }, 50);
+      // Resolve the dropped-on page. Cross-page drops emit a
+      // `sourceKey + pageIndex` patch alongside the new PDF coords —
+      // App.onAnnotationChange uses those to re-bucket the annotation
+      // into the target slot's array (mirrors how inserted text /
+      // image cross-page drops work).
+      const hit = findPageAtPoint(info.clientX, info.clientY);
+      const newScreenLeft = info.clientX - live.cursorOffsetX;
+      const newScreenTop = info.clientY - live.cursorOffsetY;
+      if (hit) {
+        const newBoxLeftNat = (newScreenLeft - hit.rect.left) / hit.displayScale;
+        const newBoxTopNat = (newScreenTop - hit.rect.top) / hit.displayScale;
+        // pdfY is the BOTTOM-LEFT y in y-up PDF space. Box top in
+        // viewport y-down = viewHeight - (pdfY + pdfHeight) × scale.
+        const newPdfX = newBoxLeftNat / hit.scale;
+        const heightOnHitNat = ctx.pdfHeight * hit.scale;
+        const newPdfY = (hit.viewHeight - newBoxTopNat - heightOnHitNat) / hit.scale;
+        if (hit.pageIndex === pageIndex) {
+          // Same slot — just a position update.
+          onAnnotationChange(ctx.id, { pdfX: newPdfX, pdfY: newPdfY });
+        } else {
+          // Cross-page drop. App resolves `pageIndex` (slot index) +
+          // `sourceKey` to the target slot and moves the annotation
+          // into that slot's bucket.
+          onAnnotationChange(ctx.id, {
+            sourceKey: hit.sourceKey,
+            pageIndex: hit.pageIndex,
+            pdfX: newPdfX,
+            pdfY: newPdfY,
+          });
+        }
+      } else {
+        // Dropped outside any page — fall back to the original
+        // same-page math so the comment doesn't end up in a void.
+        const dxPdf = info.dxRaw / effectivePdfScale;
+        const dyPdf = info.dyRaw / effectivePdfScale;
+        onAnnotationChange(ctx.id, {
+          pdfX: ctx.baseX + dxPdf,
+          pdfY: ctx.baseY - dyPdf,
+        });
+      }
     },
+    onCancel: () => setCommentDragLive(null),
   });
 
   // Close the inline editor when the user switches tool — keeps the
@@ -317,6 +419,7 @@ export function AnnotationLayer({
         const h = a.pdfHeight * pageScale;
         const fontSizePx = a.fontSize * pageScale;
         const isEditing = editingCommentId === a.id;
+        const isDraggingThis = commentDragLive?.id === a.id && commentDragLive.moved;
         return (
           <div
             key={a.id}
@@ -336,13 +439,33 @@ export function AnnotationLayer({
               // click-without-drag still falls through to edit mode).
               cursor: isEditing ? "text" : "move",
               touchAction: "pan-y pinch-zoom",
+              // Hide the in-place comment once the user has actually
+              // moved — the body-portal clone takes over so the
+              // comment can cross page boundaries (which the page
+              // wrapper's overflow:hidden would otherwise clip).
+              visibility: isDraggingThis ? "hidden" : "visible",
             }}
             onPointerDown={(e) => {
               if (tool !== "select") return;
               // While the textarea is mounted, let it handle pointer
               // events normally — caret placement, selection, etc.
               if (isEditing) return;
-              beginCommentDrag(e, { id: a.id, baseX: a.pdfX, baseY: a.pdfY });
+              const target = e.currentTarget;
+              const r = target.getBoundingClientRect();
+              beginCommentDrag(e, {
+                id: a.id,
+                baseX: a.pdfX,
+                baseY: a.pdfY,
+                cursorOffsetX: e.clientX - r.left,
+                cursorOffsetY: e.clientY - r.top,
+                boxScreenW: r.width,
+                boxScreenH: r.height,
+                pdfWidth: a.pdfWidth,
+                pdfHeight: a.pdfHeight,
+                color: a.color,
+                text: a.text,
+                fontSize: a.fontSize,
+              });
             }}
             onClick={(e) => {
               if (tool !== "select") return;
@@ -401,6 +524,42 @@ export function AnnotationLayer({
           </div>
         );
       })}
+      {/* Body-portal preview for the dragged comment. Mirrors the
+          source-text / inserted-text pattern: rendered to document.body
+          via createPortal so it isn't clipped by the page wrapper's
+          overflow:hidden when the cursor crosses onto another page.
+          Only mounted once the user has actually moved (so a no-motion
+          click on the comment opens the editor instead of getting
+          intercepted by a hidden overlay). */}
+      {commentDragLive?.moved
+        ? createPortal(
+            <div
+              aria-hidden
+              className="rounded-sm shadow-sm border border-amber-400/70"
+              style={{
+                position: "fixed",
+                left: commentDragLive.clientX - commentDragLive.cursorOffsetX,
+                top: commentDragLive.clientY - commentDragLive.cursorOffsetY,
+                width: commentDragLive.width,
+                height: commentDragLive.height,
+                background: rgba(commentDragLive.color, 0.95),
+                pointerEvents: "none",
+                zIndex: 10000,
+              }}
+            >
+              <div
+                className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap break-words overflow-hidden"
+                style={{
+                  fontSize: commentDragLive.fontSize * pageScale * displayScale,
+                  lineHeight: 1.2,
+                }}
+              >
+                {commentDragLive.text}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

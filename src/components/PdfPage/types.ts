@@ -78,6 +78,18 @@ export type ImageMoveValue = {
 export type CrossPageArrival = {
   /** Composite key for React: source slot id + run id. */
   key: string;
+  /** Stable id of the slot whose `edits` map owns the underlying entry.
+   *  Re-dragging the arrival writes back through this id so the move
+   *  stays anchored to its origin (the cross-page preview-strip
+   *  pipeline keys off the source slot). */
+  sourceSlotId: string;
+  /** Run id within the source page. Pairs with `sourceSlotId` to
+   *  address the entry in `App.edits`. */
+  runId: string;
+  /** Snapshot of the EditValue currently driving this arrival —
+   *  re-drag handlers spread it before applying their own patch so
+   *  text / style edits survive the move. */
+  edit: EditValue;
   /** Logical text — the edit's `text` overrides the source run's. */
   text: string;
   /** Baseline x in TARGET-page PDF user-space. */
@@ -95,6 +107,41 @@ export type CrossPageArrival = {
   underline: boolean;
   strikethrough: boolean;
   dir: "rtl" | "ltr" | undefined;
+};
+
+/** A source-page image that has been moved across pages and now
+ *  visually belongs to a TARGET page. PageList derives these from the
+ *  authoritative `imageMoves` map (keyed by SOURCE slot) by finding
+ *  entries whose `targetSlotId` matches each slot, then resolving the
+ *  source image so the renderer can crop the original pixels and
+ *  paint them at the target position. PdfPage renders these as
+ *  non-interactive sprites — same v1 limitation as
+ *  `CrossPageArrival` for text. */
+export type CrossPageImageArrival = {
+  /** Composite key for React: source slot id + image id. */
+  key: string;
+  /** Stable id of the slot whose `imageMoves` map owns the entry. */
+  sourceSlotId: string;
+  /** Image id within the source page. */
+  imageId: string;
+  /** Snapshot of the move record (dx/dy/dw/dh + target fields) so a
+   *  re-drag can preserve the persisted resize while updating the
+   *  target placement. */
+  move: ImageMoveValue;
+  /** The original source canvas — needed so we can crop the image's
+   *  pixels into a sprite for the target overlay. PageList passes the
+   *  reference; the renderer crops + memoises. */
+  sourceCanvas: HTMLCanvasElement;
+  /** Crop region on the source canvas, in source-page natural pixels. */
+  sourceLeft: number;
+  sourceTop: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  /** Bottom-left placement on the TARGET page in PDF user space (y-up). */
+  targetPdfX: number;
+  targetPdfY: number;
+  targetPdfWidth: number;
+  targetPdfHeight: number;
 };
 
 export type ResizeCorner = "tl" | "tr" | "bl" | "br";

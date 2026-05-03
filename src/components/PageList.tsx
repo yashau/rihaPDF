@@ -1,6 +1,6 @@
 import { PageWithToolbar } from "./PageWithToolbar";
 import type { EditValue, ImageMoveValue } from "./PdfPage";
-import type { CrossPageArrival } from "./PdfPage/types";
+import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation } from "../lib/annotations";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { LoadedSource } from "../lib/loadSource";
@@ -94,6 +94,9 @@ export function PageList({
       const arr = arrivalsBySlot.get(edit.targetSlotId) ?? [];
       arr.push({
         key: `${sourceSlotId}::${runId}`,
+        sourceSlotId,
+        runId,
+        edit,
         text: edit.text,
         targetPdfX: edit.targetPdfX,
         targetPdfY: edit.targetPdfY,
@@ -108,6 +111,53 @@ export function PageList({
         dir: style.dir,
       });
       arrivalsBySlot.set(edit.targetSlotId, arr);
+    }
+  }
+  // Same idea for cross-page-targeted IMAGE moves. Source-side strip
+  // pulls the image's pixels off the source canvas; without a target
+  // render the user just sees an empty hole until they save.
+  const imageArrivalsBySlot = new Map<string, CrossPageImageArrival[]>();
+  for (const [sourceSlotId, imgs] of imageMoves) {
+    const sourceSlot = slots.find((s) => s.id === sourceSlotId);
+    if (!sourceSlot || sourceSlot.kind !== "page") continue;
+    const sourceSrc = sources.get(sourceSlot.sourceKey);
+    const sourcePage = sourceSrc?.pages[sourceSlot.sourcePageIndex];
+    if (!sourcePage) continue;
+    for (const [imageId, mv] of imgs) {
+      if (!mv.targetSlotId || mv.deleted) continue;
+      if (
+        mv.targetPdfX === undefined ||
+        mv.targetPdfY === undefined ||
+        mv.targetPdfWidth === undefined ||
+        mv.targetPdfHeight === undefined
+      ) {
+        continue;
+      }
+      const sourceImg = sourcePage.images.find((i) => i.id === imageId);
+      if (!sourceImg) continue;
+      // Crop region on the source canvas, in source-page natural px.
+      const sourceLeft = sourceImg.pdfX * sourcePage.scale;
+      const sourceTop =
+        sourcePage.viewHeight - (sourceImg.pdfY + sourceImg.pdfHeight) * sourcePage.scale;
+      const sourceWidth = sourceImg.pdfWidth * sourcePage.scale;
+      const sourceHeight = sourceImg.pdfHeight * sourcePage.scale;
+      const arr = imageArrivalsBySlot.get(mv.targetSlotId) ?? [];
+      arr.push({
+        key: `${sourceSlotId}::${imageId}`,
+        sourceSlotId,
+        imageId,
+        move: mv,
+        sourceCanvas: sourcePage.canvas,
+        sourceLeft,
+        sourceTop,
+        sourceWidth,
+        sourceHeight,
+        targetPdfX: mv.targetPdfX,
+        targetPdfY: mv.targetPdfY,
+        targetPdfWidth: mv.targetPdfWidth,
+        targetPdfHeight: mv.targetPdfHeight,
+      });
+      imageArrivalsBySlot.set(mv.targetSlotId, arr);
     }
   }
   return (
@@ -239,6 +289,9 @@ export function PageList({
             onAnnotationChange={(id, patch) => onAnnotationChange(slot.id, id, patch)}
             onAnnotationDelete={(id) => onAnnotationDelete(slot.id, id)}
             crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
+            crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
+            onSourceEdit={onEdit}
+            onSourceImageMove={onImageMove}
           />
         );
       })}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
@@ -8,16 +8,23 @@ import { clickSuppressMs, useDragGesture } from "../../lib/useDragGesture";
 import { EditField } from "./EditField";
 import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
-import { cssTextDecoration, findPageAtPoint } from "./helpers";
+import { cropCanvasToDataUrl, cssTextDecoration, findPageAtPoint } from "./helpers";
 import type {
   CrossPageArrival,
+  CrossPageImageArrival,
   EditValue,
   ImageMoveValue,
   ResizeCorner,
   ToolbarBlocker,
 } from "./types";
 
-export type { CrossPageArrival, EditValue, ImageMoveValue, ToolbarBlocker } from "./types";
+export type {
+  CrossPageArrival,
+  CrossPageImageArrival,
+  EditValue,
+  ImageMoveValue,
+  ToolbarBlocker,
+} from "./types";
 
 type Props = {
   page: RenderedPage;
@@ -78,6 +85,20 @@ type Props = {
    *  source canvas (preview-strip) but never reappear on the target,
    *  so the user can't see what they moved until save. */
   crossPageArrivals: CrossPageArrival[];
+  /** Same idea for source IMAGES that have been moved cross-page —
+   *  the source canvas strip removes them, so the target slot needs
+   *  to paint them back at the dropped location. */
+  crossPageImageArrivals: CrossPageImageArrival[];
+  /** Re-drag handlers for arrivals. The arrival overlay calls these
+   *  when the user grabs a moved item on the target page and drops
+   *  it elsewhere — they write back to the SOURCE slot's edits /
+   *  imageMoves entry (where the cross-page move actually lives), so
+   *  any subsequent move stays anchored to its origin. The signatures
+   *  match App.tsx's `onEdit` / `onImageMove` directly: the arrival
+   *  carries the source slot id; the App handler handles
+   *  `targetPageIndex → targetSlotId` resolution. */
+  onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
+  onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
 };
 
 export function PdfPage({
@@ -111,6 +132,9 @@ export function PdfPage({
   onAnnotationChange,
   onAnnotationDelete,
   crossPageArrivals,
+  crossPageImageArrivals,
+  onSourceEdit,
+  onSourceImageMove,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
    *  (= natural × displayScale) so the document scroll container can
@@ -238,7 +262,16 @@ export function PdfPage({
   /** Same idea for images. Separate state because image drags don't
    *  have the click-suppression / edit handoff that text runs do.
    *  Carries a resize corner when the gesture is a corner drag — null
-   *  means whole-image translate. */
+   *  means whole-image translate.
+   *
+   *  The body-portal preview fields mirror the source-run drag state:
+   *  during a translate gesture (corner === null) once the user has
+   *  actually moved, we hide the in-place image overlay (which the
+   *  page wrapper's overflow:hidden would clip across page boundaries)
+   *  and render a `position: fixed` clone via document.body so the
+   *  user can see what they're dragging across pages. Resize gestures
+   *  (corner !== null) skip the portal — resize stays within the
+   *  source page. */
   const [imageDrag, setImageDrag] = useState<{
     imageId: string;
     dx: number;
@@ -246,6 +279,26 @@ export function PdfPage({
     dw: number;
     dh: number;
     corner: ResizeCorner | null;
+    /** True once the user has actually moved during the gesture. Same
+     *  rationale as the run drag's `moved` flag — keep the in-place
+     *  overlay visible for a no-motion click so onSelect still fires. */
+    moved: boolean;
+    /** Cursor offset within the box at gesture start, in screen px. */
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    /** Box dimensions in SCREEN pixels (= natural × originDisplayScale). */
+    width: number;
+    height: number;
+    /** Latest cursor viewport coords for the portal positioning. */
+    clientX: number;
+    clientY: number;
+    /** Source page's natural→displayed ratio captured at gesture start. */
+    originDisplayScale: number;
+    /** Cropped sprite (data URL) of the dragged image, painted on the
+     *  body-portal clone so the user sees the actual pixels following
+     *  the cursor across pages. Cached at gesture-start so we don't
+     *  re-crop the source canvas on every pointermove. */
+    sprite: string | null;
   } | null>(null);
   /** Set to the runId during a drag and cleared a tick after pointerup,
    *  used to suppress the click-to-edit that would otherwise fire after
@@ -418,7 +471,43 @@ export function PdfPage({
     originDisplayScale: number;
   };
   const beginImageDrag = useDragGesture<ImageDragCtx>({
-    onStart: (ctx) => {
+    onStart: (ctx, e) => {
+      // Capture body-portal preview metadata: cursor offset within the
+      // box, screen-px box dimensions, and a one-time crop of the
+      // image's pixels from the source canvas. The crop becomes the
+      // sprite painted on the position:fixed clone so the user sees
+      // the actual image follow the cursor across page boundaries.
+      const img = page.images.find((i) => i.id === ctx.imageId);
+      const rect = ctx.originRect;
+      const ds = ctx.originDisplayScale;
+      let cursorOffsetX = 0;
+      let cursorOffsetY = 0;
+      let width = 0;
+      let height = 0;
+      let sprite: string | null = null;
+      if (img && rect) {
+        // Match ImageOverlay's natural-pixel box: top-left at
+        // (left + dx, top + dy - dh), size (w + dw, h + dh).
+        const left = img.pdfX * page.scale;
+        const top = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
+        const w = img.pdfWidth * page.scale;
+        const h = img.pdfHeight * page.scale;
+        const boxLeftNat = left + ctx.base.dx;
+        const boxTopNat = top + ctx.base.dy - ctx.base.dh;
+        const boxWNat = w + ctx.base.dw;
+        const boxHNat = h + ctx.base.dh;
+        const screenLeft = rect.left + boxLeftNat * ds;
+        const screenTop = rect.top + boxTopNat * ds;
+        cursorOffsetX = e.clientX - screenLeft;
+        cursorOffsetY = e.clientY - screenTop;
+        width = boxWNat * ds;
+        height = boxHNat * ds;
+        // Crop the IMAGE's pixels (not the post-resize box) from the
+        // ORIGINAL canvas — preview canvas may have stripped them
+        // already. Sized to original w×h; the portal stretches via
+        // background-size so a mid-resize drag still looks right.
+        sprite = cropCanvasToDataUrl(page.canvas, left, top, w, h);
+      }
       setImageDrag({
         imageId: ctx.imageId,
         dx: ctx.base.dx,
@@ -426,6 +515,15 @@ export function PdfPage({
         dw: ctx.base.dw,
         dh: ctx.base.dh,
         corner: null,
+        moved: false,
+        cursorOffsetX,
+        cursorOffsetY,
+        width,
+        height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        originDisplayScale: ds,
+        sprite,
       });
     },
     onMove: (ctx, info) => {
@@ -434,7 +532,16 @@ export function PdfPage({
       const newDx = ctx.base.dx + dxNat;
       const newDy = ctx.base.dy + dyNat;
       setImageDrag((prev) =>
-        prev && prev.imageId === ctx.imageId ? { ...prev, dx: newDx, dy: newDy } : prev,
+        prev && prev.imageId === ctx.imageId
+          ? {
+              ...prev,
+              dx: newDx,
+              dy: newDy,
+              clientX: info.clientX,
+              clientY: info.clientY,
+              moved: true,
+            }
+          : prev,
       );
     },
     onEnd: (ctx, info) => {
@@ -535,6 +642,10 @@ export function PdfPage({
   };
   const beginImageResize = useDragGesture<ImageResizeCtx>({
     onStart: (ctx) => {
+      // Resize gestures don't trigger the body-portal preview — the
+      // image stays on its origin page while a corner is dragged. The
+      // portal-related fields stay at neutral defaults so the renderer
+      // can short-circuit when corner !== null.
       setImageDrag({
         imageId: ctx.imageId,
         dx: ctx.base.dx,
@@ -542,6 +653,15 @@ export function PdfPage({
         dw: ctx.base.dw,
         dh: ctx.base.dh,
         corner: ctx.corner,
+        moved: false,
+        cursorOffsetX: 0,
+        cursorOffsetY: 0,
+        width: 0,
+        height: 0,
+        clientX: 0,
+        clientY: 0,
+        originDisplayScale: 1,
+        sprite: null,
       });
     },
     onMove: (ctx, info) => {
@@ -1070,6 +1190,9 @@ export function PdfPage({
                 page={page}
                 persisted={persisted}
                 isDragging={imageDrag?.imageId === img.id}
+                hideInPlace={
+                  imageDrag?.imageId === img.id && imageDrag.corner === null && imageDrag.moved
+                }
                 isSelected={selectedImageId === img.id}
                 liveDx={imageDrag?.imageId === img.id ? imageDrag.dx : null}
                 liveDy={imageDrag?.imageId === img.id ? imageDrag.dy : null}
@@ -1124,49 +1247,28 @@ export function PdfPage({
             v1: render-only — to drag again the user has to undo and
             re-do the move. The save pipeline reads `targetSlotId`
             directly, so these spans are purely for live feedback. */}
-          {crossPageArrivals.map((arr) => {
-            const fontSizePx = arr.fontSizePdfPoints * page.scale;
-            const lineHeightPx = arr.fontSizePdfPoints * 1.4 * page.scale;
-            const left = arr.targetPdfX * page.scale;
-            const top = page.viewHeight - arr.targetPdfY * page.scale - fontSizePx;
-            return (
-              <span
-                key={arr.key}
-                data-cross-page-arrival-key={arr.key}
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  left,
-                  top,
-                  height: lineHeightPx,
-                  display: "flex",
-                  alignItems: "center",
-                  // No outline / background — the user just sees the
-                  // text where they dropped it. Matches the intent of
-                  // a finished move (vs. the dashed dragging preview).
-                  pointerEvents: "none",
-                  whiteSpace: "pre",
-                  zIndex: 15,
-                }}
-              >
-                <span
-                  dir={arr.dir ?? "auto"}
-                  style={{
-                    fontFamily: `"${arr.fontFamily}"`,
-                    fontSize: `${fontSizePx}px`,
-                    lineHeight: `${lineHeightPx}px`,
-                    fontWeight: arr.bold ? 700 : 400,
-                    fontStyle: arr.italic ? "italic" : "normal",
-                    textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
-                    color: "black",
-                    whiteSpace: "pre",
-                  }}
-                >
-                  {arr.text}
-                </span>
-              </span>
-            );
-          })}
+          {crossPageArrivals.map((arr) => (
+            <CrossPageTextArrivalOverlay
+              key={arr.key}
+              arr={arr}
+              page={page}
+              displayScale={displayScale}
+              onSourceEdit={onSourceEdit}
+            />
+          ))}
+          {/* Cross-page-arrived source images: dropped onto this slot
+            from another page. Same rationale as the text arrivals
+            above — the source-side preview-strip removed the image's
+            pixels from the source canvas, so without this layer it
+            would just be a hole until the user saves. */}
+          {crossPageImageArrivals.map((arr) => (
+            <CrossPageImageArrivalOverlay
+              key={arr.key}
+              arr={arr}
+              page={page}
+              onSourceImageMove={onSourceImageMove}
+            />
+          ))}
           {/* Annotations: highlight rects, sticky-note markers, ink
             strokes. The layer also captures pointer events when the
             ink tool is active. */}
@@ -1263,6 +1365,363 @@ export function PdfPage({
             );
           })()
         : null}
+      {/* Body-portal'd drag preview for SOURCE images. Same rationale
+          as the source-run portal above. Only rendered for translate
+          gestures (corner === null) once the user has actually moved;
+          resize gestures stay on the source page so they don't need a
+          portal. */}
+      {imageDrag && imageDrag.corner === null && imageDrag.moved
+        ? (() => {
+            if (imageDrag.width <= 0 || imageDrag.height <= 0) return null;
+            return createPortal(
+              <div
+                aria-hidden
+                style={{
+                  position: "fixed",
+                  left: imageDrag.clientX - imageDrag.cursorOffsetX,
+                  top: imageDrag.clientY - imageDrag.cursorOffsetY,
+                  width: imageDrag.width,
+                  height: imageDrag.height,
+                  backgroundImage: imageDrag.sprite ? `url(${imageDrag.sprite})` : undefined,
+                  backgroundSize: "100% 100%",
+                  backgroundRepeat: "no-repeat",
+                  outline: "1px dashed rgba(60, 130, 255, 0.85)",
+                  pointerEvents: "none",
+                  zIndex: 10000,
+                }}
+              />,
+              document.body,
+            );
+          })()
+        : null}
     </div>
+  );
+}
+
+/** Re-draggable text overlay for a cross-page-arrived source run.
+ *  The arrival's underlying state lives in the SOURCE slot's `edits`
+ *  map (where the cross-page-move pipeline expects it). Dragging this
+ *  overlay updates that entry's `targetPageIndex / targetPdfX/Y` so
+ *  App's onEdit can re-resolve `targetSlotId` — that means a user can
+ *  fine-tune position on the current target, hop to a third page, or
+ *  drop back on the source page (in which case targetSlotId ends up
+ *  matching sourceSlotId and the arrival simply re-renders there).
+ *
+ *  Same body-portal pattern as the source-run drag: the in-place span
+ *  goes invisible once the user has actually moved so the portal'd
+ *  clone can escape the page wrapper's overflow:hidden across page
+ *  boundaries.  */
+function CrossPageTextArrivalOverlay({
+  arr,
+  page,
+  displayScale,
+  onSourceEdit,
+}: {
+  arr: CrossPageArrival;
+  page: RenderedPage;
+  displayScale: number;
+  onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
+}) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [dragLive, setDragLive] = useState<{
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    width: number;
+    height: number;
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null>(null);
+  const fontSizeNat = arr.fontSizePdfPoints * page.scale;
+  const lineHeightNat = arr.fontSizePdfPoints * 1.4 * page.scale;
+  const left = arr.targetPdfX * page.scale;
+  const top = page.viewHeight - arr.targetPdfY * page.scale - fontSizeNat;
+  type Ctx = { startTargetPdfX: number; startTargetPdfY: number };
+  const begin = useDragGesture<Ctx>({
+    onStart: (_ctx, e) => {
+      const el = overlayRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDragLive({
+        cursorOffsetX: e.clientX - r.left,
+        cursorOffsetY: e.clientY - r.top,
+        width: r.width,
+        height: r.height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: false,
+      });
+    },
+    onMove: (_ctx, info) => {
+      setDragLive((prev) =>
+        prev ? { ...prev, clientX: info.clientX, clientY: info.clientY, moved: true } : prev,
+      );
+    },
+    onEnd: (_ctx, info) => {
+      const live = dragLiveRef.current;
+      setDragLive(null);
+      if (!info.moved || !live) return;
+      const hit = findPageAtPoint(info.clientX, info.clientY);
+      if (!hit) return;
+      // Convert cursor + offset → top-left in target-natural px → PDF
+      // baseline. Use the HIT page's scale (target-page scale) — for
+      // a back-to-source drop that's the source page's scale, since
+      // hit IS the source slot at that point.
+      const newScreenLeft = info.clientX - live.cursorOffsetX;
+      const newScreenTop = info.clientY - live.cursorOffsetY;
+      const newBoxLeftNat = (newScreenLeft - hit.rect.left) / hit.displayScale;
+      const newBoxTopNat = (newScreenTop - hit.rect.top) / hit.displayScale;
+      const fontSizeNatHit = arr.fontSizePdfPoints * hit.scale;
+      const newPdfX = newBoxLeftNat / hit.scale;
+      const newPdfY = (hit.viewHeight - newBoxTopNat - fontSizeNatHit) / hit.scale;
+      onSourceEdit(arr.sourceSlotId, arr.runId, {
+        ...arr.edit,
+        targetPageIndex: hit.pageIndex,
+        targetSourceKey: hit.sourceKey,
+        targetPdfX: newPdfX,
+        targetPdfY: newPdfY,
+      });
+    },
+    onCancel: () => setDragLive(null),
+  });
+  // dragLive captured fresh in onEnd — useDragGesture's callbacks
+  // close over the original render's values otherwise. A ref keeps
+  // the latest live state available to the gesture's window-level
+  // pointerup handler without re-installing the gesture.
+  const dragLiveRef = useRef(dragLive);
+  useEffect(() => {
+    dragLiveRef.current = dragLive;
+  }, [dragLive]);
+  return (
+    <>
+      <div
+        ref={overlayRef}
+        data-cross-page-arrival-key={arr.key}
+        role="button"
+        tabIndex={0}
+        aria-label={`Moved text — drag to relocate`}
+        title={arr.text}
+        style={{
+          position: "absolute",
+          left,
+          top,
+          height: lineHeightNat,
+          display: "flex",
+          alignItems: "center",
+          pointerEvents: "auto",
+          cursor: dragLive?.moved ? "grabbing" : "grab",
+          whiteSpace: "pre",
+          zIndex: 15,
+          // Hide the in-place version once the user actually moves —
+          // the body-portal clone is what they see across pages.
+          visibility: dragLive?.moved ? "hidden" : "visible",
+          touchAction: "pan-y pinch-zoom",
+        }}
+        onPointerDown={(e) =>
+          begin(e, { startTargetPdfX: arr.targetPdfX, startTargetPdfY: arr.targetPdfY })
+        }
+      >
+        <span
+          dir={arr.dir ?? "auto"}
+          style={{
+            fontFamily: `"${arr.fontFamily}"`,
+            fontSize: `${fontSizeNat}px`,
+            lineHeight: `${lineHeightNat}px`,
+            fontWeight: arr.bold ? 700 : 400,
+            fontStyle: arr.italic ? "italic" : "normal",
+            textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
+            color: "black",
+            whiteSpace: "pre",
+            pointerEvents: "none",
+          }}
+        >
+          {arr.text}
+        </span>
+      </div>
+      {dragLive?.moved
+        ? createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: dragLive.clientX - dragLive.cursorOffsetX,
+                top: dragLive.clientY - dragLive.cursorOffsetY,
+                width: dragLive.width,
+                height: dragLive.height,
+                outline: "1px dashed rgba(255, 180, 30, 0.9)",
+                background: "transparent",
+                pointerEvents: "none",
+                display: "flex",
+                alignItems: "center",
+                overflow: "visible",
+                zIndex: 10000,
+              }}
+            >
+              <span
+                dir={arr.dir ?? "auto"}
+                style={{
+                  fontFamily: `"${arr.fontFamily}"`,
+                  fontSize: `${fontSizeNat * displayScale}px`,
+                  lineHeight: `${lineHeightNat * displayScale}px`,
+                  fontWeight: arr.bold ? 700 : 400,
+                  fontStyle: arr.italic ? "italic" : "normal",
+                  textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
+                  color: "black",
+                  whiteSpace: "pre",
+                }}
+              >
+                {arr.text}
+              </span>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+/** Re-draggable image overlay for a cross-page-arrived source image.
+ *  Same model as the text arrival — the underlying state lives in the
+ *  SOURCE slot's `imageMoves` map; dragging here updates the entry's
+ *  `targetPageIndex / targetPdfX/Y/Width/Height` via `onSourceImageMove`.
+ *  Sprite is cropped from the source canvas at construction time and
+ *  cached for the lifetime of this overlay. */
+function CrossPageImageArrivalOverlay({
+  arr,
+  page,
+  onSourceImageMove,
+}: {
+  arr: CrossPageImageArrival;
+  page: RenderedPage;
+  onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
+}) {
+  const sprite = useMemo(
+    () =>
+      cropCanvasToDataUrl(
+        arr.sourceCanvas,
+        arr.sourceLeft,
+        arr.sourceTop,
+        arr.sourceWidth,
+        arr.sourceHeight,
+      ),
+    [arr.sourceCanvas, arr.sourceLeft, arr.sourceTop, arr.sourceWidth, arr.sourceHeight],
+  );
+  const left = arr.targetPdfX * page.scale;
+  const w = arr.targetPdfWidth * page.scale;
+  const h = arr.targetPdfHeight * page.scale;
+  const top = page.viewHeight - (arr.targetPdfY + arr.targetPdfHeight) * page.scale;
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [dragLive, setDragLive] = useState<{
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    width: number;
+    height: number;
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null>(null);
+  const dragLiveRef = useRef(dragLive);
+  useEffect(() => {
+    dragLiveRef.current = dragLive;
+  }, [dragLive]);
+  type Ctx = Record<string, never>;
+  const begin = useDragGesture<Ctx>({
+    onStart: (_ctx, e) => {
+      const el = overlayRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDragLive({
+        cursorOffsetX: e.clientX - r.left,
+        cursorOffsetY: e.clientY - r.top,
+        width: r.width,
+        height: r.height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: false,
+      });
+    },
+    onMove: (_ctx, info) => {
+      setDragLive((prev) =>
+        prev ? { ...prev, clientX: info.clientX, clientY: info.clientY, moved: true } : prev,
+      );
+    },
+    onEnd: (_ctx, info) => {
+      const live = dragLiveRef.current;
+      setDragLive(null);
+      if (!info.moved || !live) return;
+      const hit = findPageAtPoint(info.clientX, info.clientY);
+      if (!hit) return;
+      // PDF (pdfX, pdfY) for an image is the BOTTOM-LEFT (y-up). Box
+      // top in viewport y-down is `page.viewHeight - (pdfY + pdfH) × scale`.
+      // Reverse on the hit page: bottom-y = top + h, then convert.
+      const newScreenLeft = info.clientX - live.cursorOffsetX;
+      const newScreenTop = info.clientY - live.cursorOffsetY;
+      const newBoxLeftNat = (newScreenLeft - hit.rect.left) / hit.displayScale;
+      const newBoxTopNat = (newScreenTop - hit.rect.top) / hit.displayScale;
+      const newPdfX = newBoxLeftNat / hit.scale;
+      const heightOnHitNat = arr.targetPdfHeight * hit.scale;
+      const newPdfY = (hit.viewHeight - newBoxTopNat - heightOnHitNat) / hit.scale;
+      onSourceImageMove(arr.sourceSlotId, arr.imageId, {
+        ...arr.move,
+        targetPageIndex: hit.pageIndex,
+        targetSourceKey: hit.sourceKey,
+        targetPdfX: newPdfX,
+        targetPdfY: newPdfY,
+        targetPdfWidth: arr.targetPdfWidth,
+        targetPdfHeight: arr.targetPdfHeight,
+      });
+    },
+    onCancel: () => setDragLive(null),
+  });
+  return (
+    <>
+      <div
+        ref={overlayRef}
+        data-cross-page-image-arrival-key={arr.key}
+        role="button"
+        tabIndex={0}
+        aria-label="Moved image — drag to relocate"
+        style={{
+          position: "absolute",
+          left,
+          top,
+          width: w,
+          height: h,
+          backgroundImage: sprite ? `url(${sprite})` : undefined,
+          backgroundSize: "100% 100%",
+          backgroundRepeat: "no-repeat",
+          outline: dragLive?.moved
+            ? "1px dashed rgba(60, 130, 255, 0.85)"
+            : "1px solid rgba(60, 130, 255, 0.45)",
+          cursor: dragLive?.moved ? "grabbing" : "grab",
+          pointerEvents: "auto",
+          zIndex: 15,
+          visibility: dragLive?.moved ? "hidden" : "visible",
+          touchAction: "pan-y pinch-zoom",
+        }}
+        onPointerDown={(e) => begin(e, {})}
+      />
+      {dragLive?.moved
+        ? createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: dragLive.clientX - dragLive.cursorOffsetX,
+                top: dragLive.clientY - dragLive.cursorOffsetY,
+                width: dragLive.width,
+                height: dragLive.height,
+                backgroundImage: sprite ? `url(${sprite})` : undefined,
+                backgroundSize: "100% 100%",
+                backgroundRepeat: "no-repeat",
+                outline: "1px dashed rgba(60, 130, 255, 0.85)",
+                pointerEvents: "none",
+                zIndex: 10000,
+              }}
+            />,
+            document.body,
+          )
+        : null}
+    </>
   );
 }

@@ -9,6 +9,7 @@ import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
 import {
   chooseToolbarTop,
+  cropCanvasToDataUrl,
   cssTextDecoration,
   findPageAtPoint,
   isFocusMovingToToolbar,
@@ -31,6 +32,7 @@ export function ImageOverlay({
   page,
   persisted,
   isDragging,
+  hideInPlace,
   isSelected,
   liveDx,
   liveDy,
@@ -44,6 +46,12 @@ export function ImageOverlay({
   page: RenderedPage;
   persisted: ImageMoveValue | undefined;
   isDragging: boolean;
+  /** Hide the in-place overlay (visibility:hidden) so PdfPage's body-
+   *  portal clone can show the dragged image escaping the page
+   *  wrapper's overflow:hidden. Only set during translate drags
+   *  AFTER the user has actually moved — a no-motion click keeps
+   *  the overlay visible so onSelect still fires. */
+  hideInPlace: boolean;
   isSelected: boolean;
   liveDx: number | null;
   liveDy: number | null;
@@ -123,6 +131,11 @@ export function ImageOverlay({
         backgroundRepeat: "no-repeat",
         cursor: movable ? (isDragging ? "grabbing" : "grab") : "not-allowed",
         pointerEvents: "auto",
+        // Hidden during a translate-drag-with-motion so PdfPage's
+        // body-portal clone is what the user sees — the in-place box
+        // would otherwise be clipped by the page wrapper's
+        // overflow:hidden the moment the cursor crosses pages.
+        visibility: hideInPlace ? "hidden" : "visible",
         // Movable images: `pan-y pinch-zoom` lets the page scroll on
         // a quick finger swipe; the 400ms touch-hold gate in
         // useDragGesture is what actually claims the image as a drag.
@@ -183,38 +196,6 @@ export function ImageOverlay({
       ) : null}
     </div>
   );
-}
-
-/** Crop a region of a HTMLCanvasElement and return it as a PNG data URL.
- *  Used by ImageOverlay to paint the source-image pixels at the moved
- *  position. The returned URL is suitable as a CSS `background-image`. */
-function cropCanvasToDataUrl(
-  src: HTMLCanvasElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): string | null {
-  if (w <= 0 || h <= 0) return null;
-  // Account for high-DPI rendering: pdf.js sets canvas.width / height in
-  // device pixels (often = css pixels × scale), while the (left, top, w,
-  // h) we received are in CSS pixels. Re-scale so we crop the right
-  // region of the underlying bitmap.
-  const sx = src.width / parseFloat(src.style.width || `${src.width}`);
-  const sy = src.height / parseFloat(src.style.height || `${src.height}`);
-  const dst = document.createElement("canvas");
-  dst.width = Math.max(1, Math.round(w * sx));
-  dst.height = Math.max(1, Math.round(h * sy));
-  const ctx = dst.getContext("2d");
-  if (!ctx) return null;
-  try {
-    ctx.drawImage(src, x * sx, y * sy, w * sx, h * sy, 0, 0, dst.width, dst.height);
-    return dst.toDataURL("image/png");
-  } catch {
-    // Cross-origin canvases would taint here, but pdf.js renders into
-    // our own canvas so this should never trip in practice.
-    return null;
-  }
 }
 
 /** Net-new text the user typed at a fresh position on the page (not

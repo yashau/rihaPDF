@@ -1,5 +1,5 @@
 import { PdfPage, type EditValue, type ImageMoveValue } from "./PdfPage";
-import type { CrossPageArrival } from "./PdfPage/types";
+import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation } from "../lib/annotations";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { RenderedPage } from "../lib/pdf";
@@ -37,6 +37,9 @@ export function PageWithToolbar({
   onAnnotationChange,
   onAnnotationDelete,
   crossPageArrivals,
+  crossPageImageArrivals,
+  onSourceEdit,
+  onSourceImageMove,
 }: {
   slotId: string;
   page: RenderedPage;
@@ -69,6 +72,9 @@ export function PageWithToolbar({
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   crossPageArrivals: CrossPageArrival[];
+  crossPageImageArrivals: CrossPageImageArrival[];
+  onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
+  onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
 }) {
   return (
     <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
@@ -106,6 +112,9 @@ export function PageWithToolbar({
         onAnnotationChange={onAnnotationChange}
         onAnnotationDelete={onAnnotationDelete}
         crossPageArrivals={crossPageArrivals}
+        crossPageImageArrivals={crossPageImageArrivals}
+        onSourceEdit={onSourceEdit}
+        onSourceImageMove={onSourceImageMove}
       />
     </div>
   );

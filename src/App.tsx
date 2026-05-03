@@ -600,15 +600,55 @@ export default function App() {
    *  editor and color picker). Coalesces same-(slot,id) updates within
    *  the undo window so typing into a comment is one undo step. */
   const onAnnotationChange = useCallback(
-    (slotId: string, id: string, patch: Partial<Annotation>) => {
-      recordHistory(`annotation:${slotId}:${id}`);
+    (sourceSlotId: string, id: string, patch: Partial<Annotation>) => {
+      recordHistory(`annotation:${sourceSlotId}:${id}`);
       setAnnotations((prev) => {
         const next = new Map(prev);
-        const arr = next.get(slotId) ?? [];
-        next.set(
-          slotId,
-          arr.map((a) => (a.id === id ? ({ ...a, ...patch } as Annotation) : a)),
-        );
+        const fromArr = next.get(sourceSlotId) ?? [];
+        const item = fromArr.find((a) => a.id === id);
+        if (!item) return prev;
+        // Cross-page move: when the patch carries a `pageIndex` (slot
+        // index) + `sourceKey` that resolve to a DIFFERENT slot than
+        // the one the annotation currently lives in, move it across
+        // buckets and rewrite its source-page address to the
+        // destination slot's. Mirrors the inserted text / image
+        // cross-page path so dragging a comment across pages lands it
+        // on the new page rather than at off-page PDF coords. Same-
+        // slot patches (text edits, color tweaks, tiny re-positions)
+        // fall through to the in-place branch below.
+        let targetSlotId = sourceSlotId;
+        let updated: Annotation = { ...item, ...patch } as Annotation;
+        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
+          const destSlot = slotsRef.current[patch.pageIndex];
+          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: destSlot.sourceKey,
+              pageIndex: destSlot.sourcePageIndex,
+            } as Annotation;
+            targetSlotId = destSlot.id;
+          } else {
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: item.sourceKey,
+              pageIndex: item.pageIndex,
+            } as Annotation;
+          }
+        }
+        if (targetSlotId !== sourceSlotId) {
+          next.set(
+            sourceSlotId,
+            fromArr.filter((a) => a.id !== id),
+          );
+          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
+        } else {
+          next.set(
+            sourceSlotId,
+            fromArr.map((a) => (a.id === id ? updated : a)),
+          );
+        }
         return next;
       });
     },
