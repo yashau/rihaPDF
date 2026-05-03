@@ -39,7 +39,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 - **HeroUI v3 + Tailwind v4 + lucide-react** — components / styling / icons
 - **@dnd-kit** — sortable thumbnails
 
-`harfbuzzjs` and `bidi-js` are scaffolding for the future raw-operator save path; not imported by live code today.
+`harfbuzzjs` does the Thaana shaping at save time — replacement runs are shaped via HarfBuzz and emitted as raw `Tj` operators against a `subset: false` Type 0 font, so GPOS mark anchoring is correct ([shapedDraw.ts](src/lib/shapedDraw.ts)). `bidi-js` segments mixed-script runs by direction so each level-run shapes with its own font and direction ([shapedBidi.ts](src/lib/shapedBidi.ts)).
 
 ## Quick start
 
@@ -64,8 +64,10 @@ edit → click an overlay span → input + floating toolbar
 save → for each edited run:
        1. parse page content stream (contentStream.ts)
        2. find Tj/TJ ops inside the run's bbox, delete them
-       3. embed chosen font (subset:false)
-       4. append a fresh stream drawing the replacement via pdf-lib drawText
+       3. embed chosen font (subset:false → CIDToGIDMap=Identity)
+       4. shape replacement via HarfBuzz, emit raw Tj operators in
+          logical order (shapedDraw.ts); mixed-script runs go through
+          bidi-js segmentation first (shapedBidi.ts)
 ```
 
 Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/lib/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
@@ -91,7 +93,7 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 
 ## Known limitations
 
-- **Thaana shaping in saved PDFs is approximate.** pdf-lib's `drawText` doesn't apply GPOS, GSUB, or BiDi. Most bundled fonts ship zero-advance combining marks so fili stack on the preceding base, but fili sit at a fixed offset rather than the GPOS anchor — visible on wider consonants and stacked clusters. Fix is the raw-operator emit path under TODO; blocked on pdf-lib renumbering glyph IDs even with `subset: false`.
+- **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
 
 ## Scripts
 
@@ -133,33 +135,34 @@ pnpm dev          # one terminal
 pnpm test         # another
 ```
 
-| File                                          | What it covers                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------------- |
-| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                          |
-| `move-edit-maldivian2.test.ts`                | same flow against the second Maldivian fixture                                  |
-| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                                   |
-| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload               |
-| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                                |
-| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                   |
-| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                          |
-| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                                    |
-| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                       |
-| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                           |
-| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates            |
-| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                            |
-| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line           |
-| `insert.test.ts`                              | drop text + image → both persist after save                                     |
-| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                    |
-| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages     |
-| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable        |
-| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                         |
-| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                         |
-| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip       |
-| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                        |
-| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                           |
-| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip          |
-| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                         |
-| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                         |
+| File                                          | What it covers                                                             |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                     |
+| `move-edit-maldivian2.test.ts`                | same flow against the second Maldivian fixture                             |
+| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                              |
+| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload          |
+| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                           |
+| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                              |
+| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                     |
+| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                               |
+| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                  |
+| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                      |
+| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates       |
+| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                       |
+| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line      |
+| `insert.test.ts`                              | drop text + image → both persist after save                                |
+| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar               |
+| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages |
+| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable   |
+| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                    |
+| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                    |
+| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip  |
+| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                   |
+| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                      |
+| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip     |
+| `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint         |
+| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                    |
+| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                    |
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
@@ -173,7 +176,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 ### Save pipeline
 
-- [ ] **HarfBuzz-shaped output.** Replace `drawText` for the Thaana path with a custom Type 0 / Identity-H emitter that takes pre-shaped glyph IDs from harfbuzzjs and writes raw Tj operators. Unblocks GPOS mark positioning.
+- [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/lib/shapedDraw.ts) / [shapedBidi.ts](src/lib/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
 
 ### Overlay / interaction
 
@@ -182,7 +185,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 ### Document-level
 
-- [ ] **Thaana inside `/FreeText` comments.** Today `/DA` references Helv, which has no Thaana glyphs. Quick fix: embed Faruma in `/AcroForm/DR/Font` and reference it from `/DA`. Proper fix: ship a custom `/AP` appearance stream with HarfBuzz-shaped raw Tj — same blocker as raw-operator output.
 - [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
 - [ ] **Round-trip existing `/Annots`.** Source annotations pass through `copyPages` but aren't surfaced as editable. Parse `/Annots` in [loadSource.ts](src/lib/loadSource.ts).
 - [ ] **Form fields** (text + checkbox).
