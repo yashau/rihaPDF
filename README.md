@@ -33,12 +33,19 @@ removed from the content stream, not just covered with a whiteout.
   emits a fresh `Tm` placing the same glyphs at the new origin. The
   live preview canvas has the original Tj's stripped during the
   gesture so there's no double-render.
-- **Cross-page move.** Drag a text run, source image, inserted text, or
-  inserted image across the page boundary onto another page. Save
-  strips the content from its origin page and re-draws it on the
-  target — for source images this includes replicating the XObject
-  reference into the target page's resources before emitting a fresh
-  `q cm /Name Do Q`.
+- **Cross-page move.** Drag a text run, source image, inserted text,
+  inserted image, or comment annotation across the page boundary onto
+  another page. The drag preview is rendered through a body-level
+  portal so it escapes the page wrapper's `overflow: hidden` while it
+  travels between pages, and the target slot renders the arrival as
+  soon as pointerup lands. Save strips the content from its origin page
+  and re-draws it on the target — for source images this includes
+  replicating the XObject reference into the target page's resources
+  before emitting a fresh `q cm /Name Do Q`. Cross-page arrivals are
+  re-draggable: the arrival overlay carries the source slot id so a
+  subsequent drag writes back through the same `edits` /
+  `imageMoves` entry, letting the user hop to a third page or back to
+  the origin without any extra plumbing.
 - **Insert text and images.** "+ Text" / "+ Image" toolbar tools drop
   a placement cursor; click anywhere on a page to land the new item.
   Inserted text gets the same formatting toolbar as edits.
@@ -94,10 +101,24 @@ removed from the content stream, not just covered with a whiteout.
   scrolling. Pointer events convert screen-pixel deltas through the
   fit-to-width scale so drag distances stay visually 1:1. One-finger
   drags on overlays use `touch-action: pinch-zoom` so two-finger pinch
-  still passes through to the browser's native zoom. Page sidebar
-  collapses behind a hamburger button on small viewports. Header and
-  edit-toolbar are anchored to the visual viewport (not the layout
-  viewport) via [src/lib/useVisualViewport.ts](src/lib/useVisualViewport.ts),
+  still passes through to the browser's native zoom. Touch drags wait
+  for a 400ms hold before activating (movement past 8px during the
+  wait aborts the gesture and lets the browser pan) so the first
+  finger contact on a thumb or text run scrolls the page instead of
+  grabbing the object; mouse and pen pointers keep their immediate-
+  activation behaviour. Once a drag is active the nearest scrollable
+  ancestor auto-scrolls when the cursor enters a 60px edge band, so
+  cross-page drags can reach pages that aren't currently in view. The
+  page sidebar collapses behind a hamburger button on small viewports
+  and is re-rendered as a fixed overlay drawer (single instance in
+  both modes so the thumb cache survives open/close). The header
+  filename slot doubles as the file-open affordance — empty state
+  shows the primary Open button, loaded state shows the truncated
+  filename with a folder-icon prefix that taps to swap files, with
+  Save sitting immediately adjacent. The theme toggle collapses to a
+  single icon-only button cycling system → light → dark → system.
+  Header and edit-toolbar are anchored to the visual viewport (not
+  the layout viewport) via [src/lib/useVisualViewport.ts](src/lib/useVisualViewport.ts),
   so they stay above the soft keyboard and at constant visual size
   during pinch-zoom across both iOS Safari and Chromium-based mobile
   browsers.
@@ -124,7 +145,10 @@ removed from the content stream, not just covered with a whiteout.
     `/IC` for the fill, and `/BS /W 0` to suppress the viewer's
     default 1pt black border. Distinct from `+ Text`, which writes
     real content-stream text — comments stay on the annotation layer
-    and don't print by default.
+    and don't print by default. Comments are drag-to-move (within a
+    page or across page boundaries via the same body-portal preview as
+    text / image drags) so a misplaced reviewer note can be nudged
+    without re-creating it.
   - **Draw** — drag on a page to paint a freehand stroke; saves as
     `/Subtype /Ink` with the polyline in `/InkList` and a `/BS /W`
     stroke thickness. Adjacent samples within ~0.5pt are dropped to
@@ -219,9 +243,31 @@ the click-to-edit input; `EditTextToolbar.tsx` is the floating
 formatting toolbar shared between source-run edits and inserted-text
 overlays; `overlays.tsx` is the source-image, inserted-text, and
 inserted-image overlays plus the corner resize handles; `helpers.ts`
-holds the cross-page hit-test, the toolbar smart-flip, and a couple of
-focus-tracking helpers; `types.ts` is the EditValue / ImageMoveValue
-shape that App.tsx persists per slot.
+holds the cross-page hit-test, the toolbar smart-flip, the body-portal
+drag-preview crop, and a couple of focus-tracking helpers; `types.ts`
+is the EditValue / ImageMoveValue shape that App.tsx persists per slot.
+
+`App.tsx` itself is a composition root over a small set of focused
+pieces, not a monolithic mega-component. UI shells live under
+[src/components/](src/components/) — [AppHeader.tsx](src/components/AppHeader.tsx)
+(top toolbar + file inputs), [PageList.tsx](src/components/PageList.tsx)
+(scrollable page column), [PageWithToolbar.tsx](src/components/PageWithToolbar.tsx)
+(per-page wrapper that hosts the floating edit toolbar above its
+PdfPage), and [AboutModal.tsx](src/components/AboutModal.tsx) (the
+`?` modal with feature checks and shipped-features list). Cross-
+cutting state hooks live alongside the rest of the lib code:
+[useUndoRedo.ts](src/lib/useUndoRedo.ts) owns the snapshot stack and
+debounce-coalesce window, [usePreviewCanvases.ts](src/lib/usePreviewCanvases.ts)
+owns the per-`(sourceKey, pageIndex)` preview-canvas map and its
+generation counter, [useSelection.ts](src/lib/useSelection.ts) owns
+the click-to-select / Esc-to-clear / Del-to-delete handler,
+[useMobileChrome.ts](src/lib/useMobileChrome.ts) measures the fixed
+mobile header and toggles the sidebar drawer, and
+[useDragGesture.ts](src/lib/useDragGesture.ts) is the shared touch-
+hold-then-drag + auto-scroll pointer-gesture hook. The pure
+[buildSavePayload.ts](src/lib/buildSavePayload.ts) translator turns
+the slot list + per-slot edit/insert/move maps into the
+`SourceSavePayload[]` that `applyEditsAndSave` consumes.
 
 ## Adding a new Dhivehi font
 
@@ -314,24 +360,33 @@ pnpm dev          # in one terminal
 pnpm test         # in another — runs every spec
 ```
 
-| File                               | What it covers                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `move-edit.test.ts`                | move-only / edit-only / move+edit on the Maldivian PDF                       |
-| `image-move.test.ts`               | drag image → cm rewrite, neighbours untouched                                |
-| `image-resize.test.ts`             | corner-drag resize anchors the opposite corner across save+reload            |
-| `preview-strip.test.ts`            | original glyphs removed from canvas during edits (no whiteout cover)         |
-| `preview-strip-paragraph.test.ts`  | every line under agenda item 6 strips cleanly when dragged                   |
-| `edit-text-includes-punct.test.ts` | parens / slash / digits land in the edit box for the 14/2019 line            |
-| `edit-format.test.ts`              | bold OFF override persists across editor close/reopen (existing + inserted)  |
-| `decoration-roundtrip.test.ts`     | underline + strikethrough save → reopen → toggle off → save → no orphan line |
-| `insert.test.ts`                   | drop text + image → both persist after save                                  |
-| `insert-format.test.ts`            | font / size / bold round-trip from the inserted-text toolbar                 |
-| `cross-page-move.test.ts`          | drag text run / source image / inserted text / inserted image across pages   |
-| `delete-objects.test.ts`           | source image, inserted image, source text, inserted text — all deletable     |
-| `external-first-class.test.ts`     | external pages: edit run, insert text/image, cross-source drag round-trip    |
-| `theme.test.ts`                    | system default + override, OS-flip tracking, persistence across reload       |
-| `undo.test.ts`                     | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch  |
-| `annotations.test.ts`              | highlight / comment / ink → save → parse `/Annots` → fields round-trip       |
+| File                                          | What it covers                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------------- |
+| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                          |
+| `move-edit-maldivian2.test.ts`                | same flow against the second Maldivian fixture (sukun + glyph-name recovery)    |
+| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                                   |
+| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload               |
+| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits (no whiteout cover)            |
+| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly when dragged                      |
+| `preview-strip-paragraph-maldivian2.test.ts`  | same paragraph-strip coverage on the maldivian2 fixture                         |
+| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box for the 14/2019 line               |
+| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering coverage against maldivian2                              |
+| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen (existing + inserted)     |
+| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicated old glyphs |
+| `italic-save.test.ts`                         | italic toggle on a custom TTF emits the shear `cm`; OFF run has none            |
+| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → save → no orphan line    |
+| `insert.test.ts`                              | drop text + image → both persist after save                                     |
+| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                    |
+| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages      |
+| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable        |
+| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it; sibling rule survives  |
+| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run on the harder fixture                   |
+| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip       |
+| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence across reload          |
+| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing, redo-clear-on-branch     |
+| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip          |
+| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, mobile header subtree, drawer closed  |
+| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag persists dx/dy          |
 
 Diagnostic scripts (kept around for one-off inspection, not part of CI)
 live in [scripts/](scripts/): `dumpItems.mjs`, `dumpRuns.mjs`,
@@ -341,6 +396,93 @@ dev-server-on-localhost:5173 assumption.
 
 ## Recently shipped
 
+- [x] **Cross-page drag for source images, comments, and re-draggable
+      arrivals.** Source-image translate-drags now follow the same
+      body-portal preview pattern source text already had: while a
+      gesture crosses a page boundary, a position-fixed sprite tracks
+      the cursor (escaping the page wrapper's `overflow: hidden`) and
+      the target slot renders the arrival on pointerup so the moved
+      image actually appears where it landed instead of vanishing
+      between strip and save. Resize gestures stay on the source
+      page — only translate-mode drags portal. Comment annotations
+      gain cross-page drag at all (previously their drag patched
+      `pdfX` / `pdfY` in place, so a cursor crossing a page boundary
+      either clipped or wrote off-page coords). Cross-page text and
+      image arrivals are now re-draggable: the arrival overlay carries
+      the source slot id + edit/move snapshot it came from, so a
+      subsequent drag writes back through the source slot's `edits` /
+      `imageMoves` entry — letting the user hop to a third page or
+      back to the origin without any extra plumbing.
+- [x] **Sidebar thumbnail bitmap sized to CSS-width × DPR.** Thumbs
+      previously rendered into a fixed-pixel canvas regardless of
+      device pixel ratio, which left them blurry on retina laptops and
+      modern phones. Each thumb now sizes its bitmap to its actual
+      rendered CSS width × `devicePixelRatio` and re-rasterises on
+      DPR change.
+- [x] **App.tsx split into focused components and hooks.** The 2178-
+      line `App.tsx` shrank to ~950 lines as a composition root over
+      `AboutModal`, `AppHeader` / `AppFileInputs`, `PageList`, and
+      `PageWithToolbar` (under [src/components/](src/components/)),
+      plus `useMobileChrome`, `usePreviewCanvases`, `useSelection`,
+      `useUndoRedo`, and the pure `buildSavePayload` translator
+      (under [src/lib/](src/lib/)). No public surface change — the
+      external API is still `<App />`.
+- [x] **Edit overlay click-outside commits, no duplicate over Form
+      XObject text.** Two related regressions on Cloudflare-style
+      invoice PDFs (text rendered via Form XObjects). After picking
+      a font in the toolbar's `<select>` a subsequent body click
+      didn't dismiss the editor — the input's onBlur had already
+      fired (and been suppressed) when focus moved to the select, so
+      a body click triggered no event on the input; only Enter would
+      commit. The commit now wires a click-outside listener on the
+      page that fires regardless of which control has focus. The
+      preview-strip pipeline also silently no-op'd on text rendered
+      via Form XObjects (`findTextShows` only saw page-level Tj/TJ
+      ops), so after commit the original glyphs remained on the page
+      canvas underneath the new HTML overlay and the user saw a
+      duplicate. The strip now recurses into Form XObject content
+      streams.
+- [x] **Touch drags wait 400ms; drags auto-scroll near edges.** Phones
+      previously treated every touch on a draggable as drag-start, so
+      the sidebar and main view became impossible to scroll on mobile
+      — the first finger contact would grab a thumb / text run instead
+      of panning the page. Touch drags now wait for a 400ms hold (any
+      movement past 8px during the wait aborts the gesture and lets
+      the browser pan), and once a drag is active the nearest
+      scrollable ancestor auto-scrolls when the cursor enters a 60px
+      edge band, with each edge armed only after the cursor has been
+      seen outside it. Mouse and pen pointers keep their immediate-
+      activation behaviour. Lives in
+      [useDragGesture.ts](src/lib/useDragGesture.ts) so every overlay
+      gets the same gesture without re-implementing the timer + edge-
+      band bookkeeping.
+- [x] **Mobile header polish.** PageSidebar now renders inline as the
+      desktop rail, or as a fixed overlay drawer on mobile toggled
+      from a small `PanelLeft` button in the header (single instance
+      in both modes so the thumb cache survives drawer open/close).
+      Drawer auto-closes on slot tap (so the user sees the page it
+      scrolled to) and on viewport widening past `sm`. The empty-
+      state filename slot shows the primary Open button; loaded state
+      shows the truncated filename with a folder-icon prefix that
+      taps to swap files, with Save sitting immediately adjacent so
+      file-level controls cluster on the first row. Theme toggle
+      collapses to a single icon-only cycle button (system → light →
+      dark → system) on mobile, segmented row stays on desktop.
+- [x] **Mobile diagnostics: `?debug` overlay + ReadableStream
+      polyfill + About-modal feature checks.** `?debug=1` installs an
+      on-page error overlay that surfaces uncaught errors, unhandled
+      promise rejections, worker errors / `messageerror`s, and any
+      `console.error` output as a fixed-position red panel — useful
+      on devices without devtools (see _Debugging on devices without
+      devtools_). The polyfill in
+      [src/lib/polyfills.ts](src/lib/polyfills.ts) gives older Safari
+      builds the async-iterator on `ReadableStream` that pdf.js's
+      streaming worker pipeline expects. The About modal grew a
+      **Show browser diagnostics** toggle that lists feature-detection
+      results for the JS features rihaPDF relies on (per detected
+      browser, with the minimum version each feature shipped in),
+      plus whether `ReadableStream`'s async-iterator was natively
+      present or polyfilled.
 - [x] **Annotations: highlight, comment (FreeText), and ink.** Three
       toolbar tools that emit native PDF `/Annot` objects on save —
       `/Highlight` over text runs, `/FreeText` for visible inline
