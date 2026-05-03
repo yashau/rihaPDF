@@ -43,6 +43,7 @@ import type { LoadedSource } from "./loadSource";
 import type { Annotation } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
+import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -256,12 +257,20 @@ function drawDecorations(
  *  glyphs slant forward without drifting horizontally off the run's
  *  origin.
  *
- *  Dispatches by font kind:
- *    - Custom Dhivehi family with bundled TTF bytes → `drawShapedText`
- *      (HarfBuzz-shaped GIDs written as raw Tj operators against a
- *      subset:false Type 0 font, so GPOS mark anchoring is correct).
+ *  Dispatches by font kind and content:
+ *    - Custom Dhivehi family + mixed-script text → `drawMixedShapedText`
+ *      (bidi-js segments by direction; Thaana segments shaped via HB
+ *      with the user's primary; Latin segments rendered via Helvetica
+ *      because Faruma has no Latin glyphs in its character set).
+ *    - Custom Dhivehi family + single-direction text → `drawShapedText`
+ *      (one HarfBuzz pass; GPOS mark anchoring correct for Thaana).
  *    - Standard-14 Latin family (no TTF bytes) → pdf-lib's `drawText`.
- *      fontkit's layout is fine for Latin; HarfBuzz wouldn't help. */
+ *      fontkit's layout is fine for Latin; HarfBuzz wouldn't help and
+ *      we have no bytes to feed it anyway.
+ *
+ *  Direction handling: when the user pinned an explicit `dir`, we honor
+ *  it for single-direction shaping and skip the bidi path — the
+ *  override exists exactly for cases where auto-detect misclassifies. */
 async function drawTextWithStyle(
   page: PDFPage,
   text: string,
@@ -274,6 +283,11 @@ async function drawTextWithStyle(
     family: string;
     italic: boolean;
     dir: "rtl" | "ltr" | undefined;
+    /** Per-doc font factory — needed only for the mixed-script path,
+     *  which has to resolve a SECOND font (Helvetica for Latin spans
+     *  when primary is Faruma, or Faruma for Thaana spans when primary
+     *  is Latin). Single-script paths ignore it. */
+    getFont: EmbeddedFontFactory;
   },
 ): Promise<void> {
   const synth = opts.italic && !fontHasNativeItalic(opts.family);
@@ -283,7 +297,17 @@ async function drawTextWithStyle(
       concatTransformationMatrix(1, 0, ITALIC_SHEAR, 1, -ITALIC_SHEAR * opts.y, 0),
     );
   }
-  if (opts.fontBytes) {
+  if (opts.dir === undefined && isMixedScriptText(text)) {
+    const pair = await resolveMixedFontPair(opts.family, opts.font, opts.fontBytes, opts.getFont);
+    await drawMixedShapedText(page, {
+      text,
+      latin: pair.latin,
+      thaana: pair.thaana,
+      x: opts.x,
+      y: opts.y,
+      size: opts.size,
+    });
+  } else if (opts.fontBytes) {
     await drawShapedText(page, {
       text,
       font: opts.font,
@@ -307,18 +331,59 @@ async function drawTextWithStyle(
   }
 }
 
+type EmbeddedFontFactory = (
+  family: string,
+  bold?: boolean,
+  italic?: boolean,
+) => Promise<EmbeddedFont>;
+
+/** Pick the (latin, thaana) font pair the bidi path will use. The
+ *  user's primary covers ITS script; the OTHER script falls back to
+ *  the registry default (Arial for Latin, Faruma for Thaana). When
+ *  primary IS Faruma, latin = Helvetica StandardFont (no TTF; pdf-lib
+ *  draws those Latin segments directly). When primary is Arial,
+ *  thaana = Faruma TTF (HB shapes those Thaana segments). */
+async function resolveMixedFontPair(
+  family: string,
+  primaryFont: PDFFont,
+  primaryBytes: Uint8Array | null,
+  getFont: EmbeddedFontFactory,
+): Promise<{
+  latin: { font: PDFFont; bytes: Uint8Array | null };
+  thaana: { font: PDFFont; bytes: Uint8Array | null };
+}> {
+  const def = FONTS.find((f) => f.family === family);
+  const primaryIsThaana = def?.script === "thaana";
+  const primary = { font: primaryFont, bytes: primaryBytes };
+  if (primaryIsThaana) {
+    const latinEmbed = await getFont("Arial");
+    return { thaana: primary, latin: { font: latinEmbed.pdfFont, bytes: latinEmbed.bytes } };
+  }
+  const thaanaEmbed = await getFont(DEFAULT_FONT_FAMILY);
+  return { latin: primary, thaana: { font: thaanaEmbed.pdfFont, bytes: thaanaEmbed.bytes } };
+}
+
 /** Width of `text` rendered with `font` at `size`. Routes to HarfBuzz
  *  for shaped families (whose advance widths reflect GPOS adjustments)
- *  and falls back to pdf-lib's fontkit-driven measure for standard-14. */
+ *  and falls back to pdf-lib's fontkit-driven measure for standard-14.
+ *  Mirrors the dispatch in `drawTextWithStyle` so RTL right-alignment
+ *  math stays in sync — both must use the same width pipeline or the
+ *  base x will drift relative to where the shape eventually lands. */
 async function measureTextWidth(
   text: string,
   font: PDFFont,
   fontBytes: Uint8Array | null,
+  family: string,
   size: number,
   dir: "rtl" | "ltr" | undefined,
+  getFont: EmbeddedFontFactory,
 ): Promise<number> {
-  if (fontBytes) return measureShapedWidth(text, fontBytes, size, dir);
-  return font.widthOfTextAtSize(text, size);
+  if (dir === undefined && isMixedScriptText(text)) {
+    const pair = await resolveMixedFontPair(family, font, fontBytes, getFont);
+    return measureMixedWidth(text, pair, size);
+  }
+  if (!fontBytes) return font.widthOfTextAtSize(text, size);
+  return measureShapedWidth(text, fontBytes, size, dir);
 }
 
 /** Cached per-(family, bold, italic) embedded font factory bound to a
@@ -631,7 +696,15 @@ export async function applyEditsAndSave(
     const isRtl =
       ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const dir: "rtl" | "ltr" | undefined = ins.style?.dir;
-    const widthPt = await measureTextWidth(ins.text, pdfFont, fontBytes, fontSizePt, dir);
+    const widthPt = await measureTextWidth(
+      ins.text,
+      pdfFont,
+      fontBytes,
+      family,
+      fontSizePt,
+      dir,
+      ctx.getFont,
+    );
     const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
     await drawTextWithStyle(page, ins.text, {
       x: baseX,
@@ -642,6 +715,7 @@ export async function applyEditsAndSave(
       family,
       italic,
       dir,
+      getFont: ctx.getFont,
     });
     drawDecorations(page, {
       x: baseX,
@@ -1087,7 +1161,15 @@ async function emitTextDraw(
   // Explicit `style.dir` wins; otherwise auto-detect.
   const isRtl = style.dir === "rtl" || (style.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(edit.newText));
   const dir: "rtl" | "ltr" | undefined = style.dir;
-  const widthPt = await measureTextWidth(edit.newText, pdfFont, fontBytes, fontSizePt, dir);
+  const widthPt = await measureTextWidth(
+    edit.newText,
+    pdfFont,
+    fontBytes,
+    family,
+    fontSizePt,
+    dir,
+    ctx.getFont,
+  );
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
   const drawY = baselineYPdf;
 
@@ -1100,6 +1182,7 @@ async function emitTextDraw(
     family,
     italic,
     dir,
+    getFont: ctx.getFont,
   });
 
   // Effective decoration: the user's toolbar override wins; otherwise

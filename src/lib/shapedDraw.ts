@@ -113,12 +113,18 @@ export async function buildShapedTextOps(
   return { ops, width: widthPt, shape };
 }
 
-function shapedAdvancePt(shape: ShapeResult, sizePt: number): number {
+export function shapedAdvancePt(shape: ShapeResult, sizePt: number): number {
   const upem = shape.unitsPerEm || 1000;
   return shape.totalAdvance * (sizePt / upem);
 }
 
-function buildShapedTextOpsFromShape(
+/** Build the BT/Tf/Tm.../Tj.../ET operator block for a *pre-computed*
+ *  shape result. Used by the bidi-aware mixed-script emitter, which
+ *  shapes each direction-segment separately and then concatenates the
+ *  resulting op blocks at their respective visual positions. The
+ *  primary callers from `drawShapedText` / `buildShapedTextOps` go
+ *  through here too. */
+export function buildShapedTextOpsFromShape(
   shape: ShapeResult,
   fontKey: PDFName | string,
   geom: { x: number; y: number; size: number },
@@ -127,21 +133,57 @@ function buildShapedTextOpsFromShape(
   const scale = geom.size / upem;
   const ops: PDFOperator[] = [beginText(), setFontAndSize(fontKey, geom.size)];
   if (shape.direction === "rtl") {
-    // Walk the visual-order array in reverse so the emitted Tj sequence
-    // is in logical order (matches pdf.js text-extraction expectations).
-    // Cursor starts at the right edge and steps left by each glyph's
-    // xAdvance *before* drawing — so glyphs[N-1] (= first logical char)
-    // lands at the right and glyphs[0] (= last logical char) at the
-    // left, the same visual layout HB produced.
+    // HarfBuzz emits RTL output in *visual* order with cluster IDs
+    // decreasing across glyphs. Within each cluster the buffer is in
+    // visual stacking order — for Thaana that's mark-then-base.
+    //
+    // We emit one Tj per glyph (with its own Tm) so that pdf.js's
+    // text-content extraction can place each glyph back into the
+    // logical sequence via its ToUnicode CMap entry. Two important
+    // ordering decisions:
+    //
+    //  1. Across clusters: emit in REVERSE buffer order so the
+    //     rightmost-visual cluster (= first logical character) lands
+    //     in the stream first. pdf.js's `sortItemsLogical` for RTL
+    //     sorts by descending x, which then preserves logical order.
+    //
+    //  2. Within a cluster: emit BASE before MARK (i.e. reverse the
+    //     buffer's mark-then-base ordering). All glyphs of the cluster
+    //     share the same Tm — the cluster's leftmost visual x — so
+    //     pdf.js sees tied positions and uses its width tiebreaker
+    //     (wider first) to resolve order. With every Thaana base
+    //     having non-zero hmtx width and fili having zero, base wins
+    //     the tiebreaker. Skipping HB's GPOS xOffset / yOffset for
+    //     marks doesn't change visual fidelity for Faruma and friends
+    //     (whose fili glyphs are pre-positioned in their hmtx); fonts
+    //     that rely on GPOS anchoring would render fili at the
+    //     cluster's left edge instead of anchored to the base, which
+    //     is a follow-up.
+    const clusters: number[][] = [];
+    let lastCluster = -1;
+    for (let i = 0; i < shape.glyphs.length; i++) {
+      if (shape.glyphs[i].cluster !== lastCluster) {
+        clusters.push([i]);
+        lastCluster = shape.glyphs[i].cluster;
+      } else {
+        clusters[clusters.length - 1].push(i);
+      }
+    }
     let cursor = shape.totalAdvance;
-    for (let i = shape.glyphs.length - 1; i >= 0; i--) {
-      const g = shape.glyphs[i];
-      cursor -= g.xAdvance;
-      const glyphX = geom.x + (cursor + g.xOffset) * scale;
-      const glyphY = geom.y + g.yOffset * scale;
-      ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
-      const hex = g.glyphId.toString(16).padStart(4, "0");
-      ops.push(showText(PDFHexString.of(hex)));
+    for (let ci = clusters.length - 1; ci >= 0; ci--) {
+      const indices = clusters[ci];
+      let clusterAdv = 0;
+      for (const gi of indices) clusterAdv += shape.glyphs[gi].xAdvance;
+      cursor -= clusterAdv;
+      const clusterX = geom.x + cursor * scale;
+      // Walk the cluster's glyphs in REVERSE buffer order to swap HB's
+      // mark-then-base into base-then-mark.
+      for (const gi of indices.slice().reverse()) {
+        const g = shape.glyphs[gi];
+        ops.push(setTextMatrix(1, 0, 0, 1, clusterX, geom.y));
+        const hex = g.glyphId.toString(16).padStart(4, "0");
+        ops.push(showText(PDFHexString.of(hex)));
+      }
     }
   } else {
     let cursor = 0;
@@ -173,7 +215,7 @@ export async function measureShapedWidth(
   return shape.totalAdvance * (size / upem);
 }
 
-async function shapeText(
+export async function shapeText(
   text: string,
   fontBytes: Uint8Array,
   dir: "rtl" | "ltr" | undefined,
