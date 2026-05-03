@@ -22,7 +22,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 - **Delete anything.** `Del`/`Backspace` on selected images; trash button on the text toolbar.
 - **Undo / redo.** Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y. Coalesces typing and drags into single steps.
 - **Page sidebar.** Thumbnail per page; reorder, delete, insert blank, or insert pages from another PDF. External pages are first-class — every editing affordance works on them.
-- **38 bundled Dhivehi fonts + Noto Sans Thaana.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`.
+- **230 bundled Thaana fonts.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`. Sources, attributions, and per-file credits in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
