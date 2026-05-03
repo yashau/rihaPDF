@@ -140,10 +140,17 @@ export type ImageMove = {
 export type TextInsert = {
   sourceKey: string;
   pageIndex: number;
-  /** PDF user-space baseline x. */
+  /** PDF user-space LEFT edge of the editor's overlay box. For LTR
+   *  text this is also the baseline x; for RTL the rendered text is
+   *  right-aligned within the `pdfWidth`-wide box, so its baseline x
+   *  ends up at `pdfX + pdfWidth - widthPt`. */
   pdfX: number;
   /** PDF user-space baseline y (y-up). */
   pdfY: number;
+  /** Width of the editor's overlay box in PDF points. Used for RTL
+   *  right-alignment so the saved-PDF glyphs land where the editor
+   *  visually right-aligns the typed text. */
+  pdfWidth: number;
   fontSize: number;
   text: string;
   style?: EditStyle;
@@ -691,8 +698,13 @@ export async function applyEditsAndSave(
     const { pdfFont, bytes: fontBytes } = await ctx.getFont(family, bold, italic);
     const fontSizePt = ins.fontSize;
     // Explicit `style.dir` wins; otherwise auto-detect from the text's
-    // strong codepoints. RTL right-aligns the baseline so glyphs grow
-    // leftward from `pdfX`; LTR draws from `pdfX` rightward.
+    // strong codepoints. RTL right-aligns the rendered text to the
+    // overlay box's RIGHT edge (= `pdfX + pdfWidth`) so the saved-PDF
+    // glyphs land where the editor right-aligns the typed text in its
+    // 120pt-wide box. Anchoring to `pdfX` itself (the box's LEFT) put
+    // RTL text a full box-width too far left in the saved file
+    // — visible on mobile where the overlay box and the saved text
+    // visibly disagreed by ~120pt.
     const isRtl =
       ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const dir: "rtl" | "ltr" | undefined = ins.style?.dir;
@@ -705,7 +717,7 @@ export async function applyEditsAndSave(
       dir,
       ctx.getFont,
     );
-    const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
+    const baseX = isRtl ? ins.pdfX + ins.pdfWidth - widthPt : ins.pdfX;
     await drawTextWithStyle(page, ins.text, {
       x: baseX,
       y: ins.pdfY,

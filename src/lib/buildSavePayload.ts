@@ -130,6 +130,7 @@ export function buildSavePayload({
         pageIndex: addr.pageIndex,
         pdfX: t.pdfX,
         pdfY: t.pdfY,
+        pdfWidth: t.pdfWidth,
         fontSize: t.fontSize,
         text: t.text,
         style: t.style,
