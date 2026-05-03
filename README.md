@@ -9,6 +9,8 @@
 
 Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, type a replacement, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
 
+**100% client-side.** Your PDF is parsed, edited, and saved entirely in your browser. Nothing is uploaded; no server ever sees your file.
+
 **Free forever. Apache-2.0 ([LICENSE](LICENSE)). No accounts, no tracking, no paywall.**
 
 **Live demo:** <https://rihapdf.yashau.com>
