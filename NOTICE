@@ -1,0 +1,280 @@
+rihaPDF
+Copyright 2026 Ibrahim Yashau
+
+This product includes software developed by Ibrahim Yashau and contributors,
+licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Bundled Dhivehi (Thaana) fonts
+================================================================================
+
+The application bundles a set of Thaana fonts under public/fonts/dhivehi/.
+The vast majority were sourced via the raajjefonts.github.io catalogue, which
+aggregates Dhivehi fonts that have circulated freely for many years from five
+upstreams (dhivehi.mv archive, hassanhameed.com, thaana.com / Thaana Type
+Foundry, thatmaldivesblog.wordpress.com, dhivehifont.com). A smaller set is
+pre-bundled with rihaPDF from older Maldivian Windows installations and has
+no formally documented author or license.
+
+Known attributions:
+  - Faruma — Mustafa Muhammad (calligraphy & design), Ibrahim Yasir
+    (technical), Ahmed Aasif (refinement); 2002, commissioned by the
+    Office of the President of the Maldives.
+  - MV Boli — Thomas Rickner & Kamal Mansour (Monotype) for Microsoft;
+    bundled with Microsoft Windows since XP.
+  - MV Reethi — calligraphy by Abdul Sattar, Abdulla Waheed, Mustafa
+    Muhammad; created by Ibrahim Yasir, assisted by Ahmed Aasif; 2002,
+    commissioned by the Office of the President of the Maldives.
+  - MV Waheed — calligraphy by Abdulla Waheed (1995); regular by
+    Hassan Hameed; bold released 1996 with Accent Express.
+  - Noto Sans Thaana — Google LLC, SIL Open Font License 1.1.
+
+If you are a rights holder for any of these fonts and want it removed or
+re-attributed, please open an issue at
+https://github.com/yashau/rihaPDF/issues (or email ibrahim@yashau.com).
+
+See public/fonts/dhivehi/README.md for the full inventory.
+
+-- via raajjefonts.github.io — dhivehi.mv archive --
+  a-haleem-bolhu-bold.otf                    | A Haleem Bolhu Bold                | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-faseyha.otf                       | A Haleem faseyha                   | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-kb.otf                            | A Haleem KB                        | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-kirudhooni.otf                    | A Haleem  Kirudhooni               | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-mathi-bold.otf                    | A Haleem Mathi Bold                | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-raaveri.otf                       | A Haleem Raaveri                   | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-riveli.otf                        | A Haleem Riveli                    | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-sh-bold-italic.otf                | A Haleem SH Bold Italic            | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-thangi-bold.otf                   | A Haleem Thangi Bold               | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-thiki-bold.otf                    | A Haleem Thiki Bold                | via raajjefonts.github.io / www.dhivehi.mv
+  a-haleem-uivashaa.otf                      | A Haleem Uivashaa                  | via raajjefonts.github.io / www.dhivehi.mv
+  a-ilham.ttf                                | A Ilham                            | via raajjefonts.github.io / www.dhivehi.mv
+  a-kaani.otf                                | A Kaani                            | via raajjefonts.github.io / www.dhivehi.mv
+  a-koagannu.ttf                             | A Koagannu                         | via raajjefonts.github.io / www.dhivehi.mv
+  a-lakudi-college.otf                       | A Lakudi College                   | via raajjefonts.github.io / www.dhivehi.mv
+  a-lakudi.otf                               | A Lakudi                           | via raajjefonts.github.io / www.dhivehi.mv
+  a-midhili.otf                              | A Midhili                          | via raajjefonts.github.io / www.dhivehi.mv
+  a-nishan.ttf                               | A Nishan                           | via raajjefonts.github.io / www.dhivehi.mv
+  a-uni.otf                                  | A Uni                              | via raajjefonts.github.io / www.dhivehi.mv
+  a-waheed-college.otf                       | A Waheed College                   | via raajjefonts.github.io / www.dhivehi.mv
+  a-waheed.otf                               | A Waheed                           | via raajjefonts.github.io / www.dhivehi.mv
+  athu-casual.otf                            | Athu Casual                        | via raajjefonts.github.io / www.dhivehi.mv
+  avas-thaana.otf                            | Avas Thaana                        | via raajjefonts.github.io / www.dhivehi.mv
+  bodukuru-light.otf                         | BODUKURU Light                     | via raajjefonts.github.io / www.dhivehi.mv
+  boli.ttf                                   | MV Boli                            | Thomas Rickner & Kamal Mansour (Monotype) for Microsoft. circa Windows XP era. Bundled with Microsoft Windows since XP.
+  dam-hiyani.otf                             | DAM Hiyani                         | via raajjefonts.github.io / www.dhivehi.mv
+  dam-kalhi.otf                              | DAM Kalhi                          | via raajjefonts.github.io / www.dhivehi.mv
+  dam-kathivalhi.otf                         | DAM Kathivalhi                     | via raajjefonts.github.io / www.dhivehi.mv
+  dam-madheeh.otf                            | DAM Madheeh                        | via raajjefonts.github.io / www.dhivehi.mv
+  dhivehi.ttf                                | Dhivehi                            | via raajjefonts.github.io / www.dhivehi.mv
+  dhives.ttf                                 | Dhives                             | via raajjefonts.github.io / www.dhivehi.mv
+  eaman-xp.ttf                               | MV Eaman XP                        | via raajjefonts.github.io / www.dhivehi.mv
+  elaaf-lite.ttf                             | MV Elaaf Lite                      | via raajjefonts.github.io / www.dhivehi.mv
+  elaaf-normal.ttf                           | MV Elaaf                           | via raajjefonts.github.io / www.dhivehi.mv
+  faiy-light.otf                             | Faiy Light                         | via raajjefonts.github.io / www.dhivehi.mv
+  faruma.ttf                                 | Faruma                             | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement). 2002. Commissioned by the President's Office of the Maldives. De-facto government standard.
+  faseyha.otf                                | A Faseyha                          | via raajjefonts.github.io / www.dhivehi.mv
+  faseyha.ttf                                | MV Faseyha                         | via raajjefonts.github.io / www.dhivehi.mv
+  iyyu-formal.ttf                            | MV Iyyu Formal                     | via raajjefonts.github.io / www.dhivehi.mv
+  iyyu-nala.ttf                              | MV Iyyu Nala                       | via raajjefonts.github.io / www.dhivehi.mv
+  iyyu-normal.ttf                            | MV Iyyu                            | via raajjefonts.github.io / www.dhivehi.mv
+  kanafala.ttf                               | Kanafala                           | via raajjefonts.github.io / www.dhivehi.mv
+  lady-luck.ttf                              | MV Lady Luck                       | via raajjefonts.github.io / www.dhivehi.mv
+  mag-round-hollowttf.ttf                    | MV MAG Round Hollow                | via raajjefonts.github.io / www.dhivehi.mv
+  mag-round-xbold.ttf                        | MV MAG Round XBold                 | via raajjefonts.github.io / www.dhivehi.mv
+  mag-round.ttf                              | MV MAG Round                       | via raajjefonts.github.io / www.dhivehi.mv
+  midhilibold.ttf                            | Midhili bold                       | via raajjefonts.github.io / www.dhivehi.mv
+  mv-amaan-xp.otf                            | Mv Amaan XP                        | via raajjefonts.github.io / www.dhivehi.mv
+  mv-eamaan-xp.otf                           | Mv Eamaan XP                       | via raajjefonts.github.io / www.dhivehi.mv
+  mv-elaaf-normal.otf                        | Mv Elaaf Normal                    | via raajjefonts.github.io / www.dhivehi.mv
+  mv-galan-normal.otf                        | Mv Galan Normal                    | via raajjefonts.github.io / www.dhivehi.mv
+  mv-groupx-avas-akuru.otf                   | Mv GroupX Avas Akuru               | via raajjefonts.github.io / www.dhivehi.mv
+  mv-iyyu-normal.otf                         | Mv Iyyu Normal                     | via raajjefonts.github.io / www.dhivehi.mv
+  mv-mag-round-bold.otf                      | Mv MAG Round Bold                  | via raajjefonts.github.io / www.dhivehi.mv
+  mv-mag-round-hbold.otf                     | Mv MAG Round HBold                 | via raajjefonts.github.io / www.dhivehi.mv
+  mv-prathama-dva.ttf                        | MV Prathama Dva                    | via raajjefonts.github.io / www.dhivehi.mv
+  mv-prathama-ek.ttf                         | MV Prathama Ek                     | via raajjefonts.github.io / www.dhivehi.mv
+  mv-prathama-tin.ttf                        | MV Prathama Tin                    | via raajjefonts.github.io / www.dhivehi.mv
+  mv-sehga-fubaru-fancy.otf                  | Mv Sehga Fubaru Fancy              | via raajjefonts.github.io / www.dhivehi.mv
+  mv-sehga-old.otf                           | Mv Sehga Old                       | via raajjefonts.github.io / www.dhivehi.mv
+  mvtyper.ttf                                | MV Typewriter                      | via raajjefonts.github.io / www.dhivehi.mv
+  nasr-light.otf                             | Nasr Light                         | via raajjefonts.github.io / www.dhivehi.mv
+  samee-avas-thaana.ttf                      | Samee Avas Thaana                  | via raajjefonts.github.io / www.dhivehi.mv
+  sehga-fb.ttf                               | MV Sehga FB                        | via raajjefonts.github.io / www.dhivehi.mv
+  utheem.otf                                 | A Utheem                           | via raajjefonts.github.io / www.dhivehi.mv
+  utheem.ttf                                 | MV Utheem                          | via raajjefonts.github.io / www.dhivehi.mv
+  waheed.ttf                                 | MV Waheed                          | Calligraphy by Abdulla Waheed (1995); font by Hassan Hameed (regular) and 1996 release for Accent Express (bold). 1996
+
+-- via raajjefonts.github.io — Hassan Hameed (hassanhameed.com) --
+  aammu-f-rasmy.ttf                          | MV Aammu Rasmy                     | via raajjefonts.github.io / www.hassanhameed.com
+  aammufkf.ttf                               | AammuFK                            | via raajjefonts.github.io / www.hassanhameed.com
+  faseyha-bld-hinted-v2.ttf                  | Faseyha bold                       | via raajjefonts.github.io / www.hassanhameed.com
+  faseyha-reg-hinted-v2.ttf                  | Faseyha regular                    | via raajjefonts.github.io / www.hassanhameed.com
+  ilham.ttf                                  | MV Ilham                           | via raajjefonts.github.io / www.hassanhameed.com
+  mv-akalight-regular.ttf                    | MV Aka light regular               | via raajjefonts.github.io / www.hassanhameed.com
+  mv-faseyha-au-rgl-h.ttf                    | MV Faseyha Au                      | via raajjefonts.github.io / www.hassanhameed.com
+  mv-kelaa-bold-v1-h.ttf                     | MV Kelaa bold                      | via raajjefonts.github.io / www.hassanhameed.com
+  mv-kelaa-reg-v1-h.ttf                      | MV Kelaa reg v1 h                  | via raajjefonts.github.io / www.hassanhameed.com
+  mv-oswald-reg.ttf                          | MV Oswald reg                      | via raajjefonts.github.io / www.hassanhameed.com
+  mv-thaana-dotmatrix-16.ttf                 | MV thaana dotmatrix 16             | via raajjefonts.github.io / www.hassanhameed.com
+  mv-thaana-dotmatrix-8.ttf                  | MV thaana dotmatrix 8              | via raajjefonts.github.io / www.hassanhameed.com
+  mv-vaadhoo-bd-v1.0-hinted.ttf              | MV Vaadhoo bold                    | via raajjefonts.github.io / www.hassanhameed.com
+  mv-vaadhoo-reg-v1.0-hinted.ttf             | MV Vaadhoo regular                 | via raajjefonts.github.io / www.hassanhameed.com
+  mvawaheed.ttf                              | MV A Waheed                        | via raajjefonts.github.io / www.hassanhameed.com
+  mvilhambold.ttf                            | MV Ilham bold                      | via raajjefonts.github.io / www.hassanhameed.com
+  mvilhamregular.ttf                         | MV Ilham regular                   | via raajjefonts.github.io / www.hassanhameed.com
+  mvkoagannu.ttf                             | MV Koagannu                        | via raajjefonts.github.io / www.hassanhameed.com
+  mvnasri-bld.ttf                            | MV Nasri bold                      | via raajjefonts.github.io / www.hassanhameed.com
+  mvnasri-reg.ttf                            | MV Nasri regular                   | via raajjefonts.github.io / www.hassanhameed.com
+  mvopencondensed-bold.ttf                   | MV Open Condensed Bold             | via raajjefonts.github.io / www.hassanhameed.com
+  mvraadha-bold.ttf                          | MV Raadha valhi bold               | via raajjefonts.github.io / www.hassanhameed.com
+  mvraadha-regular.ttf                       | MV Raadha valhi regular            | via raajjefonts.github.io / www.hassanhameed.com
+  mvthuththu-neo-bold.ttf                    | MV Thuththu Neo bold               | via raajjefonts.github.io / www.hassanhameed.com
+  mvthuththu-neo-reg.ttf                     | MV Thuththu Neo reg                | via raajjefonts.github.io / www.hassanhameed.com
+  mvtypebold.ttf                             | MV Typewriter Semibold             | via raajjefonts.github.io / www.hassanhameed.com
+  mvuligamu.ttf                              | MV Uligamu                         | via raajjefonts.github.io / www.hassanhameed.com
+  mvutheemubold.ttf                          | MV Utheemu BOLD                    | via raajjefonts.github.io / www.hassanhameed.com
+  mvutheemuregular.ttf                       | MV Utheemu REGULAR                 | via raajjefonts.github.io / www.hassanhameed.com
+  raadhavalhi-b.ttf                          | MV Raadhavalhi B                   | via raajjefonts.github.io / www.hassanhameed.com
+  raadhavalhi.ttf                            | MV Raadhavalhi                     | via raajjefonts.github.io / www.hassanhameed.com
+  randhoo-reg-hinted.ttf                     | Randhoo reg hinted                 | via raajjefonts.github.io / www.hassanhameed.com
+  randhoo.ttf                                | MV Randhoo                         | via raajjefonts.github.io / www.hassanhameed.com
+
+-- via raajjefonts.github.io — Thaana Type Foundry (thaana.com) --
+  bolhu-bold.ttf                             | Bolhu Bold                         | via raajjefonts.github.io / thaana.com
+  bolhu-extrabold.ttf                        | Bolhu ExtraBold                    | via raajjefonts.github.io / thaana.com
+  bolhu-extralight.ttf                       | Bolhu ExtraLight                   | via raajjefonts.github.io / thaana.com
+  bolhu-light.ttf                            | Bolhu Light                        | via raajjefonts.github.io / thaana.com
+  bolhu-medium.ttf                           | Bolhu Medium                       | via raajjefonts.github.io / thaana.com
+  bolhu-regular.ttf                          | Bolhu Regular                      | via raajjefonts.github.io / thaana.com
+  bolhu-semibold.ttf                         | Bolhu SemiBold                     | via raajjefonts.github.io / thaana.com
+  bolhu-thin.ttf                             | Bolhu Thin                         | via raajjefonts.github.io / thaana.com
+  faagathidheli-light.ttf                    | Faagathi Dheli Light               | via raajjefonts.github.io / thaana.com
+  faagathidheli-regular.ttf                  | Faagathi Dheli Regular             | via raajjefonts.github.io / thaana.com
+  faagathineon-bold.ttf                      | Faagathi Neon Bold                 | via raajjefonts.github.io / thaana.com
+  faagathineon-extralight.ttf                | Faagathi Neon ExtraLight           | via raajjefonts.github.io / thaana.com
+  faagathineon-light.ttf                     | Faagathi Neon Light                | via raajjefonts.github.io / thaana.com
+  faagathineon-regular.ttf                   | Faagathi Neon Regular              | via raajjefonts.github.io / thaana.com
+  faarupunk-bold.ttf                         | Faaru Punk Bold                    | via raajjefonts.github.io / thaana.com
+  faarupunk-regular.ttf                      | Faaru Punk Regular                 | via raajjefonts.github.io / thaana.com
+  fanara-black.ttf                           | Fanara Black                       | via raajjefonts.github.io / thaana.com
+  fanara-bold.ttf                            | Fanara Bold                        | via raajjefonts.github.io / thaana.com
+  fanara-regular.ttf                         | Fanara Regular                     | via raajjefonts.github.io / thaana.com
+  fanara-thin.ttf                            | Fanara Thin                        | via raajjefonts.github.io / thaana.com
+  fanaragolhi-bold.ttf                       | Fanara Golhi Bold                  | via raajjefonts.github.io / thaana.com
+  fanaragolhi-extrabold.ttf                  | Fanara Golhi ExtraBold             | via raajjefonts.github.io / thaana.com
+  fanaragolhi-extralight.ttf                 | Fanara Golhi ExtraLight            | via raajjefonts.github.io / thaana.com
+  fanaragolhi-light.ttf                      | Fanara Golhi Light                 | via raajjefonts.github.io / thaana.com
+  fanaragolhi-medium.ttf                     | Fanara Golhi Medium                | via raajjefonts.github.io / thaana.com
+  fanaragolhi-regular.ttf                    | Fanara Golhi Regular               | via raajjefonts.github.io / thaana.com
+  fanaragolhi-semibold.ttf                   | Fanara Golhi SemiBold              | via raajjefonts.github.io / thaana.com
+  fanaragolhi-thin.ttf                       | Fanara Golhi Thin                  | via raajjefonts.github.io / thaana.com
+  fiyuzu-regular.ttf                         | Fiyuzu Regular                     | via raajjefonts.github.io / thaana.com
+  gurafiku-regular.ttf                       | Gurafiku Regular                   | via raajjefonts.github.io / thaana.com
+  haluvidhaa-regular.ttf                     | Haluvidhaa Regular                 | via raajjefonts.github.io / thaana.com
+  hawwa-regular.ttf                          | Hawwa Regular                      | via raajjefonts.github.io / thaana.com
+  kolhu-bold.ttf                             | Kolhu Bold                         | via raajjefonts.github.io / thaana.com
+  kolhu-extrabold.ttf                        | Kolhu ExtraBold                    | via raajjefonts.github.io / thaana.com
+  kolhu-extralight.ttf                       | Kolhu ExtraLight                   | via raajjefonts.github.io / thaana.com
+  kolhu-light.ttf                            | Kolhu Light                        | via raajjefonts.github.io / thaana.com
+  kolhu-medium.ttf                           | Kolhu Medium                       | via raajjefonts.github.io / thaana.com
+  kolhu-regular.ttf                          | Kolhu Regular                      | via raajjefonts.github.io / thaana.com
+  kolhu-semibold.ttf                         | Kolhu SemiBold                     | via raajjefonts.github.io / thaana.com
+  kolhu-thin.ttf                             | Kolhu Thin                         | via raajjefonts.github.io / thaana.com
+  lcdthaana-regular.ttf                      | LCD Thaana Regular                 | via raajjefonts.github.io / thaana.com
+  masnooeemono-regular.ttf                   | Masnooee Mono Regular              | via raajjefonts.github.io / thaana.com
+  motarudhigu-regular.ttf                    | Motaru Dhigu Regular               | via raajjefonts.github.io / thaana.com
+  motarusquare-regular.ttf                   | Motaru Square Regular              | via raajjefonts.github.io / thaana.com
+  sangusuruhee-regular.ttf                   | Sangu Suruhee Regular              | via raajjefonts.github.io / thaana.com
+  theras-bold.ttf                            | Theras Bold                        | via raajjefonts.github.io / thaana.com
+  theras-extrabold.ttf                       | Theras ExtraBold                   | via raajjefonts.github.io / thaana.com
+  theras-extralight.ttf                      | Theras ExtraLight                  | via raajjefonts.github.io / thaana.com
+  theras-light.ttf                           | Theras Light                       | via raajjefonts.github.io / thaana.com
+  theras-medium.ttf                          | Theras Medium                      | via raajjefonts.github.io / thaana.com
+  theras-regular.ttf                         | Theras Regular                     | via raajjefonts.github.io / thaana.com
+  theras-semibold.ttf                        | Theras SemiBold                    | via raajjefonts.github.io / thaana.com
+  theras-thin.ttf                            | Theras Thin                        | via raajjefonts.github.io / thaana.com
+  viethaana-bold.ttf                         | Viethaana Bold                     | via raajjefonts.github.io / thaana.com
+  viethaana-light.ttf                        | Viethaana Light                    | via raajjefonts.github.io / thaana.com
+  zaanathedhu-bold.ttf                       | Zaana Thedhu Bold                  | via raajjefonts.github.io / thaana.com
+  zaanathedhu-extrabold.ttf                  | Zaana Thedhu ExtraBold             | via raajjefonts.github.io / thaana.com
+  zaanathedhu-extralight.ttf                 | Zaana Thedhu ExtraLight            | via raajjefonts.github.io / thaana.com
+  zaanathedhu-light.ttf                      | Zaana Thedhu Light                 | via raajjefonts.github.io / thaana.com
+  zaanathedhu-medium.ttf                     | Zaana Thedhu Medium                | via raajjefonts.github.io / thaana.com
+  zaanathedhu-regular.ttf                    | Zaana Thedhu Regular               | via raajjefonts.github.io / thaana.com
+  zaanathedhu-semibold.ttf                   | Zaana Thedhu SemiBold              | via raajjefonts.github.io / thaana.com
+  zaanathedhu-thin.ttf                       | Zaana Thedhu Thin                  | via raajjefonts.github.io / thaana.com
+
+-- via raajjefonts.github.io — thatmaldivesblog.wordpress.com --
+  kanafala.otf                               | MV Kanafala                        | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-akson.otf                               | MV Akson                           | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-ashaahi.otf                             | MV Ashaahi                         | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-beys.otf                                | MV Beys                            | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-dubai.otf                               | MV Dubai                           | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-golhifoshi.otf                          | MV Golhifoshi                      | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-hulhumale.otf                           | MV Hulhumale                       | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-lhaiy-bold.otf                          | MV Lhaiy bold                      | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-osho.otf                                | MV Osho                            | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-roma.otf                                | MV Roma                            | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-runa.otf                                | MV Runa                            | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-salhi-eka.otf                           | MV Salhi eka                       | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-sarukitu.otf                            | MV Sarukitu                        | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-sishisozo-vah.otf                       | MV Sishisozo vah                   | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-thaanarabi.otf                          | MV Thaanarabi                      | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  mv-vashalo.otf                             | MV Vashalo                         | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+  thavaa.otf                                 | Thavaa                             | via raajjefonts.github.io / thatmaldivesblog.wordpress.com
+
+-- via raajjefonts.github.io — dhivehifont.com --
+  mv-alram.ttf                               | MV Alram                           | via raajjefonts.github.io / dhivehifont.com
+  mv-azheel.ttf                              | Mv Azheel                          | via raajjefonts.github.io / dhivehifont.com
+  mv-dheli-fihi.ttf                          | MV Dhelifihi                       | via raajjefonts.github.io / dhivehifont.com
+  mv-fathimath.ttf                           | Mv Fathimath                       | via raajjefonts.github.io / dhivehifont.com
+  mv-gaa-lhohi.ttf                           | Mv Gaa Lhohi                       | via raajjefonts.github.io / dhivehifont.com
+  mv-izy-pro.ttf                             | Mv Izy Pro                         | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-athuliyun-light.ttf               | MV izyan athuliyun light           | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-athuliyun.ttf                     | MV izyan athuliyun                 | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-bodu-akuru.ttf                    | Mv Izyan bodu akuru                | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-lhohi.ttf                         | Mv Izyan Lhohi                     | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-light.ttf                         | MV izyan  Light                    | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-liyun-regular.ttf                 | MV izyan liyun                     | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-suruhee.ttf                       | Mv Izyan Suruhee                   | via raajjefonts.github.io / dhivehifont.com
+  mv-izyan-thin.ttf                          | MV izyan thin                      | via raajjefonts.github.io / dhivehifont.com
+  mv-izyannormal.ttf                         | Mv Izyan Normal                    | via raajjefonts.github.io / dhivehifont.com
+  mv-izyanthaana.ttf                         | Mv Izyan Thaana                    | via raajjefonts.github.io / dhivehifont.com
+  mv-karudhas-outline.ttf                    | Mv karudhas Outline                | via raajjefonts.github.io / dhivehifont.com
+  mv-karudhas.ttf                            | Mv Karudhas                        | via raajjefonts.github.io / dhivehifont.com
+  mv-kashi.ttf                               | Mv kashi                           | via raajjefonts.github.io / dhivehifont.com
+  mv-maryam.ttf                              | MV maryam                          | via raajjefonts.github.io / dhivehifont.com
+  mv-mohamed-ali-final.ttf                   | Mv Mohamed Ali Final               | via raajjefonts.github.io / dhivehifont.com
+  mv-nerumagu.ttf                            | Mv Nerumagu                        | via raajjefonts.github.io / dhivehifont.com
+  mv-nevi-raheem.ttf                         | Mv Nevi Raheem                     | via raajjefonts.github.io / dhivehifont.com
+  mv-suruhee.ttf                             | Mv suruhee                         | via raajjefonts.github.io / dhivehifont.com
+  mv-thakurufaanu.ttf                        | Mv Thakurufaanu                    | via raajjefonts.github.io / dhivehifont.com
+  mvazheel-regular.ttf                       | Mv Azheel Regular                  | via raajjefonts.github.io / dhivehifont.com
+  mvedhuru.ttf                               | MV Edhuru                          | via raajjefonts.github.io / dhivehifont.com
+  mvizyanboduakuru3d-bold.ttf                | Mv Izyan boduakuru 3D Bold         | via raajjefonts.github.io / dhivehifont.com
+  mvizyanreethi-bold.ttf                     | Mv Izyan reethi Bold               | via raajjefonts.github.io / dhivehifont.com
+  mvizyaregular.ttf                          | Mv Izya regular                    | via raajjefonts.github.io / dhivehifont.com
+  mvlhohi-bold.ttf                           | Mv lhohi bold                      | via raajjefonts.github.io / dhivehifont.com
+  mvlhohi.ttf                                | Mv lhohi                           | via raajjefonts.github.io / dhivehifont.com
+  thiki.ttf                                  | THIKI                              | via raajjefonts.github.io / dhivehifont.com
+
+-- Pre-bundled in rihaPDF (no upstream catalogue entry) --
+  aa-randhoo.ttf                             | MV Aa Randhoo                      | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  aammu-f-thedhu.ttf                         | MV Aammu Thedhu F                  | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  aammu-h-thedhu.ttf                         | MV Aammu Thedhu H                  | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  akko.ttf                                   | MV Akko                            | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  avas.ttf                                   | MV Avas                            | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  bismi.ttf                                  | MV Bismi                           | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  noto-sans-thaana.ttf                       | Noto Sans Thaana                   | Google LLC. SIL Open Font License 1.1. https://fonts.google.com/noto/specimen/Noto+Sans+Thaana
+  raadhavalhi-fp.ttf                         | MV Raadhavalhi FP                  | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  raadhavalhi-p.ttf                          | MV Raadhavalhi P                   | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  radhun.ttf                                 | MV Radhun                          | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  randhoo-p.ttf                              | MV Randhoo P                       | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  reethi.ttf                                 | MV Reethi                          | Calligraphy: Abdul Sattar, Abdulla Waheed, Mustafa Muhammad. Created by Ibrahim Yasir, assisted by Ahmed Aasif. 2002. Commissioned by the President's Office of the Maldives.
+  thaana-1u.ttf                              | MV Thaana 1U                       | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  thaana-bold.ttf                            | MV Thaana Bold                     | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  thaana.ttf                                 | MV Thaana                          | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  utheem-p.ttf                               | MV Utheem P                        | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+  waheed-p.ttf                               | MV Waheed P                        | Unknown — bundled with Maldivian Windows installations, freely redistributed.
+
+

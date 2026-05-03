@@ -9,6 +9,8 @@
 
 Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, type a replacement, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
 
+**Free forever. Apache-2.0 ([LICENSE](LICENSE)). No accounts, no tracking, no paywall.**
+
 **Live demo:** <https://rihapdf.yashau.com>
 
 ## Features
@@ -82,6 +84,8 @@ The page renderer is split per concern under [src/components/PdfPage/](src/compo
    ```
 
 The `@font-face` rule, picker, and save pipeline all read from this list.
+
+The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `local()` first, so an OS-installed copy always wins. Font origins, attributions, and a contact path for rights-holder removal requests are documented in [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 
 ## Known limitations
 
