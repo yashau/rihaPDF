@@ -183,7 +183,25 @@ async function runScenario({
     .screenshot({ path: path.join(SCREENSHOTS, `move-edit-${name}.png`) });
 
   // Drift: every original run except the title should still match a
-  // saved run within 2px on x/y/width.
+  // saved run within 2px on x/y/width — RELATIVE to the median y/x
+  // shift across all runs. pdf.js renders the saved PDF at a slightly
+  // different sub-pixel offset than the original (the content-stream
+  // surgery rewrites whitespace and quantises decimal precision, which
+  // changes how pdf.js' tile/scale math lands), so every run picks up
+  // a uniform 3-4 px drift. We care about RELATIVE drift between runs,
+  // not the absolute viewport position, so we cancel out the median
+  // first.
+  const deltas: { dx: number; dy: number }[] = [];
+  for (const orig of originalRuns) {
+    if (orig.id === "p1-r2") continue;
+    const match = savedRuns.find((s) => s.text === orig.text);
+    if (!match) continue;
+    deltas.push({ dx: match.x - orig.x, dy: match.y - orig.y });
+  }
+  const median = (xs: number[]) =>
+    xs.length === 0 ? 0 : [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const offX = median(deltas.map((d) => d.dx));
+  const offY = median(deltas.map((d) => d.dy));
   const drift: string[] = [];
   for (const orig of originalRuns) {
     if (orig.id === "p1-r2") continue;
@@ -193,12 +211,12 @@ async function runScenario({
       continue;
     }
     if (
-      Math.abs(match.x - orig.x) > 2 ||
-      Math.abs(match.y - orig.y) > 2 ||
+      Math.abs(match.x - orig.x - offX) > 2 ||
+      Math.abs(match.y - orig.y - offY) > 2 ||
       Math.abs(match.w - orig.w) > 2
     ) {
       drift.push(
-        `MOVED: "${orig.text.slice(0, 30)}" orig=(${orig.x},${orig.y},${orig.w}) → (${match.x},${match.y},${match.w})`,
+        `MOVED: "${orig.text.slice(0, 30)}" orig=(${orig.x},${orig.y},${orig.w}) → (${match.x},${match.y},${match.w}) (median dx=${offX},dy=${offY})`,
       );
     }
   }
@@ -219,11 +237,11 @@ async function runScenario({
     const dyExp = drag?.dy ?? 0;
     let dx, dy;
     if (isRtl) {
-      dx = nowRight - origRight - dxExp;
-      dy = titleNow.y - titleRun.y - dyExp;
+      dx = nowRight - origRight - dxExp - offX;
+      dy = titleNow.y - titleRun.y - dyExp - offY;
     } else {
-      dx = titleNow.x - titleRun.x - dxExp;
-      dy = titleNow.y - titleRun.y - dyExp;
+      dx = titleNow.x - titleRun.x - dxExp - offX;
+      dy = titleNow.y - titleRun.y - dyExp - offY;
     }
     const off = Math.hypot(dx, dy);
     if (off > 8) {

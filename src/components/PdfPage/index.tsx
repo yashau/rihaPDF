@@ -767,8 +767,14 @@ export function PdfPage({
             if (edited) {
               const style = editedValue.style ?? {};
               // Edited / dragged run: paint the new text where the user
-              // wants it, no white cover under or behind. The original
-              // glyphs are already gone from the preview canvas.
+              // wants it, with a white cover behind it. The preview
+              // canvas SHOULD have the original glyphs stripped, but the
+              // strip is content-stream surgery and silently no-ops when
+              // the source text lives inside a Form XObject (common in
+              // PDFs from Cloudflare-style invoice generators, browsers,
+              // etc.) — `findTextShows()` only sees the page's top-level
+              // ops. Without the cover the user sees the original glyphs
+              // ghosting through the new format.
               return (
                 <span
                   key={run.id}
@@ -784,6 +790,7 @@ export function PdfPage({
                     top: run.bounds.top - padY + dy,
                     width: Math.max(run.bounds.width, 12) + padX * 2,
                     height: run.bounds.height + padY * 2,
+                    background: isDragging ? undefined : "white",
                     outline: isDragging
                       ? "1px dashed rgba(255, 180, 30, 0.9)"
                       : "1px solid rgba(255, 200, 60, 0.5)",

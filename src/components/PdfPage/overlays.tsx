@@ -284,6 +284,24 @@ export function InsertedTextOverlay({
     }
   }, [isEditing]);
 
+  // Click-outside-to-close. Same reason as EditField: the input's
+  // onBlur fires once when focus first moves to the toolbar (suppressed
+  // by the toolbar relatedTarget check), and after the user finishes
+  // with a toolbar control no further blur arrives on a page-body click.
+  useEffect(() => {
+    if (!isEditing) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (inputRef.current?.contains(t)) return;
+      if (t instanceof HTMLElement && t.closest("[data-edit-toolbar]")) return;
+      if (ins.text === "") onDelete();
+      onClose();
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, [isEditing, ins.text, onClose, onDelete]);
+
   const updateStyle = (patch: {
     fontFamily?: string;
     fontSize?: number;

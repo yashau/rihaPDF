@@ -88,7 +88,36 @@ export function EditField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const commit = () => onCommit({ text, style: hasStyle(style) ? style : undefined });
+  // Latest commit closure — captured by the document-level click handler
+  // below. Without the ref the listener would close over a stale `text`/
+  // `style` from the mount render and lose any edits made afterward.
+  const commitRef = useRef<() => void>(() => {});
+  commitRef.current = () =>
+    onCommit({ text, style: hasStyle(style) ? style : undefined });
+
+  // Click-outside-to-commit. The input's own `onBlur` only fires once —
+  // when focus first leaves the input — so opening the toolbar's font
+  // <select> uses up that single blur (suppressed via the toolbar
+  // relatedTarget check). After the user picks a font, focus sits on
+  // the <select> and a subsequent click on the page body triggers no
+  // event on the input. Without this listener the editor would stay
+  // mounted until Enter, with no other way to commit.
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (inputRef.current?.contains(t)) return;
+      if (t instanceof HTMLElement && t.closest("[data-edit-toolbar]")) return;
+      commitRef.current();
+    };
+    // capture: true so we see the click before any overlay's
+    // stopPropagation eats it (run / inserted-text overlays both call
+    // stopPropagation on click).
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, []);
+
+  const commit = () => commitRef.current();
 
   return (
     <>
