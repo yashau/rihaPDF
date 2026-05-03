@@ -40,8 +40,12 @@ type Props = {
   onSlotActivate?: () => void;
 };
 
-const THUMB_SCALE = 0.18;
-const SOURCE_RENDER_SCALE = 1.5;
+// Target CSS width of the displayed thumbnail. Sized for the widest
+// mount — the mobile drawer (`max-w-sm` 384 − `px-3` 24 = 360). The
+// desktop rail (`w-56`) downscales further at draw time, which the
+// browser handles cleanly. Bitmap is rendered at this × DPR so device
+// pixels land 1:1 instead of being upscaled.
+const THUMB_TARGET_CSS_WIDTH = 360;
 
 export function PageSidebar({
   slots,
@@ -100,9 +104,15 @@ export function PageSidebar({
       wanted.push({ key, src: rp.canvas });
     }
     if (wanted.length === 0) return;
-    const factor = THUMB_SCALE / SOURCE_RENDER_SCALE;
+    // pdf.js renders source canvases at scale × DPR (capped 2), so
+    // src.width is already in device pixels. Target = CSS width × DPR
+    // (same cap) gives a 1:1 device-pixel display on the widest mount.
+    // Clamp factor to 1 so a tiny source PDF doesn't get upscaled.
+    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    const targetW = THUMB_TARGET_CSS_WIDTH * dpr;
     const additions = new Map<string, string>();
     for (const { key, src } of wanted) {
+      const factor = Math.min(1, targetW / src.width);
       const w = Math.max(1, Math.round(src.width * factor));
       const h = Math.max(1, Math.round(src.height * factor));
       const c = document.createElement("canvas");
