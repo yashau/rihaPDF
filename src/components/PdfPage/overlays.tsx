@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
@@ -225,6 +226,7 @@ function cropCanvasToDataUrl(
 export function InsertedTextOverlay({
   ins,
   page,
+  slotIndex,
   displayScale,
   toolbarBlockers,
   isEditing,
@@ -235,6 +237,11 @@ export function InsertedTextOverlay({
 }: {
   ins: TextInsertion;
   page: RenderedPage;
+  /** Slot index this insertion is currently rendered in. Used to detect
+   *  cross-page drops and to look up the origin page's screen rect.
+   *  `ins.pageIndex` is the SOURCE page index (offset within its source
+   *  doc) — different number space, can't be used here. */
+  slotIndex: number;
   /** Source page's natural→displayed ratio. Drag deltas in screen px
    *  divide by `displayScale * page.scale` to land in PDF user space. */
   displayScale: number;
@@ -334,9 +341,51 @@ export function InsertedTextOverlay({
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
   const effectivePdfScale = page.scale * displayScale;
+  // The page wrapper has `overflow: hidden` (it has to — see PdfPage),
+  // so the in-parent overlay gets clipped the moment it crosses the
+  // page boundary. While dragging we render a `position: fixed` clone
+  // through a body portal so the user can actually see what they're
+  // dragging across pages. `dragLive` carries the screen-px state the
+  // clone needs; null means "not dragging, render normally in-parent".
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [dragLive, setDragLive] = useState<{
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    width: number;
+    height: number;
+    clientX: number;
+    clientY: number;
+    /** True once the cursor has actually moved during the gesture.
+     *  See PdfPage's drag state for rationale: mouse pointers eagerly
+     *  enter the gesture on pointerdown, so a no-motion click would
+     *  hide the overlay (visibility:hidden) the instant the cursor
+     *  goes down. The browser then dispatches click on whatever sits
+     *  underneath — the click never reaches `onClick`. Gating
+     *  visibility on `moved` keeps the overlay interactive for clicks
+     *  while still freeing the portal'd clone to escape the page
+     *  wrapper's overflow:hidden during a real drag. */
+    moved: boolean;
+  } | null>(null);
   type InsTextDragCtx = { baseX: number; baseY: number };
   const beginInsTextDrag = useDragGesture<InsTextDragCtx>({
+    onStart: (_ctx, e) => {
+      const el = overlayRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDragLive({
+        cursorOffsetX: e.clientX - r.left,
+        cursorOffsetY: e.clientY - r.top,
+        width: r.width,
+        height: r.height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: false,
+      });
+    },
     onMove: (ctx, info) => {
+      setDragLive((prev) =>
+        prev ? { ...prev, clientX: info.clientX, clientY: info.clientY, moved: true } : prev,
+      );
       onChange({
         pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
         // viewport y-down → PDF y-up: subtract.
@@ -344,13 +393,17 @@ export function InsertedTextOverlay({
       });
     },
     onEnd: (ctx, info) => {
+      setDragLive(null);
       // Cross-page drop: re-key onto the target page in App. Convert
       // the overlay's screen position to the target page's PDF coords
       // (baseline x; baseline y is fontSizePx ABOVE the box top).
+      // hit.pageIndex is the SLOT index of the dropped-on page; compare
+      // against the origin slot, not ins.pageIndex (which is the
+      // source-page offset within ins.sourceKey's doc).
       const hit = findPageAtPoint(info.clientX, info.clientY);
-      if (!hit || hit.pageIndex === ins.pageIndex) return;
+      if (!hit || hit.pageIndex === slotIndex) return;
       const originRect = document
-        .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
+        .querySelector<HTMLElement>(`[data-page-index="${slotIndex}"]`)
         ?.getBoundingClientRect();
       if (!originRect) return;
       const pdfXOrigin = ctx.baseX + info.dxRaw / effectivePdfScale;
@@ -372,6 +425,7 @@ export function InsertedTextOverlay({
         pdfY: targetPdfY,
       });
     },
+    onCancel: () => setDragLive(null),
   });
   const startDrag = (e: React.PointerEvent) => {
     if (isEditing) return;
@@ -415,6 +469,7 @@ export function InsertedTextOverlay({
         />
       ) : null}
       <div
+        ref={overlayRef}
         data-text-insert-id={ins.id}
         role={isEditing ? undefined : "button"}
         tabIndex={isEditing ? undefined : 0}
@@ -440,6 +495,14 @@ export function InsertedTextOverlay({
           display: "flex",
           alignItems: "center",
           zIndex: 20,
+          // Once the user actually moves, the in-parent copy stays
+          // mounted (so its rect reference for the drop math is
+          // stable) but we hide it — the body-portal clone below is
+          // what the user sees. We DON'T hide on gesture-start alone:
+          // mouse pointers activate the gesture eagerly on
+          // pointerdown, and a no-motion click would otherwise hit a
+          // hidden span and skip the editor handoff.
+          visibility: dragLive?.moved ? "hidden" : "visible",
           // Allow native gestures while editing; in drag-affordance
           // state, `pan-y pinch-zoom` lets the page scroll on a quick
           // swipe — the 400ms touch-hold gate in useDragGesture
@@ -544,6 +607,50 @@ export function InsertedTextOverlay({
           </span>
         )}
       </div>
+      {dragLive?.moved
+        ? createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: dragLive.clientX - dragLive.cursorOffsetX,
+                top: dragLive.clientY - dragLive.cursorOffsetY,
+                width: dragLive.width,
+                height: dragLive.height,
+                outline: "1px dashed rgba(40, 130, 255, 0.85)",
+                background: "rgba(255, 255, 255, 0.6)",
+                pointerEvents: "none",
+                display: "flex",
+                alignItems: "center",
+                zIndex: 10000,
+              }}
+            >
+              <span
+                dir={style.dir ?? "auto"}
+                style={{
+                  fontFamily: `"${family}"`,
+                  // Match the in-parent visual size: in-parent uses NATURAL
+                  // px inside a `transform: scale(displayScale)` container;
+                  // the portal lives in document.body (no transform) so
+                  // multiply once here to land at the same on-screen size.
+                  fontSize: `${fontSizePx * displayScale}px`,
+                  lineHeight: `${height * displayScale}px`,
+                  fontWeight: bold ? 700 : 400,
+                  fontStyle: italic ? "italic" : "normal",
+                  textDecoration: cssTextDecoration(underline, strikethrough),
+                  paddingLeft: 4,
+                  paddingRight: 4,
+                  color: "black",
+                  whiteSpace: "pre",
+                  width: "100%",
+                }}
+              >
+                {ins.text || " "}
+              </span>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
@@ -555,6 +662,7 @@ export function InsertedTextOverlay({
 export function InsertedImageOverlay({
   ins,
   page,
+  slotIndex,
   displayScale,
   isSelected,
   onChange,
@@ -563,6 +671,10 @@ export function InsertedImageOverlay({
 }: {
   ins: ImageInsertion;
   page: RenderedPage;
+  /** Slot index this insertion is currently rendered in. Used to detect
+   *  cross-page drops and to look up the origin page's screen rect.
+   *  `ins.pageIndex` is the SOURCE page index — different number space. */
+  slotIndex: number;
   /** Source page's natural→displayed ratio. Drag deltas in screen px
    *  divide by `displayScale * page.scale` to land in PDF user space. */
   displayScale: number;
@@ -593,19 +705,56 @@ export function InsertedImageOverlay({
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
   const effectivePdfScale = page.scale * displayScale;
+  // See InsertedTextOverlay for the rationale — `overflow: hidden` on
+  // the page wrapper clips the in-parent overlay during cross-page
+  // drags, so we render a `position: fixed` clone via a body portal.
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [dragLive, setDragLive] = useState<{
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    width: number;
+    height: number;
+    clientX: number;
+    clientY: number;
+    /** True once the cursor has actually moved during the gesture.
+     *  See InsertedTextOverlay's matching field for rationale —
+     *  gating visibility:hidden on `moved` keeps the in-parent
+     *  overlay click-receivable for a no-motion click. */
+    moved: boolean;
+  } | null>(null);
   type InsImageDragCtx = { baseX: number; baseY: number };
   const beginInsImageDrag = useDragGesture<InsImageDragCtx>({
+    onStart: (_ctx, e) => {
+      const el = overlayRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDragLive({
+        cursorOffsetX: e.clientX - r.left,
+        cursorOffsetY: e.clientY - r.top,
+        width: r.width,
+        height: r.height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: false,
+      });
+    },
     onMove: (ctx, info) => {
+      setDragLive((prev) =>
+        prev ? { ...prev, clientX: info.clientX, clientY: info.clientY, moved: true } : prev,
+      );
       onChange({
         pdfX: ctx.baseX + info.dxRaw / effectivePdfScale,
         pdfY: ctx.baseY - info.dyRaw / effectivePdfScale,
       });
     },
     onEnd: (ctx, info) => {
+      setDragLive(null);
+      // hit.pageIndex is the SLOT index of the dropped-on page; compare
+      // against the origin slot, not ins.pageIndex (source-page offset).
       const hit = findPageAtPoint(info.clientX, info.clientY);
-      if (!hit || hit.pageIndex === ins.pageIndex) return;
+      if (!hit || hit.pageIndex === slotIndex) return;
       const originRect = document
-        .querySelector<HTMLElement>(`[data-page-index="${ins.pageIndex}"]`)
+        .querySelector<HTMLElement>(`[data-page-index="${slotIndex}"]`)
         ?.getBoundingClientRect();
       if (!originRect) return;
       const pdfXOrigin = ctx.baseX + info.dxRaw / effectivePdfScale;
@@ -625,6 +774,7 @@ export function InsertedImageOverlay({
         pdfY: targetPdfY,
       });
     },
+    onCancel: () => setDragLive(null),
   });
   const startDrag = (e: React.PointerEvent) => {
     beginInsImageDrag(e, { baseX: ins.pdfX, baseY: ins.pdfY });
@@ -681,51 +831,83 @@ export function InsertedImageOverlay({
   };
 
   return (
-    <div
-      data-image-insert-id={ins.id}
-      role="button"
-      tabIndex={0}
-      aria-label="Inserted image — drag to move, corners to resize, Del to delete"
-      style={{
-        position: "absolute",
-        left,
-        top,
-        width: w,
-        height: h,
-        backgroundImage: `url(${dataUrl})`,
-        backgroundSize: "100% 100%",
-        backgroundRepeat: "no-repeat",
-        outline: isSelected
-          ? "2px solid rgba(220, 50, 50, 0.85)"
-          : "1px dashed rgba(40, 130, 255, 0.6)",
-        cursor: "grab",
-        pointerEvents: "auto",
-        zIndex: 20,
-        touchAction: "pan-y pinch-zoom",
-      }}
-      title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
-      onPointerDown={startDrag}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onDelete();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
+    <>
+      <div
+        ref={overlayRef}
+        data-image-insert-id={ins.id}
+        role="button"
+        tabIndex={0}
+        aria-label="Inserted image — drag to move, corners to resize, Del to delete"
+        style={{
+          position: "absolute",
+          left,
+          top,
+          width: w,
+          height: h,
+          backgroundImage: `url(${dataUrl})`,
+          backgroundSize: "100% 100%",
+          backgroundRepeat: "no-repeat",
+          outline: isSelected
+            ? "2px solid rgba(220, 50, 50, 0.85)"
+            : "1px dashed rgba(40, 130, 255, 0.6)",
+          cursor: "grab",
+          pointerEvents: "auto",
+          zIndex: 20,
+          // Once the user actually moves, the in-parent copy stays
+          // mounted but invisible — the body-portal clone below is
+          // what the user sees. We DON'T hide on gesture-start alone:
+          // mouse pointers activate the gesture eagerly on
+          // pointerdown, and a no-motion click would otherwise hit a
+          // hidden overlay and skip the select handoff (the click
+          // would dispatch on whatever sits underneath).
+          visibility: dragLive?.moved ? "hidden" : "visible",
+          touchAction: "pan-y pinch-zoom",
+        }}
+        title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
+        onPointerDown={startDrag}
+        onClick={(e) => {
           e.stopPropagation();
           onSelect();
-        }
-      }}
-    >
-      <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
-      <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
-      <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
-      <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
-    </div>
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelect();
+          }
+        }}
+      >
+        <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
+        <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
+        <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
+        <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
+      </div>
+      {dragLive?.moved
+        ? createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: dragLive.clientX - dragLive.cursorOffsetX,
+                top: dragLive.clientY - dragLive.cursorOffsetY,
+                width: dragLive.width,
+                height: dragLive.height,
+                backgroundImage: `url(${dataUrl})`,
+                backgroundSize: "100% 100%",
+                backgroundRepeat: "no-repeat",
+                outline: "1px dashed rgba(40, 130, 255, 0.85)",
+                pointerEvents: "none",
+                zIndex: 10000,
+              }}
+            />,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

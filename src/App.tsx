@@ -452,18 +452,19 @@ export default function App() {
         const item = fromArr.find((t) => t.id === id);
         if (!item) return prev;
         // PdfPage's cross-page drop emits `patch.pageIndex` as the
-        // destination's CURRENT slot index. Resolve to that slot's
-        // (sourceKey, sourcePageIndex) so the patched insertion's
-        // address survives reorder.
+        // destination's CURRENT slot index — NOT a source-page index.
+        // Resolve to that slot's id and (sourceKey, sourcePageIndex):
+        // - slot id is the stable bucket key, so reorder doesn't strand
+        //   the insertion;
+        // - sourceKey + sourcePageIndex are the persisted address used
+        //   at save time. Comparing against `item.pageIndex` would mix
+        //   slot-index and source-page-index spaces and silently drop
+        //   moves whenever the two happened to match numerically.
         let updated: TextInsertion;
         let targetSlotId = sourceSlotId;
-        if (
-          patch.pageIndex !== undefined &&
-          patch.sourceKey !== undefined &&
-          (patch.pageIndex !== item.pageIndex || patch.sourceKey !== item.sourceKey)
-        ) {
+        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
           const destSlot = slotsRef.current[patch.pageIndex];
-          if (destSlot && destSlot.kind === "page") {
+          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
             updated = {
               ...item,
               ...patch,
@@ -472,7 +473,15 @@ export default function App() {
             };
             targetSlotId = destSlot.id;
           } else {
-            updated = { ...item, ...patch };
+            // Same slot (or unresolvable) — keep the item's existing
+            // source address; only the pdfX/pdfY portion of the patch
+            // is meaningful here.
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: item.sourceKey,
+              pageIndex: item.pageIndex,
+            };
           }
         } else {
           updated = { ...item, ...patch };
@@ -516,15 +525,14 @@ export default function App() {
         const fromArr = next.get(sourceSlotId) ?? [];
         const item = fromArr.find((m) => m.id === id);
         if (!item) return prev;
+        // See onTextInsertChange for the rationale — patch.pageIndex
+        // is a SLOT index from PdfPage, not a source-page index, so we
+        // resolve the destination slot and compare slot ids.
         let updated: ImageInsertion;
         let targetSlotId = sourceSlotId;
-        if (
-          patch.pageIndex !== undefined &&
-          patch.sourceKey !== undefined &&
-          (patch.pageIndex !== item.pageIndex || patch.sourceKey !== item.sourceKey)
-        ) {
+        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
           const destSlot = slotsRef.current[patch.pageIndex];
-          if (destSlot && destSlot.kind === "page") {
+          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
             updated = {
               ...item,
               ...patch,
@@ -533,7 +541,12 @@ export default function App() {
             };
             targetSlotId = destSlot.id;
           } else {
-            updated = { ...item, ...patch };
+            updated = {
+              ...item,
+              ...patch,
+              sourceKey: item.sourceKey,
+              pageIndex: item.pageIndex,
+            };
           }
         } else {
           updated = { ...item, ...patch };

@@ -1,5 +1,6 @@
 import { PageWithToolbar } from "./PageWithToolbar";
 import type { EditValue, ImageMoveValue } from "./PdfPage";
+import type { CrossPageArrival } from "./PdfPage/types";
 import type { Annotation } from "../lib/annotations";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { LoadedSource } from "../lib/loadSource";
@@ -69,6 +70,46 @@ export function PageList({
   onAnnotationChange: (slotId: string, id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (slotId: string, id: string) => void;
 }) {
+  // Group cross-page-targeted edits by their target slot so each
+  // slot's PdfPage can render the runs that have ARRIVED on it
+  // from elsewhere. Without this, the source-side preview-strip
+  // pipeline removes the original glyphs from the source canvas
+  // but no rendering happens on the target page — the run
+  // visually disappears until save. We resolve the source run
+  // here (for default styling) so the renderer doesn't have to
+  // walk the slots/sources maps every frame.
+  const arrivalsBySlot = new Map<string, CrossPageArrival[]>();
+  for (const [sourceSlotId, runs] of edits) {
+    const sourceSlot = slots.find((s) => s.id === sourceSlotId);
+    if (!sourceSlot || sourceSlot.kind !== "page") continue;
+    const sourceSrc = sources.get(sourceSlot.sourceKey);
+    const sourcePage = sourceSrc?.pages[sourceSlot.sourcePageIndex];
+    if (!sourcePage) continue;
+    for (const [runId, edit] of runs) {
+      if (!edit.targetSlotId || edit.deleted) continue;
+      if (edit.targetPdfX === undefined || edit.targetPdfY === undefined) continue;
+      const sourceRun = sourcePage.textRuns.find((r) => r.id === runId);
+      if (!sourceRun) continue;
+      const style = edit.style ?? {};
+      const arr = arrivalsBySlot.get(edit.targetSlotId) ?? [];
+      arr.push({
+        key: `${sourceSlotId}::${runId}`,
+        text: edit.text,
+        targetPdfX: edit.targetPdfX,
+        targetPdfY: edit.targetPdfY,
+        // run.height is in source-page viewport pixels;
+        // dividing by source's scale yields PDF points.
+        fontSizePdfPoints: style.fontSize ?? sourceRun.height / sourcePage.scale,
+        fontFamily: style.fontFamily ?? sourceRun.fontFamily,
+        bold: style.bold ?? sourceRun.bold,
+        italic: style.italic ?? sourceRun.italic,
+        underline: style.underline ?? sourceRun.underline ?? false,
+        strikethrough: style.strikethrough ?? sourceRun.strikethrough ?? false,
+        dir: style.dir,
+      });
+      arrivalsBySlot.set(edit.targetSlotId, arr);
+    }
+  }
   return (
     // `w-full` so the flex column has a defined width to
     // constrain `max-width: 100%` on each PdfPage's outer
@@ -197,6 +238,7 @@ export function PageList({
             onAnnotationAdd={(a) => onAnnotationAdd(slot.id, a)}
             onAnnotationChange={(id, patch) => onAnnotationChange(slot.id, id, patch)}
             onAnnotationDelete={(id) => onAnnotationDelete(slot.id, id)}
+            crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
           />
         );
       })}

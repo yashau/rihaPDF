@@ -258,7 +258,13 @@ function DesktopHeader({
           Draw
         </Button>
       </div>
-      <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto">
+      {/* Filename / tool-tip slot. `truncate` + `min-w-0` keeps long
+          filenames on a single line — without this, a 30+ char name
+          like `maldivian2.move-only.pdf` wraps and grows the header
+          by a row, shifting every page down by a few pixels and
+          breaking layout-sensitive tests (and visually nudging the
+          document under the user). */}
+      <span className="text-sm text-zinc-500 dark:text-zinc-400 ml-auto truncate min-w-0 max-w-xs">
         {toolTip ?? primaryFilename ?? "No file loaded"}
       </span>
       <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 pl-3 ml-1">

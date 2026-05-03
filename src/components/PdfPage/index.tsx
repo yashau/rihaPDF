@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import { type Annotation, DEFAULT_HIGHLIGHT_COLOR, newAnnotationId } from "../../lib/annotations";
@@ -8,9 +9,15 @@ import { EditField } from "./EditField";
 import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { cssTextDecoration, findPageAtPoint } from "./helpers";
-import type { EditValue, ImageMoveValue, ResizeCorner, ToolbarBlocker } from "./types";
+import type {
+  CrossPageArrival,
+  EditValue,
+  ImageMoveValue,
+  ResizeCorner,
+  ToolbarBlocker,
+} from "./types";
 
-export type { EditValue, ImageMoveValue, ToolbarBlocker } from "./types";
+export type { CrossPageArrival, EditValue, ImageMoveValue, ToolbarBlocker } from "./types";
 
 type Props = {
   page: RenderedPage;
@@ -64,6 +71,13 @@ type Props = {
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  /** Source-page text runs that have been moved cross-page and now
+   *  visually live on THIS slot. Built by PageList from the source-
+   *  side `edits` map. Rendered as non-interactive styled spans at
+   *  `targetPdfX/Y` — without this layer the runs disappear from the
+   *  source canvas (preview-strip) but never reappear on the target,
+   *  so the user can't see what they moved until save. */
+  crossPageArrivals: CrossPageArrival[];
 };
 
 export function PdfPage({
@@ -96,6 +110,7 @@ export function PdfPage({
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
+  crossPageArrivals,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
    *  (= natural × displayScale) so the document scroll container can
@@ -177,11 +192,48 @@ export function PdfPage({
   /** While dragging a run, the live offset for the dragged run. We keep
    *  it in local state during the drag so we don't churn the parent's
    *  edits Map on every pointermove. The hook owns startX/startY so
-   *  this state only carries the live (dx, dy) the renderer reads. */
+   *  this state only carries the live (dx, dy) the renderer reads.
+   *
+   *  The remaining fields drive a `position: fixed` body-portal preview
+   *  rendered ONCE the user has actually moved the cursor. The page
+   *  wrapper has `overflow: hidden` (mandatory — see the wrapper
+   *  comment further down), so the in-place span gets clipped the
+   *  moment the cursor crosses onto another page; the portal'd clone
+   *  escapes that clip by mounting under document.body.
+   *
+   *  `moved` distinguishes a real drag from a plain click. Mouse
+   *  pointers eagerly enter the gesture on `pointerdown`, so for a
+   *  no-movement click we'd otherwise hide the span the instant the
+   *  cursor goes down — which would make `click` events miss the
+   *  hidden span and silently break click-to-edit. We only hide the
+   *  in-place span (and render the portal) once `onMove` has fired. */
   const [drag, setDrag] = useState<{
     runId: string;
     dx: number;
     dy: number;
+    /** True once the user has actually moved the cursor (any non-zero
+     *  pointermove). Click without motion leaves this false so the
+     *  in-place span stays interactive and `onClick` can open the
+     *  editor. */
+    moved: boolean;
+    /** Screen-px offset from the box's top-left to the cursor at gesture
+     *  start. Stays constant for the rest of the drag — the cursor
+     *  always grabs the same point on the box. */
+    cursorOffsetX: number;
+    cursorOffsetY: number;
+    /** Box dimensions in SCREEN pixels (= natural × originDisplayScale).
+     *  The portal lives in document.body, where there's no CSS transform,
+     *  so all of its measurements are in raw screen pixels. */
+    width: number;
+    height: number;
+    /** Latest cursor viewport coords; the portal renders at
+     *  `clientX - cursorOffsetX, clientY - cursorOffsetY`. */
+    clientX: number;
+    clientY: number;
+    /** Source page's natural→displayed ratio captured at gesture start.
+     *  Used by the portal to convert the run's natural-pixel font size
+     *  to the on-screen size that matches the in-page rendering. */
+    originDisplayScale: number;
   } | null>(null);
   /** Same idea for images. Separate state because image drags don't
    *  have the click-suppression / edit handoff that text runs do.
@@ -234,8 +286,44 @@ export function PdfPage({
     originDisplayScale: number;
   };
   const beginRunDrag = useDragGesture<RunDragCtx>({
-    onStart: (ctx) => {
-      setDrag({ runId: ctx.runId, dx: ctx.base.dx, dy: ctx.base.dy });
+    onStart: (ctx, e) => {
+      const run = page.textRuns.find((r) => r.id === ctx.runId);
+      const rect = ctx.originRect;
+      const ds = ctx.originDisplayScale;
+      // Box dimensions match the edited-branch render (which uses
+      // padX/padY = 2 around the run's natural-pixel bounds). The
+      // unedited branch renders without padding, but visually swapping
+      // to the slightly-padded box during drag is fine and means the
+      // portal clone matches the post-drop in-place rendering exactly.
+      const padX = 2;
+      const padY = 2;
+      let cursorOffsetX = 0;
+      let cursorOffsetY = 0;
+      let width = 0;
+      let height = 0;
+      if (run && rect) {
+        const boxNaturalW = Math.max(run.bounds.width, 12) + padX * 2;
+        const boxNaturalH = run.bounds.height + padY * 2;
+        const screenLeft = rect.left + (run.bounds.left - padX + ctx.base.dx) * ds;
+        const screenTop = rect.top + (run.bounds.top - padY + ctx.base.dy) * ds;
+        cursorOffsetX = e.clientX - screenLeft;
+        cursorOffsetY = e.clientY - screenTop;
+        width = boxNaturalW * ds;
+        height = boxNaturalH * ds;
+      }
+      setDrag({
+        runId: ctx.runId,
+        dx: ctx.base.dx,
+        dy: ctx.base.dy,
+        moved: false,
+        cursorOffsetX,
+        cursorOffsetY,
+        width,
+        height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        originDisplayScale: ds,
+      });
     },
     onMove: (ctx, info) => {
       const dxNat = info.dxRaw / ctx.originDisplayScale;
@@ -243,7 +331,16 @@ export function PdfPage({
       const newDx = ctx.base.dx + dxNat;
       const newDy = ctx.base.dy + dyNat;
       setDrag((prev) =>
-        prev && prev.runId === ctx.runId ? { ...prev, dx: newDx, dy: newDy } : prev,
+        prev && prev.runId === ctx.runId
+          ? {
+              ...prev,
+              dx: newDx,
+              dy: newDy,
+              clientX: info.clientX,
+              clientY: info.clientY,
+              moved: true,
+            }
+          : prev,
       );
     },
     onEnd: (ctx, info) => {
@@ -790,7 +887,14 @@ export function PdfPage({
                     top: run.bounds.top - padY + dy,
                     width: Math.max(run.bounds.width, 12) + padX * 2,
                     height: run.bounds.height + padY * 2,
-                    background: isDragging ? undefined : "white",
+                    // White cover masks the original glyphs at the
+                    // SOURCE position when the strip pipeline silently
+                    // no-ops (Form XObject case). After a move the
+                    // span paints at a NEW position where there's no
+                    // original to mask — and the cover would just
+                    // occlude whatever else lives at the destination.
+                    // So: keep the cover only at the in-place position.
+                    background: isDragging || dx !== 0 || dy !== 0 ? undefined : "white",
                     outline: isDragging
                       ? "1px dashed rgba(255, 180, 30, 0.9)"
                       : "1px solid rgba(255, 200, 60, 0.5)",
@@ -799,6 +903,17 @@ export function PdfPage({
                     display: "flex",
                     alignItems: "center",
                     overflow: "visible",
+                    // Once the user actually moves the cursor, the
+                    // portal'd clone (rendered below) is what they see
+                    // — the in-place span stays mounted (its rect
+                    // anchors the drop math) but goes invisible so the
+                    // page wrapper's overflow:hidden doesn't clip the
+                    // preview at the page boundary. We DON'T hide on
+                    // gesture-start alone: mouse pointers activate the
+                    // gesture eagerly on pointerdown, and a no-motion
+                    // click would otherwise hit a hidden span and skip
+                    // the editor handoff.
+                    visibility: isDragging && drag?.moved ? "hidden" : "visible",
                     // `pan-y pinch-zoom` lets the browser scroll the
                     // page (and pinch-zoom) on a quick finger swipe;
                     // useDragGesture's touch-hold gate means a single-
@@ -898,6 +1013,12 @@ export function PdfPage({
                   pointerEvents: "auto",
                   whiteSpace: "pre",
                   overflow: "visible",
+                  // Same as the edited branch above — hide once the
+                  // user has moved so the body-portal preview can
+                  // escape the page wrapper's overflow:hidden clip.
+                  // Gesture-start alone keeps the span visible so a
+                  // no-motion click reaches it.
+                  visibility: isDragging && drag?.moved ? "hidden" : "visible",
                   cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
                   // `pan-y pinch-zoom` so the page scrolls on a quick
                   // finger swipe; the run is only claimed after the
@@ -968,6 +1089,7 @@ export function PdfPage({
               key={ins.id}
               ins={ins}
               page={page}
+              slotIndex={pageIndex}
               displayScale={displayScale}
               toolbarBlockers={toolbarBlockers}
               isEditing={editingId === ins.id}
@@ -987,6 +1109,7 @@ export function PdfPage({
               key={ins.id}
               ins={ins}
               page={page}
+              slotIndex={pageIndex}
               displayScale={displayScale}
               isSelected={selectedInsertedImageId === ins.id}
               onChange={(patch) => onImageInsertChange(ins.id, patch)}
@@ -994,6 +1117,56 @@ export function PdfPage({
               onSelect={() => onSelectInsertedImage(ins.id)}
             />
           ))}
+          {/* Cross-page-arrived runs: source-page text the user dragged
+            ONTO this slot. The source-side preview-strip removes the
+            original glyphs from the source canvas; without these
+            spans the run would otherwise vanish entirely until save.
+            v1: render-only — to drag again the user has to undo and
+            re-do the move. The save pipeline reads `targetSlotId`
+            directly, so these spans are purely for live feedback. */}
+          {crossPageArrivals.map((arr) => {
+            const fontSizePx = arr.fontSizePdfPoints * page.scale;
+            const lineHeightPx = arr.fontSizePdfPoints * 1.4 * page.scale;
+            const left = arr.targetPdfX * page.scale;
+            const top = page.viewHeight - arr.targetPdfY * page.scale - fontSizePx;
+            return (
+              <span
+                key={arr.key}
+                data-cross-page-arrival-key={arr.key}
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left,
+                  top,
+                  height: lineHeightPx,
+                  display: "flex",
+                  alignItems: "center",
+                  // No outline / background — the user just sees the
+                  // text where they dropped it. Matches the intent of
+                  // a finished move (vs. the dashed dragging preview).
+                  pointerEvents: "none",
+                  whiteSpace: "pre",
+                  zIndex: 15,
+                }}
+              >
+                <span
+                  dir={arr.dir ?? "auto"}
+                  style={{
+                    fontFamily: `"${arr.fontFamily}"`,
+                    fontSize: `${fontSizePx}px`,
+                    lineHeight: `${lineHeightPx}px`,
+                    fontWeight: arr.bold ? 700 : 400,
+                    fontStyle: arr.italic ? "italic" : "normal",
+                    textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
+                    color: "black",
+                    whiteSpace: "pre",
+                  }}
+                >
+                  {arr.text}
+                </span>
+              </span>
+            );
+          })}
           {/* Annotations: highlight rects, sticky-note markers, ink
             strokes. The layer also captures pointer events when the
             ink tool is active. */}
@@ -1011,6 +1184,85 @@ export function PdfPage({
           />
         </div>
       </div>
+      {/* Body-portal'd drag preview. The page wrapper has
+          `overflow: hidden` (it has to — see the wrapper comment above),
+          which clips an in-place dragged span the moment the cursor
+          crosses onto another page. Mounting the preview to document.body
+          via createPortal lets it follow the cursor across pages. The
+          in-place span stays mounted but `visibility: hidden`, so its
+          rect still anchors the cross-page drop math while the user
+          sees the portal'd clone. */}
+      {drag && drag.moved
+        ? (() => {
+            const dragRun = page.textRuns.find((r) => r.id === drag.runId);
+            if (!dragRun || drag.width <= 0 || drag.height <= 0) return null;
+            // Mirror the edited-branch styling so the preview matches
+            // exactly what the post-drop in-place rendering will look
+            // like — same font family / weight / italic / decorations
+            // as the source run, layered with any persisted style edit.
+            const editedValue = edits.get(dragRun.id);
+            const style = editedValue?.style ?? {};
+            const text = editedValue?.text ?? dragRun.text;
+            const fontFamily = style.fontFamily ?? dragRun.fontFamily;
+            const fontSizeNat = style.fontSize ?? dragRun.height;
+            const bold = style.bold ?? dragRun.bold;
+            const italic = style.italic ?? dragRun.italic;
+            const underline = style.underline ?? dragRun.underline ?? false;
+            const strikethrough = style.strikethrough ?? dragRun.strikethrough ?? false;
+            const dir = style.dir ?? "auto";
+            // The portal sits in document.body where there's no CSS
+            // transform — convert the natural-pixel font/line-height
+            // values to screen pixels via the captured originDisplayScale.
+            const ds = drag.originDisplayScale;
+            const fontSizeScreen = fontSizeNat * ds;
+            const lineHeightScreen = (dragRun.bounds.height + 4) * ds;
+            return createPortal(
+              <div
+                aria-hidden
+                style={{
+                  position: "fixed",
+                  left: drag.clientX - drag.cursorOffsetX,
+                  top: drag.clientY - drag.cursorOffsetY,
+                  width: drag.width,
+                  height: drag.height,
+                  outline: "1px dashed rgba(255, 180, 30, 0.9)",
+                  // No background fill — a semi-opaque white card
+                  // would cover whatever sits behind the cursor while
+                  // the user drags across the page. The dashed outline
+                  // alone is enough to convey "this is the thing
+                  // being moved", and underlying content stays
+                  // visible through the gaps between glyphs.
+                  background: "transparent",
+                  pointerEvents: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  overflow: "visible",
+                  zIndex: 10000,
+                }}
+              >
+                <span
+                  dir={dir}
+                  style={{
+                    fontFamily: `"${fontFamily}"`,
+                    fontSize: `${fontSizeScreen}px`,
+                    lineHeight: `${lineHeightScreen}px`,
+                    fontWeight: bold ? 700 : 400,
+                    fontStyle: italic ? "italic" : "normal",
+                    textDecoration: cssTextDecoration(underline, strikethrough),
+                    color: "black",
+                    whiteSpace: "pre",
+                    width: "100%",
+                    paddingLeft: 2 * ds,
+                    paddingRight: 2 * ds,
+                  }}
+                >
+                  {text}
+                </span>
+              </div>,
+              document.body,
+            );
+          })()
+        : null}
     </div>
   );
 }

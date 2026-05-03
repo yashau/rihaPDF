@@ -68,6 +68,35 @@ export type ImageMoveValue = {
   deleted?: boolean;
 };
 
+/** A source-page text run that has been moved across pages and now
+ *  visually belongs to a TARGET page. Built by PageList from the
+ *  authoritative `edits` map (which is keyed by SOURCE slot) by
+ *  finding entries whose `targetSlotId` matches each slot, then
+ *  resolving the source run for its baseline styling. PdfPage renders
+ *  these as non-interactive spans on the target page so the user
+ *  actually sees the moved content before save. */
+export type CrossPageArrival = {
+  /** Composite key for React: source slot id + run id. */
+  key: string;
+  /** Logical text — the edit's `text` overrides the source run's. */
+  text: string;
+  /** Baseline x in TARGET-page PDF user-space. */
+  targetPdfX: number;
+  /** Baseline y in TARGET-page PDF user-space (y-up, like the rest of
+   *  the codebase — viewport y-down conversion happens in the renderer). */
+  targetPdfY: number;
+  /** Font size in PDF points. Computed at PageList time as
+   *  `sourceRun.height / sourcePage.scale` so the renderer can scale
+   *  by `targetPage.scale` without needing the source page's scale. */
+  fontSizePdfPoints: number;
+  fontFamily: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+  dir: "rtl" | "ltr" | undefined;
+};
+
 export type ResizeCorner = "tl" | "tr" | "bl" | "br";
 
 export type ToolbarBlocker = {
