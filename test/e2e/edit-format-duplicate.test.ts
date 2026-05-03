@@ -81,11 +81,14 @@ describe("font change on Form-XObject text", () => {
 
     // Issue 2: no visible duplicate. The wrapper span has a white
     // background masking whatever the strip couldn't reach.
-    const overlayBg = await h.page.evaluate(({ runId }) => {
-      const el = document.querySelector(`[data-run-id="${runId}"]`);
-      if (!el) return null;
-      return getComputedStyle(el).backgroundColor;
-    }, { runId: target!.id });
+    const overlayBg = await h.page.evaluate(
+      ({ runId }) => {
+        const el = document.querySelector(`[data-run-id="${runId}"]`);
+        if (!el) return null;
+        return getComputedStyle(el).backgroundColor;
+      },
+      { runId: target!.id },
+    );
     expect(
       overlayBg,
       "edited overlay must have an opaque background to mask un-strippable canvas glyphs",

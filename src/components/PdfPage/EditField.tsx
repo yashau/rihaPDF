@@ -93,8 +93,7 @@ export function EditField({
   // `style` from the mount render and lose any edits made afterward.
   const commitRef = useRef<() => void>(() => {});
   useEffect(() => {
-    commitRef.current = () =>
-      onCommit({ text, style: hasStyle(style) ? style : undefined });
+    commitRef.current = () => onCommit({ text, style: hasStyle(style) ? style : undefined });
   });
 
   // Click-outside-to-commit. The input's own `onBlur` only fires once —
