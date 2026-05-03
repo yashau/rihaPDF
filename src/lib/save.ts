@@ -42,6 +42,7 @@ import type { PageSlot } from "./slots";
 import type { LoadedSource } from "./loadSource";
 import type { Annotation } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
+import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -253,12 +254,28 @@ function drawDecorations(
  *  to synthesize italic. The matrix `[1 0 s 1 -s·y 0]` is shear-about-y
  *  — verticals tilt right while the baseline x at y stays fixed, so the
  *  glyphs slant forward without drifting horizontally off the run's
- *  origin. */
-function drawTextWithStyle(
+ *  origin.
+ *
+ *  Dispatches by font kind:
+ *    - Custom Dhivehi family with bundled TTF bytes → `drawShapedText`
+ *      (HarfBuzz-shaped GIDs written as raw Tj operators against a
+ *      subset:false Type 0 font, so GPOS mark anchoring is correct).
+ *    - Standard-14 Latin family (no TTF bytes) → pdf-lib's `drawText`.
+ *      fontkit's layout is fine for Latin; HarfBuzz wouldn't help. */
+async function drawTextWithStyle(
   page: PDFPage,
   text: string,
-  opts: { x: number; y: number; size: number; font: PDFFont; family: string; italic: boolean },
-): void {
+  opts: {
+    x: number;
+    y: number;
+    size: number;
+    font: PDFFont;
+    fontBytes: Uint8Array | null;
+    family: string;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+  },
+): Promise<void> {
   const synth = opts.italic && !fontHasNativeItalic(opts.family);
   if (synth) {
     page.pushOperators(
@@ -266,42 +283,83 @@ function drawTextWithStyle(
       concatTransformationMatrix(1, 0, ITALIC_SHEAR, 1, -ITALIC_SHEAR * opts.y, 0),
     );
   }
-  page.drawText(text, {
-    x: opts.x,
-    y: opts.y,
-    size: opts.size,
-    font: opts.font,
-    color: rgb(0, 0, 0),
-  });
+  if (opts.fontBytes) {
+    await drawShapedText(page, {
+      text,
+      font: opts.font,
+      fontBytes: opts.fontBytes,
+      x: opts.x,
+      y: opts.y,
+      size: opts.size,
+      dir: opts.dir,
+    });
+  } else {
+    page.drawText(text, {
+      x: opts.x,
+      y: opts.y,
+      size: opts.size,
+      font: opts.font,
+      color: rgb(0, 0, 0),
+    });
+  }
   if (synth) {
     page.pushOperators(popGraphicsState());
   }
 }
 
+/** Width of `text` rendered with `font` at `size`. Routes to HarfBuzz
+ *  for shaped families (whose advance widths reflect GPOS adjustments)
+ *  and falls back to pdf-lib's fontkit-driven measure for standard-14. */
+async function measureTextWidth(
+  text: string,
+  font: PDFFont,
+  fontBytes: Uint8Array | null,
+  size: number,
+  dir: "rtl" | "ltr" | undefined,
+): Promise<number> {
+  if (fontBytes) return measureShapedWidth(text, fontBytes, size, dir);
+  return font.widthOfTextAtSize(text, size);
+}
+
 /** Cached per-(family, bold, italic) embedded font factory bound to a
  *  single PDFDocument — fonts can't be shared across docs because each
  *  doc owns its own object table. The save loop builds one of these
- *  per loaded source. */
+ *  per loaded source.
+ *
+ *  Returns both the embedded `PDFFont` and the raw TTF bytes. The bytes
+ *  are needed by the HarfBuzz emitter so its glyph IDs match the CIDs
+ *  pdf-lib will write (subset:false embeds the bytes verbatim and uses
+ *  CIDToGIDMap=Identity, so HB GID == output CID). Standard-14 fonts
+ *  have no TTF — `bytes` is null for those, signalling the caller to
+ *  fall back to pdf-lib's drawText / widthOfTextAtSize. */
+type EmbeddedFont = {
+  pdfFont: PDFFont;
+  /** Raw TTF bytes, or null for standard-14 fonts. */
+  bytes: Uint8Array | null;
+};
+
 function makeFontFactory(doc: PDFDocument) {
-  const cache = new Map<string, PDFFont>();
-  return async (family: string, bold = false, italic = false): Promise<PDFFont> => {
+  const cache = new Map<string, EmbeddedFont>();
+  return async (family: string, bold = false, italic = false): Promise<EmbeddedFont> => {
     const cacheKey = `${family}|${bold ? "b" : ""}${italic ? "i" : ""}`;
     const cached = cache.get(cacheKey);
     if (cached) return cached;
     const def = FONTS.find((f) => f.family === family);
-    let pdfFont: PDFFont;
+    let entry: EmbeddedFont;
     if (def?.standardFont) {
       const variant = standardFontVariants[def.standardFont][variantKey(bold, italic)];
-      pdfFont = await doc.embedFont(variant);
+      const pdfFont = await doc.embedFont(variant);
+      entry = { pdfFont, bytes: null };
     } else {
       const bytes = await loadFontBytes(family);
-      pdfFont = await doc.embedFont(bytes, {
+      const pdfFont = await doc.embedFont(bytes, {
         subset: false,
         customName: `DhivehiEdit_${family.replace(/\W+/g, "_")}`,
       });
+      entry = { pdfFont, bytes };
     }
-    cache.set(cacheKey, pdfFont);
-    return pdfFont;
+    cache.set(cacheKey, entry);
+    return entry;
   };
 }
 
@@ -360,7 +418,7 @@ function lookupPageXObjectRef(doc: PDFDocument, pageNode: PDFDict, resName: stri
 type LoadedSourceContext = {
   source: LoadedSource;
   doc: PDFDocument;
-  getFont: (family: string, bold?: boolean, italic?: boolean) => Promise<PDFFont>;
+  getFont: (family: string, bold?: boolean, italic?: boolean) => Promise<EmbeddedFont>;
 };
 
 /** Plan for a same-source draw: emit drawText on this source's `doc`
@@ -565,22 +623,25 @@ export async function applyEditsAndSave(
       (/[֐-׿؀-ۿހ-޿]/u.test(ins.text) ? DEFAULT_FONT_FAMILY : "Arial");
     const bold = !!ins.style?.bold;
     const italic = !!ins.style?.italic;
-    const pdfFont = await ctx.getFont(family, bold, italic);
+    const { pdfFont, bytes: fontBytes } = await ctx.getFont(family, bold, italic);
     const fontSizePt = ins.fontSize;
     // Explicit `style.dir` wins; otherwise auto-detect from the text's
     // strong codepoints. RTL right-aligns the baseline so glyphs grow
     // leftward from `pdfX`; LTR draws from `pdfX` rightward.
     const isRtl =
       ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
-    const widthPt = pdfFont.widthOfTextAtSize(ins.text, fontSizePt);
+    const dir: "rtl" | "ltr" | undefined = ins.style?.dir;
+    const widthPt = await measureTextWidth(ins.text, pdfFont, fontBytes, fontSizePt, dir);
     const baseX = isRtl ? ins.pdfX - widthPt : ins.pdfX;
-    drawTextWithStyle(page, ins.text, {
+    await drawTextWithStyle(page, ins.text, {
       x: baseX,
       y: ins.pdfY,
       size: fontSizePt,
       font: pdfFont,
+      fontBytes,
       family,
       italic,
+      dir,
     });
     drawDecorations(page, {
       x: baseX,
@@ -735,7 +796,7 @@ async function applyStreamSurgeryForSource(
     );
     for (const family of familiesUsed) {
       const f = await getFont(family);
-      page.setFont(f);
+      page.setFont(f.pdfFont);
     }
 
     // Read + parse the existing content stream.
@@ -1021,21 +1082,24 @@ async function emitTextDraw(
   const fontSizePt = style.fontSize ?? runPdfHeight;
   const bold = style.bold ?? run.bold;
   const italic = style.italic ?? run.italic;
-  const pdfFont = await ctx.getFont(family, bold, italic);
+  const { pdfFont, bytes: fontBytes } = await ctx.getFont(family, bold, italic);
 
   // Explicit `style.dir` wins; otherwise auto-detect.
   const isRtl = style.dir === "rtl" || (style.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(edit.newText));
-  const widthPt = pdfFont.widthOfTextAtSize(edit.newText, fontSizePt);
+  const dir: "rtl" | "ltr" | undefined = style.dir;
+  const widthPt = await measureTextWidth(edit.newText, pdfFont, fontBytes, fontSizePt, dir);
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
   const drawY = baselineYPdf;
 
-  drawTextWithStyle(targetPage, edit.newText, {
+  await drawTextWithStyle(targetPage, edit.newText, {
     x: baseX,
     y: drawY,
     size: fontSizePt,
     font: pdfFont,
+    fontBytes,
     family,
     italic,
+    dir,
   });
 
   // Effective decoration: the user's toolbar override wins; otherwise

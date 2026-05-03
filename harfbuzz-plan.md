@@ -174,13 +174,13 @@ in the saved PDF matches the screen rendering.
 
 ## Files touched
 
-| File | Change |
-|---|---|
-| `src/lib/shapedDraw.ts` | **new** — emitter + width helper |
-| [src/lib/save.ts](src/lib/save.ts) | `drawTextWithStyle` dispatches by family; widths go through emitter |
-| [src/lib/fonts.ts](src/lib/fonts.ts) | maybe add a typed `getFontBytes` accessor (already has `loadFontBytes`) |
-| [src/lib/saveAnnotations.ts](src/lib/saveAnnotations.ts) | `buildCommentDict` builds `/AP` for Thaana comments |
-| [src/lib/shape.ts](src/lib/shape.ts) | unchanged in P1; P3 may add a tiny `shapeMixed` helper that wraps bidi-js + shapeWithFallback |
+| File                                                     | Change                                                                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/lib/shapedDraw.ts`                                  | **new** — emitter + width helper                                                              |
+| [src/lib/save.ts](src/lib/save.ts)                       | `drawTextWithStyle` dispatches by family; widths go through emitter                           |
+| [src/lib/fonts.ts](src/lib/fonts.ts)                     | maybe add a typed `getFontBytes` accessor (already has `loadFontBytes`)                       |
+| [src/lib/saveAnnotations.ts](src/lib/saveAnnotations.ts) | `buildCommentDict` builds `/AP` for Thaana comments                                           |
+| [src/lib/shape.ts](src/lib/shape.ts)                     | unchanged in P1; P3 may add a tiny `shapeMixed` helper that wraps bidi-js + shapeWithFallback |
 
 ## Tests
 
@@ -206,7 +206,7 @@ redirect long test runs to a logfile and grep, don't tail.
 - **Font key drift**: `page.setFont(pdfFont)` mutates `page.fontKey`.
   Anything between our `setFont` and our `Tf` push that calls
   `setFont` for a different font invalidates our key. The emitter
-  must read `page.fontKey` *immediately* after its own `setFont` and
+  must read `page.fontKey` _immediately_ after its own `setFont` and
   push `Tf` synchronously.
 - **CFF fonts**: pdf-lib uses `CIDFontType0` with `FontFile3`
   ([CustomFontEmbedder.js:134, 176](node_modules/pdf-lib/cjs/core/embedders/CustomFontEmbedder.js#L134))
@@ -226,7 +226,7 @@ redirect long test runs to a logfile and grep, don't tail.
 
 1. Where does `fontBytes` live during the save loop? Cleanest is to
    extend `LoadedSourceContext.getFont` to return `{ pdfFont, bytes,
-   harfbuzzFont }` and cache the HB face alongside pdf-lib's embed.
+harfbuzzFont }` and cache the HB face alongside pdf-lib's embed.
    The cache key matches `(family, bold, italic)`.
 2. Italic on shaped runs: the existing `cm` shear sits outside BT/ET
    — it composes with our raw operators just as it did with

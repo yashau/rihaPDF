@@ -1,0 +1,147 @@
+// HarfBuzz-shaped text emission. Replaces pdf-lib's drawText for the
+// Thaana save path: shape the run via harfbuzzjs (which knows GSUB/GPOS
+// for Thaana), then write raw Tj operators with the shaped GIDs against
+// a subset:false Type 0 / Identity-H font (CIDToGIDMap=Identity), so the
+// CIDs we emit are the real GIDs in the embedded font.
+//
+// Why we don't go through page.drawText: it calls font.encodeText, which
+// runs the text through fontkit's layout engine. fontkit's Thaana
+// shaping is incomplete (no GPOS mark-to-base anchoring), which is the
+// whole reason we're moving to HarfBuzz.
+//
+// Why the previous attempt at this was reverted (commit 1a8f23e): it
+// passed pdfFont.name (the BaseFont string) as the Tf operand. But Tf
+// takes a *page-resource* name (`/F1`, `/F2`...) — not the BaseFont.
+// Acrobat / pdf.js then treated the unknown name as Latin fallback,
+// producing garbage glyphs. The fix is to register the font on the page
+// via PDFPageLeaf.newFontDictionary and use the returned PDFName as the
+// Tf operand. That's what we do here.
+//
+// Per-glyph positioning uses Tm rather than relying on Tj's auto-advance.
+// HarfBuzz can apply GPOS adjustments (kerning, mark anchoring) whose
+// xOffset / yOffset don't match the font's natural advance widths, and
+// emitting an explicit Tm before each glyph keeps the cursor unambiguous
+// no matter what shaping does. Costs ~3 ops per glyph instead of ~1; for
+// realistic Thaana runs (≤200 glyphs) the overhead is negligible.
+//
+// Stream order: HarfBuzz returns glyphs in *visual* order regardless of
+// direction (leftmost-first for both LTR and RTL). For pdf.js text
+// extraction to recover the original logical string, RTL runs need
+// glyphs emitted in *logical* order (rightmost-first for Thaana / Hebrew
+// / Arabic). We therefore iterate the HB output in reverse for RTL,
+// walking the cursor right-to-left so each glyph still lands at its
+// correct visual x. LTR runs emit straight through.
+
+import {
+  beginText,
+  endText,
+  PDFFont,
+  PDFHexString,
+  PDFPage,
+  setFontAndSize,
+  setTextMatrix,
+  showText,
+} from "pdf-lib";
+import { shapeAuto, shapeRtlThaana, type ShapeResult } from "./shape";
+
+export type ShapedTextOptions = {
+  text: string;
+  font: PDFFont;
+  /** Raw TTF bytes — same buffer that was passed to PDFDocument.embedFont
+   *  with `subset: false`. Required because HarfBuzz needs the font's
+   *  actual byte stream to read GSUB / GPOS / cmap tables. */
+  fontBytes: Uint8Array;
+  /** Baseline x in PDF user space (left edge of the rendered text;
+   *  for right-aligned RTL the caller passes `rightAnchor - width`). */
+  x: number;
+  /** Baseline y in PDF user space (y-up). */
+  y: number;
+  /** Font size in PDF points. */
+  size: number;
+  /** Direction. "rtl" forces RTL shaping, "ltr" forces LTR, undefined
+   *  auto-detects from codepoints (Thaana / Hebrew / Arabic → RTL). */
+  dir?: "rtl" | "ltr";
+};
+
+export type ShapedDrawResult = {
+  /** Total advance of the rendered text in PDF points. Caller uses this
+   *  for underline / strikethrough geometry and for RTL right-alignment
+   *  math (the shaped width may differ from pdf-lib's
+   *  widthOfTextAtSize, which goes through fontkit instead of HB). */
+  width: number;
+  shape: ShapeResult;
+};
+
+/** Shape `text` and append raw text-show operators to `page`'s content
+ *  stream. Registers the font in the page's `/Resources/Font` dict and
+ *  uses the returned PDFName as the Tf operand — callers don't need to
+ *  call `page.setFont` first. */
+export async function drawShapedText(
+  page: PDFPage,
+  opts: ShapedTextOptions,
+): Promise<ShapedDrawResult> {
+  const shape = await shapeText(opts.text, opts.fontBytes, opts.dir);
+
+  const fontKey = page.node.newFontDictionary("RihaShaped", opts.font.ref);
+  const upem = shape.unitsPerEm || 1000;
+  const scale = opts.size / upem;
+  const widthPt = shape.totalAdvance * scale;
+
+  const ops = [beginText(), setFontAndSize(fontKey, opts.size)];
+  if (shape.direction === "rtl") {
+    // Walk the visual-order array in reverse so the emitted Tj sequence
+    // is in logical order (matches pdf.js text-extraction expectations).
+    // Cursor starts at the right edge and steps left by each glyph's
+    // xAdvance *before* drawing — so glyphs[N-1] (= first logical char)
+    // lands at the right and glyphs[0] (= last logical char) at the
+    // left, the same visual layout HB produced.
+    let cursor = shape.totalAdvance;
+    for (let i = shape.glyphs.length - 1; i >= 0; i--) {
+      const g = shape.glyphs[i];
+      cursor -= g.xAdvance;
+      const glyphX = opts.x + (cursor + g.xOffset) * scale;
+      const glyphY = opts.y + g.yOffset * scale;
+      ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
+      const hex = g.glyphId.toString(16).padStart(4, "0");
+      ops.push(showText(PDFHexString.of(hex)));
+    }
+  } else {
+    let cursor = 0;
+    for (const g of shape.glyphs) {
+      const glyphX = opts.x + (cursor + g.xOffset) * scale;
+      const glyphY = opts.y + g.yOffset * scale;
+      ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
+      const hex = g.glyphId.toString(16).padStart(4, "0");
+      ops.push(showText(PDFHexString.of(hex)));
+      cursor += g.xAdvance;
+    }
+  }
+  ops.push(endText());
+  page.pushOperators(...ops);
+
+  return { width: widthPt, shape };
+}
+
+/** Measure the width of `text` rendered with `fontBytes` at `size` via
+ *  the shaped path. Mirrors pdf-lib's `widthOfTextAtSize` semantics but
+ *  uses HarfBuzz's totalAdvance — required wherever we right-align RTL
+ *  or draw decorations under shaped text. */
+export async function measureShapedWidth(
+  text: string,
+  fontBytes: Uint8Array,
+  size: number,
+  dir: "rtl" | "ltr" | undefined,
+): Promise<number> {
+  const shape = await shapeText(text, fontBytes, dir);
+  const upem = shape.unitsPerEm || 1000;
+  return shape.totalAdvance * (size / upem);
+}
+
+async function shapeText(
+  text: string,
+  fontBytes: Uint8Array,
+  dir: "rtl" | "ltr" | undefined,
+): Promise<ShapeResult> {
+  if (dir === "rtl") return shapeRtlThaana(text, fontBytes);
+  return shapeAuto(text, fontBytes);
+}

@@ -34,6 +34,12 @@ export type ShapeResult = {
   unitsPerEm: number;
   ascender: number;
   descender: number;
+  /** Resolved direction HarfBuzz shaped with. Glyphs come back in
+   *  *visual* order regardless: for "rtl" the leftmost-rendered glyph is
+   *  glyphs[0] (= the LAST logical character). Emitters that want
+   *  pdf.js-compatible text extraction must walk the array in reverse
+   *  for "rtl" so the saved Tj sequence is in logical order. */
+  direction: "ltr" | "rtl";
 };
 
 type Hb = {
@@ -208,6 +214,7 @@ export async function shapeRtlThaana(text: string, fontBytes: Uint8Array): Promi
       unitsPerEm: f.unitsPerEm,
       ascender: f.ascender,
       descender: f.descender,
+      direction: "rtl",
     };
   } finally {
     buf.destroy();
@@ -247,6 +254,7 @@ export async function shapeAuto(text: string, fontBytes: Uint8Array): Promise<Sh
       unitsPerEm: f.unitsPerEm,
       ascender: f.ascender,
       descender: f.descender,
+      direction: "ltr",
     };
   } finally {
     buf.destroy();
