@@ -16,6 +16,7 @@ import {
 import type { EditValue, ImageMoveValue } from "./components/PdfPage";
 import { PageSidebar } from "./components/PageSidebar";
 import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
+import { blankSourceKey } from "./lib/blankSource";
 import { loadSource, nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./lib/loadSource";
 import type { LoadedSource } from "./lib/loadSource";
 import { useTheme } from "./lib/theme";
@@ -341,16 +342,21 @@ export default function App() {
     (slotId: string, pageIndex: number, pdfX: number, pdfY: number) => {
       // Resolve the slot-time (sourceKey, sourcePageIndex) so net-new
       // insertions know which source's doc they target at save time.
+      // Blank slots get a synthetic per-slot sourceKey so the save
+      // pipeline can materialise a one-page PDFDocument for them and
+      // run the same insert / draw / annotation passes.
       const slot = slotsRef.current[pageIndex];
-      if (!slot || slot.kind !== "page") return;
+      if (!slot) return;
+      const slotSourceKey = slot.kind === "page" ? slot.sourceKey : blankSourceKey(slot.id);
+      const slotPageIndex = slot.kind === "page" ? slot.sourcePageIndex : 0;
       if (tool === "addText") {
         // Click-to-place is a discrete action — no coalesce.
         recordHistory(null);
         const id = `p${pageIndex + 1}-t${Date.now().toString(36)}`;
         const ins: TextInsertion = {
           id,
-          sourceKey: slot.sourceKey,
-          pageIndex: slot.sourcePageIndex,
+          sourceKey: slotSourceKey,
+          pageIndex: slotPageIndex,
           pdfX,
           pdfY,
           pdfWidth: 120,
@@ -380,8 +386,8 @@ export default function App() {
         const h = targetW * aspect;
         const ins: ImageInsertion = {
           id,
-          sourceKey: slot.sourceKey,
-          pageIndex: slot.sourcePageIndex,
+          sourceKey: slotSourceKey,
+          pageIndex: slotPageIndex,
           pdfX: pdfX - w / 2,
           pdfY: pdfY - h / 2,
           pdfWidth: w,
@@ -414,8 +420,8 @@ export default function App() {
             {
               kind: "comment",
               id,
-              sourceKey: slot.sourceKey,
-              pageIndex: slot.sourcePageIndex,
+              sourceKey: slotSourceKey,
+              pageIndex: slotPageIndex,
               pdfX,
               pdfY: pdfY - COMMENT_DEFAULT_HEIGHT,
               pdfWidth: COMMENT_DEFAULT_WIDTH,

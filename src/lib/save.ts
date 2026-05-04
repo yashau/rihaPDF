@@ -40,6 +40,7 @@ import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
 import type { PageSlot } from "./slots";
 import type { LoadedSource } from "./loadSource";
+import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "./blankSource";
 import type { Annotation } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
@@ -488,7 +489,10 @@ function lookupPageXObjectRef(doc: PDFDocument, pageNode: PDFDict, resName: stri
 }
 
 type LoadedSourceContext = {
-  source: LoadedSource;
+  /** Origin source. Absent for synthetic per-blank-slot ctxs — those
+   *  never go through stream surgery (no source runs / images / shapes
+   *  to manipulate), so the page-extracted state isn't needed. */
+  source?: LoadedSource;
   doc: PDFDocument;
   getFont: (family: string, bold?: boolean, italic?: boolean) => Promise<EmbeddedFont>;
 };
@@ -586,9 +590,29 @@ export async function applyEditsAndSave(
 
   // Load each source's doc once. We re-load from bytes (rather than
   // reusing any cached PDFDocument) so the save pipeline can't leave
-  // mutations behind in the in-memory source state.
+  // mutations behind in the in-memory source state. Blank slots that
+  // are referenced by any insert / draw / annotation get a synthetic
+  // ctx — a fresh PDFDocument with a single page sized to the slot —
+  // so the same insert / draw / annotation passes can apply to them.
   const ctxBySource = new Map<string, LoadedSourceContext>();
+  const blankSlotById = new Map<string, PageSlot>();
+  for (const slot of slots) {
+    if (slot.kind === "blank") blankSlotById.set(slot.id, slot);
+  }
   for (const sourceKey of sourcesNeedingLoad) {
+    if (isBlankSourceKey(sourceKey)) {
+      const slotId = slotIdFromBlankSourceKey(sourceKey);
+      const slot = blankSlotById.get(slotId);
+      if (!slot || slot.kind !== "blank") continue;
+      const doc = await PDFDocument.create();
+      doc.registerFontkit(fontkit);
+      doc.addPage(slot.size);
+      ctxBySource.set(sourceKey, {
+        doc,
+        getFont: makeFontFactory(doc),
+      });
+      continue;
+    }
     const source = sources.get(sourceKey);
     if (!source) continue;
     const doc = await PDFDocument.load(source.bytes);
@@ -788,15 +812,22 @@ export async function applyEditsAndSave(
 
   // Build the output by walking `slots[]` in order. Edits are baked
   // into each source's `doc` from the loops above; copyPages preserves
-  // embedded fonts / images / XObjects. Blanks become fresh pages.
+  // embedded fonts / images / XObjects. Blanks with inserts / draws /
+  // annotations have a synthetic ctx — copyPages from that doc so the
+  // applied content carries through. Blanks with NO content fall back
+  // to a bare `output.addPage(slot.size)` (no synthetic ctx materialised).
   const output = await PDFDocument.create();
   output.registerFontkit(fontkit);
   const indicesPerSource = new Map<string, number[]>();
   for (const slot of slots) {
-    if (slot.kind !== "page") continue;
-    const arr = indicesPerSource.get(slot.sourceKey) ?? [];
-    arr.push(slot.sourcePageIndex);
-    indicesPerSource.set(slot.sourceKey, arr);
+    if (slot.kind === "page") {
+      const arr = indicesPerSource.get(slot.sourceKey) ?? [];
+      arr.push(slot.sourcePageIndex);
+      indicesPerSource.set(slot.sourceKey, arr);
+    } else {
+      const sk = blankSourceKey(slot.id);
+      if (ctxBySource.has(sk)) indicesPerSource.set(sk, [0]);
+    }
   }
   const copiedPerSource = new Map<string, Awaited<ReturnType<typeof output.copyPages>>>();
   for (const [sourceKey, indices] of indicesPerSource) {
@@ -808,7 +839,13 @@ export async function applyEditsAndSave(
   const cursorPerSource = new Map<string, number>();
   for (const slot of slots) {
     if (slot.kind === "blank") {
-      output.addPage(slot.size);
+      const sk = blankSourceKey(slot.id);
+      const copied = copiedPerSource.get(sk);
+      if (copied && copied.length > 0) {
+        output.addPage(copied[0]);
+      } else {
+        output.addPage(slot.size);
+      }
       continue;
     }
     const copied = copiedPerSource.get(slot.sourceKey);
@@ -830,7 +867,12 @@ async function applyStreamSurgeryForSource(
   sameSourceImageDraws: SameSourceImageDrawPlan[],
   crossSourceImageDraws: CrossSourceImageDrawPlan[],
 ): Promise<void> {
-  const { source, doc, getFont } = ctx;
+  // Stream surgery only runs on real-source ctxs — caller filters out
+  // synthetic blank ctxs upstream (their edits/moves/shape-deletes
+  // buckets are always empty). Assert for the type narrowing.
+  if (!ctx.source) throw new Error("applyStreamSurgeryForSource called on synthetic ctx");
+  const source = ctx.source;
+  const { doc, getFont } = ctx;
   const editsByPage = new Map<number, Edit[]>();
   for (const e of sourceEdits) {
     if (!editsByPage.has(e.pageIndex)) editsByPage.set(e.pageIndex, []);

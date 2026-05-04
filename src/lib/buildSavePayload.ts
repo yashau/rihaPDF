@@ -6,6 +6,7 @@ import {
   type TextInsert,
 } from "./save";
 import type { Annotation } from "./annotations";
+import { blankSourceKey } from "./blankSource";
 import type { ImageInsertion, TextInsertion } from "./insertions";
 import type { PageSlot } from "./slots";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
@@ -43,6 +44,16 @@ export function buildSavePayload({
       slotAddr.set(slot.id, {
         sourceKey: slot.sourceKey,
         pageIndex: slot.sourcePageIndex,
+        slot,
+      });
+    } else {
+      // Blank slot — addressed by a synthetic per-slot sourceKey +
+      // pageIndex 0. The save pipeline materialises a fresh one-page
+      // PDFDocument for each such key so inserts / draws / annots
+      // land on a real page that copyPages can pull into the output.
+      slotAddr.set(slot.id, {
+        sourceKey: blankSourceKey(slot.id),
+        pageIndex: 0,
         slot,
       });
     }

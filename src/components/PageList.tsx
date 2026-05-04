@@ -2,8 +2,10 @@ import { PageWithToolbar } from "./PageWithToolbar";
 import type { EditValue, ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation } from "../lib/annotations";
+import { blankRenderedPage, blankSourceKey } from "../lib/blankSource";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { LoadedSource } from "../lib/loadSource";
+import type { RenderedPage } from "../lib/pdf";
 import type { PageSlot } from "../lib/slots";
 import type { ToolMode } from "../App";
 
@@ -168,24 +170,26 @@ export function PageList({
     // render), breaking fit-to-width on mobile.
     <div className="flex flex-col items-center gap-6 w-full">
       {slots.map((slot, idx) => {
+        // Resolve the page object + sourceKey we'll hand to
+        // PageWithToolbar. Blank slots get a synthetic RenderedPage
+        // backed by a white canvas + a synthetic sourceKey so the
+        // rest of the rendering / overlay machinery treats them
+        // identically to a real PDF page (clicks place text/image,
+        // arrivals from other pages render, annotations attach, etc.).
+        let page: RenderedPage;
+        let pageSourceKey: string;
+        let previewKey: string | null = null;
         if (slot.kind === "blank") {
-          return (
-            <div
-              key={slot.id}
-              id={`page-slot-${slot.id}`}
-              className="bg-white dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 rounded shadow-sm flex items-center justify-center text-zinc-300 dark:text-zinc-500 text-sm scroll-mt-6"
-              style={{
-                width: slot.size[0] * renderScale,
-                height: slot.size[1] * renderScale,
-              }}
-            >
-              (blank)
-            </div>
-          );
+          page = blankRenderedPage(slot, renderScale);
+          pageSourceKey = blankSourceKey(slot.id);
+        } else {
+          const source = sources.get(slot.sourceKey);
+          const resolved = source?.pages[slot.sourcePageIndex];
+          if (!source || !resolved) return null;
+          page = resolved;
+          pageSourceKey = slot.sourceKey;
+          previewKey = `${slot.sourceKey}:${slot.sourcePageIndex}`;
         }
-        const source = sources.get(slot.sourceKey);
-        const page = source?.pages[slot.sourcePageIndex];
-        if (!source || !page) return null;
         // Re-derive cross-page targetPageIndex from the stable
         // targetSlotId so reorder doesn't strand overlays.
         const slotIndexById = (id: string | undefined) => {
@@ -261,13 +265,13 @@ export function PageList({
             slotId={slot.id}
             page={page}
             pageIndex={idx}
-            sourceKey={slot.sourceKey}
+            sourceKey={pageSourceKey}
             edits={editsForSlot}
             imageMoves={imageMovesForSlot}
             insertedTexts={insertedTexts.get(slot.id) ?? []}
             insertedImages={insertedImages.get(slot.id) ?? []}
             annotations={annotations.get(slot.id) ?? []}
-            previewCanvas={previewCanvases.get(`${slot.sourceKey}:${slot.sourcePageIndex}`) ?? null}
+            previewCanvas={previewKey ? (previewCanvases.get(previewKey) ?? null) : null}
             tool={tool}
             editingId={editingByPage.get(slot.id) ?? null}
             selectedImageId={selectedImageId}

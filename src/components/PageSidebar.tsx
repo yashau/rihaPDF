@@ -59,59 +59,48 @@ export function PageSidebar({
   /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are PNG
    *  data URLs so multiple <img> tags can share one entry. */
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
-  const knownSourcesRef = useRef<Set<string>>(new Set());
+  // Tracks the LoadedSource object identity per sourceKey. We compare by
+  // identity (not just key presence) because opening a new primary PDF
+  // reuses PRIMARY_SOURCE_KEY — only the underlying source object
+  // changes. Without this, stale thumbnails from the previous file would
+  // keep showing under their old (sourceKey, pageIndex) cache entries.
+  const knownSourcesRef = useRef<Map<string, LoadedSource>>(new Map());
 
-  // When a source disappears (the user re-opened the primary PDF), drop
-  // its cached thumbs so we don't keep stale entries around. Tracked by
-  // the live set of known sourceKeys.
+  // Single effect that handles both stale-source eviction and thumb
+  // generation. Merging is required: if eviction lived in its own effect
+  // it would call setThumbs, but the regen effect's closure would still
+  // see the old (stale) thumbs map and skip regeneration — and `thumbs`
+  // can't be added to its deps without an infinite loop. Doing both in
+  // one effect with one functional setThumbs makes cleanup + regen a
+  // single atomic update.
   useEffect(() => {
-    const live = new Set(sources.keys());
-    if (knownSourcesRef.current.size === 0) {
-      knownSourcesRef.current = live;
-      return;
+    const prevKnown = knownSourcesRef.current;
+    const stale = new Set<string>();
+    for (const [k, v] of prevKnown) {
+      if (sources.get(k) !== v) stale.add(k);
     }
-    let changed = false;
-    for (const k of knownSourcesRef.current) {
-      if (!live.has(k)) {
-        changed = true;
-        break;
-      }
-    }
-    knownSourcesRef.current = live;
-    if (!changed) return;
-    setThumbs((prev) => {
-      const next = new Map<string, string>();
-      for (const [k, v] of prev) {
-        const sourceKey = k.split(":")[0];
-        if (live.has(sourceKey)) next.set(k, v);
-      }
-      return next;
-    });
-  }, [sources]);
+    knownSourcesRef.current = new Map(sources);
 
-  // For each page slot, downscale the already-rendered canvas via 2D
-  // drawImage. Cheaper than re-running pdf.js because we already have
-  // the source canvas in memory after eager extraction.
-  useEffect(() => {
-    const wanted: Array<{ key: string; src: HTMLCanvasElement }> = [];
+    // Downscale the already-rendered source canvas via 2D drawImage.
+    // Cheaper than re-running pdf.js because we already have the source
+    // canvas in memory after eager extraction. pdf.js renders source
+    // canvases at scale × DPR (capped 2), so src.width is already in
+    // device pixels; target = CSS width × DPR (same cap) gives a 1:1
+    // device-pixel display on the widest mount. Clamp factor to 1 so a
+    // tiny source PDF doesn't get upscaled.
+    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    const targetW = THUMB_TARGET_CSS_WIDTH * dpr;
+    const additions = new Map<string, string>();
     for (const slot of slots) {
       if (slot.kind !== "page") continue;
       const source = sources.get(slot.sourceKey);
       const rp = source?.pages[slot.sourcePageIndex];
       if (!rp) continue;
       const key = `${slot.sourceKey}:${slot.sourcePageIndex}`;
-      if (thumbs.has(key)) continue;
-      wanted.push({ key, src: rp.canvas });
-    }
-    if (wanted.length === 0) return;
-    // pdf.js renders source canvases at scale × DPR (capped 2), so
-    // src.width is already in device pixels. Target = CSS width × DPR
-    // (same cap) gives a 1:1 device-pixel display on the widest mount.
-    // Clamp factor to 1 so a tiny source PDF doesn't get upscaled.
-    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-    const targetW = THUMB_TARGET_CSS_WIDTH * dpr;
-    const additions = new Map<string, string>();
-    for (const { key, src } of wanted) {
+      // Regenerate if either uncached or evicted by stale-source
+      // detection above. Skip otherwise to avoid pointless re-encoding.
+      if (thumbs.has(key) && !stale.has(slot.sourceKey)) continue;
+      const src = rp.canvas;
       const factor = Math.min(1, targetW / src.width);
       const w = Math.max(1, Math.round(src.width * factor));
       const h = Math.max(1, Math.round(src.height * factor));
@@ -125,13 +114,16 @@ export function PageSidebar({
       ctx.drawImage(src, 0, 0, w, h);
       additions.set(key, c.toDataURL("image/png"));
     }
-    if (additions.size === 0) return;
+
+    if (stale.size === 0 && additions.size === 0) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setThumbs((prev) => {
-      const next = new Map(prev);
-      for (const [k, v] of additions) {
-        if (!next.has(k)) next.set(k, v);
+      const next = new Map<string, string>();
+      for (const [k, v] of prev) {
+        const sourceKey = k.split(":")[0];
+        if (!stale.has(sourceKey)) next.set(k, v);
       }
+      for (const [k, v] of additions) next.set(k, v);
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -319,9 +311,14 @@ function SortableSlotThumb({
         </Button>
       </div>
       {slot.kind === "blank" ? (
-        <div className="flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs h-32 border border-dashed border-zinc-200 dark:border-zinc-700 m-1 rounded bg-zinc-50 dark:bg-zinc-900">
-          Blank
-        </div>
+        // A blank slot is just a white page in the saved PDF. Render
+        // it as one in the thumb too — same aspect ratio as the
+        // slot's natural size, no "Blank" label — so it sits next to
+        // real thumbs without looking like a UI placeholder.
+        <div
+          className="block w-full bg-white"
+          style={{ aspectRatio: `${slot.size[0]} / ${slot.size[1]}` }}
+        />
       ) : dataUrl ? (
         <img src={dataUrl} alt="" className="block w-full h-auto" draggable={false} />
       ) : (
