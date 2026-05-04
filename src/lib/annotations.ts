@@ -107,6 +107,43 @@ export function newAnnotationId(kind: Annotation["kind"]): string {
   return `${kind}-${Date.now().toString(36)}-${counter.toString(36)}`;
 }
 
+/** Vertical extents of a markup rect over a text run, measured FROM
+ *  the baseline as fractions of the run's font height. `aboveBaseline`
+ *  pushes the top up; `belowBaseline` pushes the bottom down. Picked
+ *  this way (instead of "padding around the em-box") because the
+ *  em-box top sits above where most glyphs actually reach, and the
+ *  baseline is the only reference Thaana descender fili are measured
+ *  from — so saying "cover 0.40·h below baseline" is the natural way
+ *  to describe descender coverage. */
+export type LineMarkupExtents = { aboveBaseline: number; belowBaseline: number };
+
+/** Highlight extents: just inside the em-box top (so the fill doesn't
+ *  leave visible empty space above the glyph row, while still covering
+ *  most ufili / abafili) and 0.40·h below baseline for Thaana descender
+ *  fili (ibi, eba, ebefili). */
+export const HIGHLIGHT_LINE_PAD: LineMarkupExtents = { aboveBaseline: 0.9, belowBaseline: 0.4 };
+
+/** Convert a text run's viewport geometry into a PDF user-space rect
+ *  for line markup, with caller-supplied vertical extents measured
+ *  from baseline (see `LineMarkupExtents`). Used by highlight markup;
+ *  redaction will reuse this with a more generous envelope so the fill
+ *  fully covers any glyphs the save path strips from the content
+ *  stream. Returns `[llx, lly, urx, ury]` in PDF /Rect order (y-up). */
+export function lineMarkupRect(
+  run: { bounds: { left: number; width: number }; baselineY: number; height: number },
+  pageScale: number,
+  viewHeight: number,
+  ext: LineMarkupExtents,
+): [number, number, number, number] {
+  const top = run.baselineY - run.height * ext.aboveBaseline;
+  const bottom = run.baselineY + run.height * ext.belowBaseline;
+  const llx = run.bounds.left / pageScale;
+  const urx = (run.bounds.left + run.bounds.width) / pageScale;
+  const lly = (viewHeight - bottom) / pageScale;
+  const ury = (viewHeight - top) / pageScale;
+  return [llx, lly, urx, ury];
+}
+
 /** Bounding box for an annotation in PDF user space, returned in the
  *  PDF /Rect convention `[llx, lly, urx, ury]` (y-up). Used by the
  *  save path and by overlays that need a containing rectangle. */

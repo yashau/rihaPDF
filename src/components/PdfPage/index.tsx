@@ -1,8 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage, TextRun } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
-import { type Annotation, DEFAULT_HIGHLIGHT_COLOR, newAnnotationId } from "../../lib/annotations";
+import {
+  type Annotation,
+  DEFAULT_HIGHLIGHT_COLOR,
+  HIGHLIGHT_LINE_PAD,
+  lineMarkupRect,
+  newAnnotationId,
+} from "../../lib/annotations";
 import type { ToolMode } from "../../App";
 import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
@@ -246,34 +252,27 @@ export function PdfPage({
     /* eslint-enable react-hooks/immutability */
   }, [page, previewCanvas]);
 
-  /** Add a highlight annotation covering a single run. The run's bbox
-   *  lives in viewport pixels (y-down); we convert to PDF user space
-   *  (y-up) and emit a single quad in TL/TR/BL/BR order. Multi-line
-   *  highlight (one annotation, many quads) is a Phase 2 feature; one
-   *  click currently means one quad over the clicked run. */
-  const addHighlightForRun = (run: {
-    bounds: { left: number; top: number; width: number; height: number };
-  }) => {
-    const pdfLeft = run.bounds.left / page.scale;
-    const pdfRight = (run.bounds.left + run.bounds.width) / page.scale;
-    const pdfTop = (page.viewHeight - run.bounds.top) / page.scale;
-    const pdfBottom = (page.viewHeight - run.bounds.top - run.bounds.height) / page.scale;
+  /** Add a highlight annotation covering a single run. We don't reuse
+   *  `run.bounds` directly here — that envelope carries extra padding
+   *  for replacement-text overlays (fili headroom) and reads as offset
+   *  too high when used as a markup rect. `lineMarkupRect` rebuilds a
+   *  tighter rect from the run's baseline + height, balanced around the
+   *  glyph row. Multi-line highlight (one annotation, many quads) is a
+   *  Phase 2 feature; one click currently means one quad. */
+  const addHighlightForRun = (run: TextRun) => {
+    const [llx, lly, urx, ury] = lineMarkupRect(
+      run,
+      page.scale,
+      page.viewHeight,
+      HIGHLIGHT_LINE_PAD,
+    );
     onAnnotationAdd({
       kind: "highlight",
       id: newAnnotationId("highlight"),
       sourceKey,
       pageIndex,
       quads: [
-        {
-          x1: pdfLeft,
-          y1: pdfTop,
-          x2: pdfRight,
-          y2: pdfTop,
-          x3: pdfLeft,
-          y3: pdfBottom,
-          x4: pdfRight,
-          y4: pdfBottom,
-        },
+        { x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly },
       ],
       color: DEFAULT_HIGHLIGHT_COLOR,
     });
