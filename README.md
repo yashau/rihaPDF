@@ -26,6 +26,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 - **Page sidebar.** Thumbnail per page; reorder, delete, insert blank, or insert pages from another PDF. External pages are first-class — every editing affordance works on them.
 - **230 bundled Thaana fonts.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`. Sources, attributions, and per-file credits in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
+- **Redact.** Click a text run to drop an opaque black rectangle; drag corners to resize. On save the rect paints into the content stream AND every glyph whose bbox falls inside it is stripped at the byte level — per-glyph, not per-run, so a tightened rect over part of a `Tj` only removes the glyphs visually under it. The saved file has no recoverable text under the rect: no copy, no select, no extract.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
 - **Mobile layout.** Fit-to-width pages, 400ms touch hold before drag, edge-band auto-scroll, drawer sidebar, visual-viewport-anchored chrome.
@@ -94,6 +95,8 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 ## Known limitations
 
 - **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
+- **Redaction strips text only.** Image data and vector graphics under a redaction rect remain in the saved file's content stream — visually covered by the opaque rect but extractable by anyone who pulls XObjects / vector ops out of the page. The `Tj`/`TJ` strip pass in [redactGlyphs.ts](src/lib/redactGlyphs.ts) only knows about glyphs. If you redact a region containing a sensitive logo / signature image, treat the file as "text-only redacted." Image and vector stripping is a planned follow-up.
+- **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to *whole-op stripping* rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
 
 ## Scripts
 
@@ -160,6 +163,7 @@ pnpm test         # another
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                   |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                      |
 | `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip     |
+| `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes |
 | `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint         |
 | `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                    |
 | `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                    |
