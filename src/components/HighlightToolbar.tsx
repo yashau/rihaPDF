@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { createPortal } from "react-dom";
 import type { AnnotationColor } from "../lib/annotations";
 import { HIGHLIGHT_COLOR_PRESETS } from "../lib/color";
 import { useIsMobile } from "../lib/useMediaQuery";
@@ -47,7 +48,14 @@ function DesktopHighlightBar({ color, onColorChange }: ControlProps) {
 function MobileHighlightBar({ color, onColorChange }: ControlProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   useVisualViewportFollow(ref, "bottom", true);
-  return (
+  // Portal to document.body so `position: fixed` anchors to the visual
+  // viewport, not to any transformed ancestor. Same rationale as
+  // EditTextToolbar — a transformed ancestor (e.g. AppHeader's
+  // visualViewport-driven counter-scale) creates a containing block
+  // for fixed-position descendants per CSS spec, so an inline render
+  // would land the toolbar inside that scaled box mid-page rather than
+  // at the bottom of the viewport.
+  const node = (
     <div
       ref={ref}
       data-edit-toolbar
@@ -71,6 +79,10 @@ function MobileHighlightBar({ color, onColorChange }: ControlProps) {
       <HighlightControls color={color} onColorChange={onColorChange} />
     </div>
   );
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 }
 
 function HighlightControls({ color, onColorChange }: ControlProps) {

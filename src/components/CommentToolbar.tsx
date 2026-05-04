@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { createPortal } from "react-dom";
 import type { AnnotationColor } from "../lib/annotations";
 import { HIGHLIGHT_COLOR_PRESETS } from "../lib/color";
 import { useIsMobile } from "../lib/useMediaQuery";
@@ -49,7 +50,12 @@ function DesktopCommentBar({ color, onColorChange }: ControlProps) {
 function MobileCommentBar({ color, onColorChange }: ControlProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   useVisualViewportFollow(ref, "bottom", true);
-  return (
+  // Portal to document.body — same rationale as HighlightToolbar /
+  // EditTextToolbar: `position: fixed` is layout-anchored to the
+  // nearest transformed ancestor, so an inline render inside any
+  // visualViewport-counterscaled subtree would land the toolbar mid-
+  // page rather than at the visual-viewport bottom.
+  const node = (
     <div
       ref={ref}
       data-edit-toolbar
@@ -73,6 +79,10 @@ function MobileCommentBar({ color, onColorChange }: ControlProps) {
       <CommentControls color={color} onColorChange={onColorChange} />
     </div>
   );
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 }
 
 function CommentControls({ color, onColorChange }: ControlProps) {

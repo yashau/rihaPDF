@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { createPortal } from "react-dom";
 import type { AnnotationColor } from "../lib/annotations";
 import { useIsMobile } from "../lib/useMediaQuery";
 import { useVisualViewportFollow } from "../lib/useVisualViewport";
@@ -87,7 +88,12 @@ function DesktopInkBar({ color, thickness, onColorChange, onThicknessChange }: C
 function MobileInkBar({ color, thickness, onColorChange, onThicknessChange }: ControlProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   useVisualViewportFollow(ref, "bottom", true);
-  return (
+  // Portal to document.body — same rationale as HighlightToolbar /
+  // EditTextToolbar: `position: fixed` is layout-anchored to the
+  // nearest transformed ancestor, so an inline render inside any
+  // visualViewport-counterscaled subtree would land the toolbar mid-
+  // page rather than at the visual-viewport bottom.
+  const node = (
     <div
       ref={ref}
       data-edit-toolbar
@@ -117,6 +123,10 @@ function MobileInkBar({ color, thickness, onColorChange, onThicknessChange }: Co
       />
     </div>
   );
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 }
 
 /** Shared color + thickness controls. `compact` shrinks the slider
