@@ -1,7 +1,7 @@
 import { PageWithToolbar } from "./PageWithToolbar";
 import type { EditValue, ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
-import type { Annotation } from "../lib/annotations";
+import type { Annotation, AnnotationColor } from "../lib/annotations";
 import { blankRenderedPage, blankSourceKey } from "../lib/blankSource";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { LoadedSource } from "../lib/loadSource";
@@ -30,6 +30,8 @@ export function PageList({
   previewCanvases,
   editingByPage,
   tool,
+  inkColor,
+  inkThickness,
   selection,
   renderScale,
   onEdit,
@@ -62,6 +64,11 @@ export function PageList({
   previewCanvases: Map<string, HTMLCanvasElement>;
   editingByPage: Map<string, string>;
   tool: ToolMode;
+  /** Active ink stroke color + thickness, lifted to App so the
+   *  setting persists across page focus and edits. The InkLayer
+   *  stamps these onto each new stroke at commit time. */
+  inkColor: AnnotationColor;
+  inkThickness: number;
   selection: Selection;
   renderScale: number;
   onEdit: (slotId: string, runId: string, value: EditValue) => void;
@@ -287,6 +294,8 @@ export function PageList({
             redactions={redactions.get(slot.id) ?? []}
             previewCanvas={previewKey ? (previewCanvases.get(previewKey) ?? null) : null}
             tool={tool}
+            inkColor={inkColor}
+            inkThickness={inkThickness}
             editingId={editingByPage.get(slot.id) ?? null}
             selectedImageId={selectedImageId}
             selectedInsertedImageId={selectedInsertedImageId}

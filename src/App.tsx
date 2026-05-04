@@ -7,14 +7,17 @@ import { useUndoRedo } from "./lib/useUndoRedo";
 import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
 import {
   type Annotation,
+  type AnnotationColor,
   COMMENT_DEFAULT_FONT_SIZE,
   COMMENT_DEFAULT_HEIGHT,
   COMMENT_DEFAULT_WIDTH,
   DEFAULT_COMMENT_COLOR,
+  DEFAULT_INK_COLOR,
   newAnnotationId,
 } from "./lib/annotations";
 import type { Redaction } from "./lib/redactions";
 import type { EditValue, ImageMoveValue } from "./components/PdfPage";
+import { InkToolbar } from "./components/InkToolbar";
 import { PageSidebar } from "./components/PageSidebar";
 import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
 import { blankSourceKey } from "./lib/blankSource";
@@ -95,6 +98,13 @@ export default function App() {
    *  "addText" = next click on a page drops a new text box; "addImage"
    *  = next click drops the pending image at that position). */
   const [tool, setTool] = useState<ToolMode>("select");
+  /** Active ink stroke color + thickness. Lifted to App so the
+   *  setting persists across page focus changes — the bottom-pinned
+   *  InkToolbar renders here, and the per-page InkLayer reads these
+   *  through the existing prop chain to stamp them onto each new
+   *  stroke at commit time. */
+  const [inkColor, setInkColor] = useState<AnnotationColor>(DEFAULT_INK_COLOR);
+  const [inkThickness, setInkThickness] = useState<number>(1.5);
   /** Per-slot net-new text/image insertions — separate from edits
    *  because they don't reference an existing run/image. Keyed by
    *  slotId so an insertion follows its slot through reorder. */
@@ -970,6 +980,20 @@ export default function App() {
         mobileHeaderRef={mobileHeaderRef}
         slotsLength={slots.length}
       />
+      {/* Ink-tool options bar. Desktop: a second header row attached
+          below the main toolbar so the color / thickness controls sit
+          near the Draw button that activated the tool. Mobile: a
+          bottom-pinned strip that stays above the soft keyboard. The
+          InkToolbar component owns the mobile-vs-desktop branch
+          internally; we only mount it when the tool is active. */}
+      {tool === "ink" ? (
+        <InkToolbar
+          color={inkColor}
+          thickness={inkThickness}
+          onColorChange={setInkColor}
+          onThicknessChange={setInkThickness}
+        />
+      ) : null}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar is a static left rail on desktop and an overlay
             drawer on mobile. We keep a single PageSidebar instance and
@@ -1049,6 +1073,8 @@ export default function App() {
               previewCanvases={previewCanvases}
               editingByPage={editingByPage}
               tool={tool}
+              inkColor={inkColor}
+              inkThickness={inkThickness}
               selection={selection}
               renderScale={RENDER_SCALE}
               onEdit={onEdit}

@@ -5,6 +5,7 @@ import type { RenderedPage, TextRun } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import {
   type Annotation,
+  type AnnotationColor,
   DEFAULT_HIGHLIGHT_COLOR,
   HIGHLIGHT_LINE_PAD,
   lineMarkupRect,
@@ -62,6 +63,12 @@ type Props = {
   /** Active tool mode — when "addText" / "addImage", clicking on
    *  empty canvas creates a new insertion via onCanvasClick. */
   tool: ToolMode;
+  /** Active ink color + thickness from App. The InkLayer stamps these
+   *  onto each new stroke at commit time — they're props rather than
+   *  module state so toggling via the InkToolbar takes effect on the
+   *  next stroke without reloading. */
+  inkColor: AnnotationColor;
+  inkThickness: number;
   /** Currently-open editor id on this page (lifted to App so a fresh
    *  insertion can immediately open its editor without a round-trip
    *  through PdfPage's own state). null = nothing is being edited. */
@@ -134,6 +141,8 @@ export function PdfPage({
   redactions,
   previewCanvas,
   tool,
+  inkColor,
+  inkThickness,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
@@ -599,6 +608,8 @@ export function PdfPage({
             pageIndex={pageIndex}
             sourceKey={sourceKey}
             tool={tool}
+            inkColor={inkColor}
+            inkThickness={inkThickness}
             onAnnotationAdd={onAnnotationAdd}
             onAnnotationChange={onAnnotationChange}
             onAnnotationDelete={onAnnotationDelete}

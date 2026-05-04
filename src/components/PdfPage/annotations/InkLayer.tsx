@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { type Annotation, DEFAULT_INK_COLOR, newAnnotationId } from "../../../lib/annotations";
+import { type Annotation, type AnnotationColor, newAnnotationId } from "../../../lib/annotations";
 import type { ToolMode } from "../../../App";
 import { rgba, vpY } from "./helpers";
 
@@ -15,6 +15,8 @@ export function InkLayer({
   pageIndex,
   sourceKey,
   tool,
+  color,
+  thickness,
   onAnnotationAdd,
   onAnnotationDelete,
 }: {
@@ -27,6 +29,11 @@ export function InkLayer({
   pageIndex: number;
   sourceKey: string;
   tool: ToolMode;
+  /** Stroke color + width for the IN-PROGRESS preview and the
+   *  committed annotation. Owned by App via the InkToolbar; the
+   *  InkLayer is otherwise stateless about ink settings. */
+  color: AnnotationColor;
+  thickness: number;
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationDelete: (id: string) => void;
 }) {
@@ -96,8 +103,8 @@ export function InkLayer({
             sourceKey,
             pageIndex,
             strokes: [drawing],
-            color: DEFAULT_INK_COLOR,
-            thickness: 1.5,
+            color,
+            thickness,
           });
         }
         setDrawing(null);
@@ -151,8 +158,8 @@ export function InkLayer({
                 return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
               })
               .join(" ")}
-            stroke={rgba(DEFAULT_INK_COLOR, 1)}
-            strokeWidth={1.5 * pageScale}
+            stroke={rgba(color, 1)}
+            strokeWidth={thickness * pageScale}
             strokeLinecap="round"
             strokeLinejoin="round"
             fill="none"

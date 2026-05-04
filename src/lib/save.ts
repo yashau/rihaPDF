@@ -35,7 +35,12 @@ import {
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { TextRun } from "./pdf";
-import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
+import {
+  parseContentStream,
+  serializeContentStream,
+  findTextShows,
+  type ContentOp,
+} from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
 import type { PageSlot } from "./slots";
@@ -46,7 +51,8 @@ import { applyAnnotationsToDoc } from "./saveAnnotations";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
 import { DEFAULT_TEXT_COLOR } from "./color";
-import { rectsOverlap, type Redaction } from "./redactions";
+import { type Redaction } from "./redactions";
+import { planRedactionStrip } from "./redactGlyphs";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -576,52 +582,11 @@ export async function applyEditsAndSave(
   annotations: Annotation[] = [],
   redactions: Redaction[] = [],
 ): Promise<Uint8Array> {
-  // Redactions strip glyphs (via the existing deleted-edit pipeline)
-  // AND paint an opaque black rect into the page content stream. The
-  // glyph strip step needs to know which RUNS overlap each redaction
-  // — we compute that here, in payload terms, then push synthetic
-  // `deleted: true` Edits for each run hit so the surgery loop below
-  // doesn't need to know about redactions at all.
-  //
-  // Resolution lives in PDF user space (y-up). TextRun.bounds is in
-  // viewport pixels (y-down), so we convert each run before testing.
-  // Any overlap (no minimum-area threshold) counts: a Tj op is atomic
-  // — you can't strip half of one — so partial intersections still
-  // need full-run removal.
-  if (redactions.length > 0) {
-    const synth: Edit[] = [];
-    for (const r of redactions) {
-      const source = sources.get(r.sourceKey);
-      const sourcePage = source?.pages[r.pageIndex];
-      if (!sourcePage) continue;
-      for (const run of sourcePage.textRuns) {
-        const runPdfX = run.bounds.left / sourcePage.scale;
-        const runPdfWidth = run.bounds.width / sourcePage.scale;
-        const runPdfY = (sourcePage.viewHeight - run.bounds.top - run.bounds.height) /
-          sourcePage.scale;
-        const runPdfHeight = run.bounds.height / sourcePage.scale;
-        const runRect = {
-          pdfX: runPdfX,
-          pdfY: runPdfY,
-          pdfWidth: runPdfWidth,
-          pdfHeight: runPdfHeight,
-        };
-        if (!rectsOverlap(r, runRect)) continue;
-        synth.push({
-          sourceKey: r.sourceKey,
-          pageIndex: r.pageIndex,
-          runId: run.id,
-          newText: "",
-          deleted: true,
-        });
-      }
-    }
-    edits = [...edits, ...synth];
-  }
   // Bucket ops by source so each source's doc gets surgery in one pass.
   const editsBySource = new Map<string, Edit[]>();
   const movesBySource = new Map<string, ImageMove[]>();
   const shapeDeletesBySource = new Map<string, ShapeDelete[]>();
+  const redactionsBySource = new Map<string, Redaction[]>();
   const sourcesNeedingLoad = new Set<string>();
   // Sources referenced by any slot need to be loaded so copyPages can
   // pull from them. Edits / moves / inserts can target a source even
@@ -647,6 +612,11 @@ export async function applyEditsAndSave(
   for (const t of textInserts) sourcesNeedingLoad.add(t.sourceKey);
   for (const i of imageInserts) sourcesNeedingLoad.add(i.sourceKey);
   for (const a of annotations) sourcesNeedingLoad.add(a.sourceKey);
+  for (const r of redactions) {
+    sourcesNeedingLoad.add(r.sourceKey);
+    if (!redactionsBySource.has(r.sourceKey)) redactionsBySource.set(r.sourceKey, []);
+    redactionsBySource.get(r.sourceKey)!.push(r);
+  }
   for (const d of shapeDeletes) {
     sourcesNeedingLoad.add(d.sourceKey);
     if (!shapeDeletesBySource.has(d.sourceKey)) shapeDeletesBySource.set(d.sourceKey, []);
@@ -701,7 +671,13 @@ export async function applyEditsAndSave(
     const sourceEdits = editsBySource.get(sourceKey) ?? [];
     const sourceMoves = movesBySource.get(sourceKey) ?? [];
     const sourceShapeDeletes = shapeDeletesBySource.get(sourceKey) ?? [];
-    if (sourceEdits.length === 0 && sourceMoves.length === 0 && sourceShapeDeletes.length === 0) {
+    const sourceRedactions = redactionsBySource.get(sourceKey) ?? [];
+    if (
+      sourceEdits.length === 0 &&
+      sourceMoves.length === 0 &&
+      sourceShapeDeletes.length === 0 &&
+      sourceRedactions.length === 0
+    ) {
       continue;
     }
     await applyStreamSurgeryForSource(
@@ -709,6 +685,7 @@ export async function applyEditsAndSave(
       sourceEdits,
       sourceMoves,
       sourceShapeDeletes,
+      sourceRedactions,
       sameSourceDraws,
       crossSourceDraws,
       sameSourceImageDraws,
@@ -954,6 +931,7 @@ async function applyStreamSurgeryForSource(
   sourceEdits: Edit[],
   sourceMoves: ImageMove[],
   sourceShapeDeletes: ShapeDelete[],
+  sourceRedactions: Redaction[],
   sameSourceDraws: SameSourceDrawPlan[],
   crossSourceDraws: CrossSourceDrawPlan[],
   sameSourceImageDraws: SameSourceImageDrawPlan[],
@@ -980,10 +958,16 @@ async function applyStreamSurgeryForSource(
     if (!shapeDeletesByPage.has(d.pageIndex)) shapeDeletesByPage.set(d.pageIndex, []);
     shapeDeletesByPage.get(d.pageIndex)!.push(d);
   }
+  const redactionsByPage = new Map<number, Redaction[]>();
+  for (const r of sourceRedactions) {
+    if (!redactionsByPage.has(r.pageIndex)) redactionsByPage.set(r.pageIndex, []);
+    redactionsByPage.get(r.pageIndex)!.push(r);
+  }
   const pagesToRewrite = new Set<number>([
     ...editsByPage.keys(),
     ...movesByPage.keys(),
     ...shapeDeletesByPage.keys(),
+    ...redactionsByPage.keys(),
   ]);
 
   const docPages = doc.getPages();
@@ -1233,6 +1217,59 @@ async function applyStreamSurgeryForSource(
       }
     }
 
+    // Per-glyph redaction strip. Walks every Tj/TJ on the page,
+    // intersects each glyph's world bbox against the redaction rects,
+    // and emits one of three plans per affected op:
+    //   - drop          → add to indicesToRemove (whole op removed)
+    //   - rewrite       → replace ops[i] with a TJ that paints kept
+    //                     glyphs and inserts negative-spacer numbers
+    //                     where the redacted glyphs used to sit
+    //   - unsupported   → fall back to whole-op strip (over-strip is
+    //                     the safe failure mode for redaction; under-
+    //                     strip would leak glyphs into the saved file)
+    // Ops untouched by any redaction don't appear in the plan and are
+    // emitted unchanged below. This pass runs after the edit/move
+    // logic above so an op that's both being moved AND redacted ends
+    // up dropped (the replacement-text-overlay model can't survive a
+    // redaction over the same span anyway).
+    const replaceWithOps = new Map<number, ContentOp>();
+    const pageRedactions = redactionsByPage.get(pageIndex) ?? [];
+    if (pageRedactions.length > 0) {
+      const resources = page.node.Resources();
+      if (resources) {
+        const plans = planRedactionStrip(ops, resources, doc.context, pageRedactions);
+        for (const p of plans) {
+          if (p.kind === "drop" || p.kind === "unsupported") {
+            indicesToRemove.add(p.opIndex);
+          } else {
+            replaceWithOps.set(p.opIndex, p.replacement);
+          }
+        }
+      } else {
+        // No resources → can't resolve fonts → can't safely strip
+        // per-glyph. Conservatively drop every text-show that any
+        // redaction overlaps via the run-bbox shortcut so the saved
+        // file still has nothing recoverable under the rect.
+        for (const r of pageRedactions) {
+          for (const run of rendered.textRuns) {
+            const runRect = {
+              pdfX: run.bounds.left / scale,
+              pdfY: (rendered.viewHeight - run.bounds.top - run.bounds.height) / scale,
+              pdfWidth: run.bounds.width / scale,
+              pdfHeight: run.bounds.height / scale,
+            };
+            const overlap =
+              r.pdfX < runRect.pdfX + runRect.pdfWidth &&
+              r.pdfX + r.pdfWidth > runRect.pdfX &&
+              r.pdfY < runRect.pdfY + runRect.pdfHeight &&
+              r.pdfY + r.pdfHeight > runRect.pdfY;
+            if (!overlap) continue;
+            for (const opIdx of run.contentStreamOpIndices) indicesToRemove.add(opIdx);
+          }
+        }
+      }
+    }
+
     const newOps: typeof ops = [];
     for (let i = 0; i < ops.length; i++) {
       if (indicesToRemove.has(i)) continue;
@@ -1258,7 +1295,8 @@ async function applyStreamSurgeryForSource(
           ],
         });
       }
-      newOps.push(ops[i]);
+      const replacement = replaceWithOps.get(i);
+      newOps.push(replacement ?? ops[i]);
       const imgMove = insertAfterQ.get(i);
       if (imgMove && ops[i].op === "q") {
         newOps.push({

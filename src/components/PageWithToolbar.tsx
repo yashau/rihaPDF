@@ -1,6 +1,6 @@
 import { PdfPage, type EditValue, type ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
-import type { Annotation } from "../lib/annotations";
+import type { Annotation, AnnotationColor } from "../lib/annotations";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { RenderedPage } from "../lib/pdf";
 import type { Redaction } from "../lib/redactions";
@@ -19,6 +19,8 @@ export function PageWithToolbar({
   redactions,
   previewCanvas,
   tool,
+  inkColor,
+  inkThickness,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
@@ -59,6 +61,8 @@ export function PageWithToolbar({
   redactions: Redaction[];
   previewCanvas: HTMLCanvasElement | null;
   tool: ToolMode;
+  inkColor: AnnotationColor;
+  inkThickness: number;
   editingId: string | null;
   selectedImageId: string | null;
   selectedInsertedImageId: string | null;
@@ -104,6 +108,8 @@ export function PageWithToolbar({
         redactions={redactions}
         previewCanvas={previewCanvas}
         tool={tool}
+        inkColor={inkColor}
+        inkThickness={inkThickness}
         editingId={editingId}
         selectedImageId={selectedImageId}
         selectedInsertedImageId={selectedInsertedImageId}

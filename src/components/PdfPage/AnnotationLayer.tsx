@@ -12,7 +12,7 @@
 // (y-up). Sub-layers convert to NATURAL viewport pixels (y-down) for
 // layout, matching the rest of PdfPage's overlays.
 
-import type { Annotation } from "../../lib/annotations";
+import type { Annotation, AnnotationColor } from "../../lib/annotations";
 import type { ToolMode } from "../../App";
 import { CommentLayer } from "./annotations/CommentLayer";
 import { HighlightLayer } from "./annotations/HighlightLayer";
@@ -32,6 +32,10 @@ type Props = {
   pageIndex: number;
   sourceKey: string;
   tool: ToolMode;
+  /** Active ink stroke color + thickness — passed straight through to
+   *  the InkLayer which stamps them onto the new annotation at commit. */
+  inkColor: AnnotationColor;
+  inkThickness: number;
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
@@ -45,6 +49,8 @@ export function AnnotationLayer({
   pageIndex,
   sourceKey,
   tool,
+  inkColor,
+  inkThickness,
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
@@ -65,6 +71,8 @@ export function AnnotationLayer({
         pageIndex={pageIndex}
         sourceKey={sourceKey}
         tool={tool}
+        color={inkColor}
+        thickness={inkThickness}
         onAnnotationAdd={onAnnotationAdd}
         onAnnotationDelete={onAnnotationDelete}
       />

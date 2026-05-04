@@ -41,6 +41,100 @@ afterAll(async () => {
 });
 
 describe("redaction round-trip (maldivian2)", () => {
+  test("partial redaction strips per-glyph, not the whole run", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: PAGES });
+
+    // Need a substantial run so a SHRUNK rect leaves meaningful glyphs
+    // outside it. ≥10 chars + the test still works on Thaana RTL where
+    // getTextContent returns logical order.
+    const target = await h.page.evaluate(() => {
+      for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
+        const t = (el.textContent ?? "").trim();
+        if (t.length >= 10) {
+          return { id: el.getAttribute("data-run-id")!, text: t };
+        }
+      }
+      return null;
+    });
+    expect(target, "page-0 should have at least one ≥10-char run").not.toBeNull();
+    const originalText = target!.text;
+
+    // Default-sized redaction over the whole run.
+    await h.page.locator('[data-testid="tool-redact"]').click();
+    await h.page.waitForTimeout(100);
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    await h.page.waitForTimeout(150);
+
+    // Select the rect so its resize handles render.
+    const redactionEl = h.page.locator('[data-redaction-id]').first();
+    const redBox = await redactionEl.boundingBox();
+    expect(redBox, "redaction overlay should have a bbox").not.toBeNull();
+    await h.page.mouse.click(
+      redBox!.x + redBox!.width / 2,
+      redBox!.y + redBox!.height / 2,
+    );
+    await h.page.waitForTimeout(150);
+
+    // Drag the bottom-right corner ~80% of the way toward the bottom-
+    // left. Result: the rect now covers only the LEFT ~20% of its
+    // original area, so most glyphs in the run sit OUTSIDE the rect
+    // and (under per-glyph stripping) survive into the saved file.
+    // Per-RUN stripping would remove the whole run regardless of the
+    // rect's final size — that's the bug this case proves is fixed.
+    const handle = redactionEl.locator('[data-resize-handle="br"]');
+    const handleBox = await handle.boundingBox();
+    expect(handleBox, "BR resize handle should be visible after select").not.toBeNull();
+    const startX = handleBox!.x + handleBox!.width / 2;
+    const startY = handleBox!.y + handleBox!.height / 2;
+    const targetX = redBox!.x + redBox!.width * 0.2;
+    const targetY = startY;
+    await h.page.mouse.move(startX, startY);
+    await h.page.mouse.down();
+    await h.page.mouse.move((startX + targetX) / 2, targetY, { steps: 5 });
+    await h.page.mouse.move(targetX, targetY, { steps: 5 });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(150);
+
+    const newBox = await redactionEl.boundingBox();
+    expect(newBox!.width, "rect should have actually shrunk").toBeLessThan(
+      redBox!.width * 0.5,
+    );
+
+    const dlPromise = h.page.waitForEvent("download", { timeout: 15_000 });
+    await h.page.locator("header button").filter({ hasText: /^Save/ }).click();
+    const dl = await dlPromise;
+    const saved = path.join(SCREENSHOTS, "redact-partial-maldivian2.pdf");
+    await dl.saveAs(saved);
+
+    const text = await firstPageText(saved);
+
+    // (a) The full original text must NOT survive — we did strip
+    //     something, just not everything.
+    expect(
+      text,
+      "redacted glyphs must be missing from the saved doc",
+    ).not.toContain(originalText);
+
+    // (b) At least one 4-char window from the original should still
+    //     appear. Per-glyph strip removes only middle chars, leaving
+    //     contiguous prefix + suffix segments. Per-run strip would
+    //     remove the whole run → no 4-char window from `originalText`
+    //     would land in the saved page (except by coincidence elsewhere
+    //     on the page, which is rare for Thaana fragments).
+    let preservedWindow: string | null = null;
+    for (let i = 0; i + 4 <= originalText.length; i++) {
+      const sub = originalText.slice(i, i + 4);
+      if (text.includes(sub)) {
+        preservedWindow = sub;
+        break;
+      }
+    }
+    expect(
+      preservedWindow,
+      `at least one 4-char window of the original run must survive partial redaction; original was ${JSON.stringify(originalText)}`,
+    ).not.toBeNull();
+  });
+
   test("redacted run's text is gone from saved PDF text + raw bytes", async () => {
     await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: PAGES });
 
