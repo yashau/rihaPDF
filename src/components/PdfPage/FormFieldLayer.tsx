@@ -11,6 +11,7 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "@heroui/react";
 import type {
   ChoiceFormField,
   FormField,
@@ -21,6 +22,7 @@ import type {
 import { isRtlScript } from "../../lib/fonts";
 import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
 import { useIsMobile } from "../../lib/useMediaQuery";
+import { useCenterInVisibleViewport, useVisualViewportFollow } from "../../lib/useVisualViewport";
 import { isFocusMovingToToolbar } from "./helpers";
 import { vpY } from "./annotations/helpers";
 
@@ -76,6 +78,13 @@ export function FormFieldLayer({
    *  state (only shown while a text field is focused, matching the
    *  CommentLayer pattern). */
   const [focusedTextId, setFocusedTextId] = useState<string | null>(null);
+  /** DV/EN toolbar ref — `useVisualViewportFollow` writes a transform
+   *  onto it so it stays anchored above the soft keyboard and at
+   *  constant visual size during pinch-zoom (with the
+   *  opacity-fade-during-scale-change polish baked into the hook).
+   *  Same recipe EditTextToolbar / CommentLayer use. */
+  const dvEnToolbarRef = useRef<HTMLDivElement | null>(null);
+  useVisualViewportFollow(dvEnToolbarRef, "bottom", isMobile && focusedTextId !== null);
 
   return (
     <div className="absolute inset-0" style={{ pointerEvents: "none" }}>
@@ -177,20 +186,24 @@ export function FormFieldLayer({
           return null;
         });
       })}
-      {/* Mobile DV/EN toggle — only mounted while a text field is
-          focused so the toggle doesn't clutter the page when the user
-          isn't typing. Body-portalled (matches CommentLayer) because
-          the page wrapper has a CSS transform on mobile, and
-          `position: fixed` inside a transformed ancestor anchors to
-          the ancestor instead of the viewport — without the portal the
-          bar would scroll with the page. `data-edit-toolbar` lets the
-          input's blur check skip closing the editor when focus moves
-          to this button. */}
+      {/* Mobile-only floating DV/EN toggle. Same recipe as
+          EditTextToolbar / CommentLayer: portal to body so
+          `position: fixed` anchors to the visual viewport (not the
+          per-page transformed wrapper), tagged `data-edit-toolbar` so
+          the input's blur check ignores focus moving here, and
+          `useVisualViewportFollow` keeps it pinned above the soft
+          keyboard at constant visual size during pinch-zoom (with the
+          opacity-fade-during-scale-change polish baked into the hook).
+          Wrapper className + baseStyle mirror EditTextToolbar /
+          CommentLayer verbatim so the chrome looks identical to the
+          inserted-text and comment editors; only mounted while a
+          text field is focused. */}
       {isMobile && focusedTextId !== null && typeof document !== "undefined"
         ? createPortal(
             <div
+              ref={dvEnToolbarRef}
               data-edit-toolbar
-              className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
               style={{
                 position: "fixed",
                 left: 0,
@@ -198,34 +211,40 @@ export function FormFieldLayer({
                 bottom: 0,
                 zIndex: 30,
                 display: "flex",
-                justifyContent: "flex-end",
+                flexWrap: "wrap",
+                gap: 6,
                 padding: 8,
                 paddingBottom: `max(8px, var(--safe-bottom, 0px))`,
+                alignItems: "center",
                 pointerEvents: "auto",
               }}
+              // Stop pointerdown from bubbling so the page-level
+              // click-to-create / drag handlers don't see it. Mirrors
+              // EditTextToolbar's wrapper.
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <button
-                type="button"
+              <Button
+                size="sm"
+                variant={thaanaInput ? "primary" : "ghost"}
+                onPress={() => setThaanaInput(!thaanaInput)}
                 // preventDefault on mousedown stops focus shifting off
                 // the input — without it the editor would blur and
                 // close on every toggle tap. Same protection
-                // CommentLayer's DV/EN button uses.
+                // CommentLayer / EditTextToolbar's DV/EN button uses.
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setThaanaInput((v) => !v)}
-                className={`min-w-11 rounded px-3 py-1 text-xs font-semibold ${
-                  thaanaInput
-                    ? "bg-blue-600 text-white"
-                    : "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
-                }`}
                 aria-label={
                   thaanaInput
                     ? "Thaana phonetic input (click to type Latin)"
                     : "Latin input (click to type Thaana)"
                 }
+                // `marginLeft: auto` pushes the button to the right
+                // edge of the bar — same trick EditTextToolbar uses
+                // for its trailing trash button so the affordance
+                // lands under the right-thumb resting position.
+                style={{ minWidth: 44, fontWeight: 600, fontSize: 12, marginLeft: "auto" }}
               >
                 {thaanaInput ? "DV" : "EN"}
-              </button>
+              </Button>
             </div>,
             document.body,
           )
@@ -275,6 +294,12 @@ function TextFieldOverlay({
   // hook reattaches when any of those flip, so switching from one
   // text field to another rewires the listener onto the new element.
   useThaanaTransliteration(inputRef, isMobile && thaanaInput && isFocused);
+  // Mobile: scroll so the focused field sits in the centre of the
+  // *visible* viewport (above the soft keyboard, above the bottom-
+  // pinned DV/EN toolbar). Re-fires on visualViewport changes so it
+  // tracks keyboard show/hide. Same hook EditField / InsertedTextOverlay
+  // use for the same reason.
+  useCenterInVisibleViewport(inputRef, isMobile && isFocused);
 
   const stored = formValues.get(field.fullName);
   const value = stored?.kind === "text" ? stored.value : field.value;
