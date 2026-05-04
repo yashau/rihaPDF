@@ -144,12 +144,12 @@ export function AboutModal({
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
                 <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
-                  <li>Edit text in place — RTL/LTR, bold, italic, underline, strikethrough</li>
+                  <li>Edit text — RTL/LTR, bold, italic, underline, strikethrough</li>
                   <li>Insert and move text or images; delete any object</li>
                   <li>Highlight, comment, and ink annotations</li>
                   <li>Redact — no recoverable text under the rect</li>
-                  <li>Reorder, delete, or insert pages (blank or from another PDF)</li>
-                  <li>Phonetic Latin → Thaana keyboard, on-screen on mobile</li>
+                  <li>Reorder, delete, or insert pages</li>
+                  <li>Phonetic Latin → Thaana keyboard on mobile</li>
                   <li>Saved PDFs keep real, selectable, searchable text</li>
                 </ul>
               </section>
@@ -160,6 +160,7 @@ export function AboutModal({
                   <li>React 19 + TypeScript + Vite</li>
                   <li>Tailwind CSS + HeroUI + lucide-react</li>
                   <li>pdf-lib (write) and pdfjs-dist (render)</li>
+                  <li>harfbuzzjs (shaping) and bidi-js (bidi)</li>
                   <li>Runs entirely in the browser — no server, no upload</li>
                 </ul>
               </section>
