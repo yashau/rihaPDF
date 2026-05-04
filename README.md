@@ -192,7 +192,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 - [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
 - [ ] **Round-trip existing `/Annots`.** Source annotations pass through `copyPages` but aren't surfaced as editable. Parse `/Annots` in [loadSource.ts](src/lib/loadSource.ts).
-- [ ] **Form fields** (text + checkbox).
 
 ### Source-PDF support
 
