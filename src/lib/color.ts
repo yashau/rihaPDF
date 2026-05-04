@@ -99,7 +99,10 @@ export function colorToCss(c: AnnotationColor | undefined): string | null {
 /** Compare two 0..1 RGB triples for equality with a small tolerance —
  *  hex round-trips can introduce 1/255 jitter. Used by the swatch grid
  *  to highlight the active preset. */
-export function colorsEqual(a: AnnotationColor | undefined, b: AnnotationColor | undefined): boolean {
+export function colorsEqual(
+  a: AnnotationColor | undefined,
+  b: AnnotationColor | undefined,
+): boolean {
   if (!a || !b) return a === b;
   const eps = 1 / 512;
   return Math.abs(a[0] - b[0]) < eps && Math.abs(a[1] - b[1]) < eps && Math.abs(a[2] - b[2]) < eps;

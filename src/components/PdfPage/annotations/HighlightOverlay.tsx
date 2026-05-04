@@ -64,7 +64,9 @@ export function HighlightOverlay({
       const dyPdf = -info.dyRaw / effectivePdfScale;
       const newLlx = ctx.baseLlx + dxPdf;
       const newLly = ctx.baseLly + dyPdf;
-      onChange({ quads: rebuildQuads(annotation.quads, quadIndex, newLlx, newLly, urx - llx, ury - lly) });
+      onChange({
+        quads: rebuildQuads(annotation.quads, quadIndex, newLlx, newLly, urx - llx, ury - lly),
+      });
     },
   });
 
@@ -168,7 +170,14 @@ export function HighlightOverlay({
  *  (llx, lly, w, h) in PDF user space. Other quads in the array are
  *  copied through unchanged so multi-quad highlights survive a single-
  *  quad edit. */
-function rebuildQuads(quads: Quad[], i: number, llx: number, lly: number, w: number, h: number): Quad[] {
+function rebuildQuads(
+  quads: Quad[],
+  i: number,
+  llx: number,
+  lly: number,
+  w: number,
+  h: number,
+): Quad[] {
   const urx = llx + w;
   const ury = lly + h;
   const next: Quad = {

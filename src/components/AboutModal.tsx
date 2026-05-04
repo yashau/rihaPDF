@@ -144,7 +144,15 @@ export function AboutModal({
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
                 <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
-                  <li>Edit text — RTL/LTR, <strong>B</strong>/<em>I</em>/<span className="underline">U</span>/<span className="line-through">S</span>/<span className="font-serif">font</span>/<span className="text-red-500">c</span><span className="text-orange-500">o</span><span className="text-yellow-500">l</span><span className="text-green-500">o</span><span className="text-blue-500">r</span></li>
+                  <li>
+                    Edit text — RTL/LTR, <strong>B</strong>/<em>I</em>/
+                    <span className="underline">U</span>/<span className="line-through">S</span>/
+                    <span className="font-serif">font</span>/<span className="text-red-500">c</span>
+                    <span className="text-orange-500">o</span>
+                    <span className="text-yellow-500">l</span>
+                    <span className="text-green-500">o</span>
+                    <span className="text-blue-500">r</span>
+                  </li>
                   <li>Insert and move text or images; delete any object</li>
                   <li>Highlight, comment, and ink annotations</li>
                   <li>Redact — no recoverable text under the rect</li>

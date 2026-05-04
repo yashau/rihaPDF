@@ -96,7 +96,7 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 
 - **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
 - **Redaction strips text only.** Image data and vector graphics under a redaction rect remain in the saved file's content stream — visually covered by the opaque rect but extractable by anyone who pulls XObjects / vector ops out of the page. The `Tj`/`TJ` strip pass in [redactGlyphs.ts](src/lib/redactGlyphs.ts) only knows about glyphs. If you redact a region containing a sensitive logo / signature image, treat the file as "text-only redacted." Image and vector stripping is a planned follow-up.
-- **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to *whole-op stripping* rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
+- **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
 
 ## Scripts
 
@@ -138,35 +138,35 @@ pnpm dev          # one terminal
 pnpm test         # another
 ```
 
-| File                                          | What it covers                                                             |
-| --------------------------------------------- | -------------------------------------------------------------------------- |
-| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                     |
-| `move-edit-maldivian2.test.ts`                | same flow against the second Maldivian fixture                             |
-| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                              |
-| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload          |
-| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                           |
-| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                              |
-| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                     |
-| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                               |
-| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                  |
-| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                      |
-| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates       |
-| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                       |
-| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line      |
-| `insert.test.ts`                              | drop text + image → both persist after save                                |
-| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar               |
-| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages |
-| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable   |
-| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                    |
-| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                    |
-| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip  |
-| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                   |
-| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                      |
-| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip     |
+| File                                          | What it covers                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------- |
+| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                       |
+| `move-edit-maldivian2.test.ts`                | same flow against the second Maldivian fixture                               |
+| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                                |
+| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload            |
+| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                             |
+| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                |
+| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                       |
+| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                                 |
+| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                    |
+| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                        |
+| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates         |
+| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                         |
+| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line        |
+| `insert.test.ts`                              | drop text + image → both persist after save                                  |
+| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                 |
+| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages   |
+| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable     |
+| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                      |
+| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                      |
+| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip    |
+| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                     |
+| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                        |
+| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip       |
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes |
-| `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint         |
-| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                    |
-| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                    |
+| `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint           |
+| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                      |
+| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                      |
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 

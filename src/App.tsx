@@ -17,7 +17,7 @@ import {
   newAnnotationId,
 } from "./lib/annotations";
 import type { Redaction } from "./lib/redactions";
-import type { EditValue, ImageMoveValue } from "./components/PdfPage";
+import type { EditValue, FormValue, ImageMoveValue } from "./components/PdfPage";
 import { CommentToolbar } from "./components/CommentToolbar";
 import { HighlightToolbar } from "./components/HighlightToolbar";
 import { InkToolbar } from "./components/InkToolbar";
@@ -57,6 +57,7 @@ type UndoSnapshot = {
   shapeDeletes: Map<string, Set<string>>;
   annotations: Map<string, Annotation[]>;
   redactions: Map<string, Redaction[]>;
+  formValues: Map<string, Map<string, FormValue>>;
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
 };
@@ -135,6 +136,11 @@ export default function App() {
    *  rather than appending /Annot dicts (which leave underlying
    *  text selectable / extractable). */
   const [redactions, setRedactions] = useState<Map<string, Redaction[]>>(new Map());
+  /** Map<sourceKey, Map<fullName, FormValue>> — AcroForm fills keyed
+   *  by the field's fully-qualified name. Bucketed by `sourceKey` so
+   *  external-PDF fills don't collide with the primary's. Mirrors the
+   *  Maps above for the same persistence / undo / save plumbing. */
+  const [formValues, setFormValues] = useState<Map<string, Map<string, FormValue>>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -156,6 +162,7 @@ export default function App() {
   const shapeDeletesRef = useRef(shapeDeletes);
   const annotationsRef = useRef(annotations);
   const redactionsRef = useRef(redactions);
+  const formValuesRef = useRef(formValues);
   const sourcesRef = useRef(sources);
   useEffect(() => {
     editsRef.current = edits;
@@ -179,6 +186,9 @@ export default function App() {
     redactionsRef.current = redactions;
   }, [redactions]);
   useEffect(() => {
+    formValuesRef.current = formValues;
+  }, [formValues]);
+  useEffect(() => {
     sourcesRef.current = sources;
   }, [sources]);
 
@@ -191,6 +201,7 @@ export default function App() {
       shapeDeletes: shapeDeletesRef.current,
       annotations: annotationsRef.current,
       redactions: redactionsRef.current,
+      formValues: formValuesRef.current,
       slots: slotsRef.current,
       sources: sourcesRef.current,
     }),
@@ -210,6 +221,7 @@ export default function App() {
     setShapeDeletes(s.shapeDeletes);
     setAnnotations(s.annotations);
     setRedactions(s.redactions);
+    setFormValues(s.formValues);
     setSlots(s.slots);
     setSources(s.sources);
     setSelectionRef.current(null);
@@ -267,6 +279,7 @@ export default function App() {
         setShapeDeletes(new Map());
         setAnnotations(new Map());
         setRedactions(new Map());
+        setFormValues(new Map());
         // previewCanvases auto-clears via usePreviewCanvases when the
         // inputs reset to empty, so no explicit reset needed here.
         setInsertedTexts(new Map());
@@ -726,6 +739,24 @@ export default function App() {
     [recordHistory],
   );
 
+  /** Set / clear an AcroForm field's user-entered value. Coalesce key
+   *  is `form:<sourceKey>:<fullName>` so per-keystroke typing into one
+   *  text field collapses to a single undo step (matches how the
+   *  edit-text and inserted-text flows undo a typing session). */
+  const onFormFieldChange = useCallback(
+    (sourceKey: string, fullName: string, value: FormValue) => {
+      recordHistory(`form:${sourceKey}:${fullName}`);
+      setFormValues((prev) => {
+        const next = new Map(prev);
+        const perSource = new Map<string, FormValue>(next.get(sourceKey) ?? []);
+        perSource.set(fullName, value);
+        next.set(sourceKey, perSource);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+
   const onRedactionAdd = useCallback(
     (slotId: string, redaction: Redaction) => {
       // Discrete user action — one snapshot per add.
@@ -823,6 +854,7 @@ export default function App() {
         flatShapeDeletes,
         flatAnnotations,
         flatRedactions,
+        flatFormFills,
       } = buildSavePayload({
         slots,
         edits,
@@ -832,6 +864,7 @@ export default function App() {
         shapeDeletes,
         annotations,
         redactions,
+        formValues,
       });
       const out = await applyEditsAndSave(
         sources,
@@ -843,6 +876,7 @@ export default function App() {
         flatShapeDeletes,
         flatAnnotations,
         flatRedactions,
+        flatFormFills,
       );
       const baseName = primaryFilename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
@@ -860,6 +894,7 @@ export default function App() {
     insertedImages,
     annotations,
     redactions,
+    formValues,
   ]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
@@ -880,10 +915,8 @@ export default function App() {
     (sum, arr) => sum + arr.length,
     0,
   );
-  const totalRedactions = Array.from(redactions.values()).reduce(
-    (sum, arr) => sum + arr.length,
-    0,
-  );
+  const totalRedactions = Array.from(redactions.values()).reduce((sum, arr) => sum + arr.length, 0);
+  const totalFormFills = Array.from(formValues.values()).reduce((sum, m) => sum + m.size, 0);
   // Count structural changes vs the initial slots-from-primary state:
   // missing primary pages are deletions; "blank" slots are inserts;
   // page slots from non-primary sources are external inserts.
@@ -924,7 +957,8 @@ export default function App() {
     totalInsertedImages +
     totalShapeDeletes +
     totalAnnotations +
-    totalRedactions;
+    totalRedactions +
+    totalFormFills;
   const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
   const toolTip =
     tool === "addText"
@@ -1114,6 +1148,8 @@ export default function App() {
               onRedactionChange={onRedactionChange}
               onSelectRedaction={onSelectRedaction}
               onSelectHighlight={onSelectHighlight}
+              formValues={formValues}
+              onFormFieldChange={onFormFieldChange}
             />
           )}
         </main>

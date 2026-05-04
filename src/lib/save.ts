@@ -48,6 +48,7 @@ import type { LoadedSource } from "./loadSource";
 import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "./blankSource";
 import type { Annotation, AnnotationColor } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
+import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "./saveFormFields";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
 import { DEFAULT_TEXT_COLOR } from "./color";
@@ -581,6 +582,7 @@ export async function applyEditsAndSave(
   shapeDeletes: ShapeDelete[] = [],
   annotations: Annotation[] = [],
   redactions: Redaction[] = [],
+  formFills: FormFill[] = [],
 ): Promise<Uint8Array> {
   // Bucket ops by source so each source's doc gets surgery in one pass.
   const editsBySource = new Map<string, Edit[]>();
@@ -612,6 +614,11 @@ export async function applyEditsAndSave(
   for (const t of textInserts) sourcesNeedingLoad.add(t.sourceKey);
   for (const i of imageInserts) sourcesNeedingLoad.add(i.sourceKey);
   for (const a of annotations) sourcesNeedingLoad.add(a.sourceKey);
+  // Form fills target a source's AcroForm tree directly — register
+  // their sources so a doc-without-slots-but-with-fills still gets a
+  // ctx. (In practice fills always come from a source whose pages
+  // are slotted, but the bookkeeping mirrors edits / annots.)
+  for (const f of formFills) sourcesNeedingLoad.add(f.sourceKey);
   for (const r of redactions) {
     sourcesNeedingLoad.add(r.sourceKey);
     if (!redactionsBySource.has(r.sourceKey)) redactionsBySource.set(r.sourceKey, []);
@@ -836,6 +843,25 @@ export async function applyEditsAndSave(
     });
   }
 
+  // Form fills — write /V (and per-widget /AS) on each source's
+  // AcroForm tree before annotations / copyPages so the field
+  // surgery rides through copyPages along with the rest. Bucket by
+  // source for the same reason annotations do: one AcroForm tree
+  // per source, one pass per source.
+  if (formFills.length > 0) {
+    const fillsBySource = new Map<string, FormFill[]>();
+    for (const f of formFills) {
+      const list = fillsBySource.get(f.sourceKey) ?? [];
+      list.push(f);
+      fillsBySource.set(f.sourceKey, list);
+    }
+    for (const [sourceKey, list] of fillsBySource) {
+      const ctx = ctxBySource.get(sourceKey);
+      if (!ctx) continue;
+      await applyFormFillsToDoc(ctx.doc, list, { getFont: ctx.getFont });
+    }
+  }
+
   // Annotations - native PDF /Annot dicts appended to each source
   // page's /Annots array. Bucket by source so we only pay one pass per
   // doc; pdf-lib copyPages then carries the new /Annots through to the
@@ -922,6 +948,15 @@ export async function applyEditsAndSave(
     const cursor = cursorPerSource.get(slot.sourceKey) ?? 0;
     output.addPage(copied[cursor]);
     cursorPerSource.set(slot.sourceKey, cursor + 1);
+  }
+  // After every page has landed in the output, rebuild /AcroForm/Fields
+  // from the widgets that came across with copyPages. copyPages deep-
+  // copies widget dicts and their /Parent → field chains, but doesn't
+  // carry /Root /AcroForm itself, so without this step the saved file
+  // would have the field tree populated but unreachable — viewers
+  // would render the (now-stripped) /AP and ignore /V on reopen.
+  if (formFills.length > 0) {
+    rebuildOutputAcroForm(output);
   }
   return output.save();
 }

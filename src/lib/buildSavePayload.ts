@@ -7,6 +7,8 @@ import {
 } from "./save";
 import type { Annotation } from "./annotations";
 import { blankSourceKey } from "./blankSource";
+import type { FormValue } from "./formFields";
+import type { FormFill } from "./saveFormFields";
 import type { ImageInsertion, TextInsertion } from "./insertions";
 import type { Redaction } from "./redactions";
 import type { PageSlot } from "./slots";
@@ -31,6 +33,7 @@ export function buildSavePayload({
   shapeDeletes,
   annotations,
   redactions,
+  formValues,
 }: {
   slots: PageSlot[];
   edits: Map<string, Map<string, EditValue>>;
@@ -40,6 +43,7 @@ export function buildSavePayload({
   shapeDeletes: Map<string, Set<string>>;
   annotations: Map<string, Annotation[]>;
   redactions: Map<string, Redaction[]>;
+  formValues: Map<string, Map<string, FormValue>>;
 }) {
   const slotAddr = new Map<string, { sourceKey: string; pageIndex: number; slot: PageSlot }>();
   for (const slot of slots) {
@@ -215,6 +219,17 @@ export function buildSavePayload({
     }
   }
 
+  // Form fills are keyed by source identity (not slot), so a slot
+  // reorder doesn't relocate them — every fill targets a named field
+  // on a specific source's AcroForm tree, which has no notion of
+  // slot order. Flatten directly out of `formValues`.
+  const flatFormFills: FormFill[] = [];
+  for (const [sourceKey, byName] of formValues) {
+    for (const [fullName, value] of byName) {
+      flatFormFills.push({ sourceKey, fullName, value });
+    }
+  }
+
   return {
     flatEdits,
     flatImageMoves,
@@ -223,5 +238,6 @@ export function buildSavePayload({
     flatShapeDeletes,
     flatAnnotations,
     flatRedactions,
+    flatFormFills,
   };
 }

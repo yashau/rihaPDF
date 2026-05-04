@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { colorToCss } from "../../lib/color";
 import type { RenderedPage, TextRun } from "../../lib/pdf";
+import type { FormField } from "../../lib/formFields";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import {
   type Annotation,
@@ -20,6 +21,7 @@ import {
   ShapeOverlay,
 } from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
+import { FormFieldLayer, type FormValue } from "./FormFieldLayer";
 import { CrossPageImageArrivalOverlay, CrossPageTextArrivalOverlay } from "./arrivals";
 import { SourceRunOverlay } from "./SourceRunOverlay";
 import { cssTextDecoration } from "./helpers";
@@ -40,6 +42,7 @@ export type {
   ImageMoveValue,
   ToolbarBlocker,
 } from "./types";
+export type { FormValue } from "./FormFieldLayer";
 
 type Props = {
   page: RenderedPage;
@@ -132,6 +135,17 @@ type Props = {
    *  `targetPageIndex → targetSlotId` resolution. */
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
   onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
+  /** AcroForm fields for THIS page's source. The FormFieldLayer
+   *  filters to widgets whose `pageIndex` matches the current
+   *  `pageIndex`, so a field with widgets on multiple pages renders
+   *  on each. Empty when the source has no AcroForm. */
+  formFields: FormField[];
+  /** Per-source map of fullName → user-set value. Falls back to the
+   *  FormField's pre-parsed initial value when a name has no entry. */
+  formValues: Map<string, FormValue>;
+  /** Commit a form-field fill. The FormFieldLayer hands the field's
+   *  fullName + a typed FormValue; App buckets it by source. */
+  onFormFieldChange: (fullName: string, value: FormValue) => void;
 };
 
 export function PdfPage({
@@ -178,6 +192,9 @@ export function PdfPage({
   crossPageImageArrivals,
   onSourceEdit,
   onSourceImageMove,
+  formFields,
+  formValues,
+  onFormFieldChange,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
    *  (= natural × displayScale) so the document scroll container can
@@ -307,9 +324,7 @@ export function PdfPage({
       id: newAnnotationId("highlight"),
       sourceKey,
       pageIndex,
-      quads: [
-        { x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly },
-      ],
+      quads: [{ x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly }],
       color: highlightColor,
     });
   };
@@ -623,6 +638,19 @@ export function PdfPage({
             onAnnotationChange={onAnnotationChange}
             onAnnotationDelete={onAnnotationDelete}
             onSelectHighlight={onSelectHighlight}
+          />
+          {/* AcroForm fill overlays. Sits below the placement-mode
+              capture layer (which has zIndex: 50) so addText / addImage
+              still work over a form widget, but above the source-page
+              run/image overlays so a click on a field always hits the
+              input. */}
+          <FormFieldLayer
+            formFields={formFields}
+            formValues={formValues}
+            pageIndex={pageIndex}
+            pageScale={page.scale}
+            viewHeight={page.viewHeight}
+            onChange={onFormFieldChange}
           />
         </div>
       </div>

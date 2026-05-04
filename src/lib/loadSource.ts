@@ -17,6 +17,7 @@ import type { ImageInstance } from "./sourceImages";
 import { extractPageShapes } from "./sourceShapes";
 import type { ShapeInstance } from "./sourceShapes";
 import { pairDecorationsWithRuns } from "./runDecorations";
+import { extractFormFields, type FormField } from "./formFields";
 
 export type LoadedSource = {
   /** Stable id used everywhere as the source identity. The primary uses
@@ -36,6 +37,11 @@ export type LoadedSource = {
   shapesByPage: ShapeInstance[][];
   /** Per-page pdfjs render + extracted text runs. */
   pages: RenderedPage[];
+  /** AcroForm fields extracted from `/Root /AcroForm /Fields`. Empty
+   *  when the source has no form. Each terminal field carries its
+   *  widgets pre-resolved to (pageIndex, /Rect) so FormFieldLayer can
+   *  paint overlays without touching the doc again. */
+  formFields: FormField[];
 };
 
 export const PRIMARY_SOURCE_KEY = "primary";
@@ -86,6 +92,7 @@ export async function loadSource(
   } finally {
     void doc.destroy();
   }
+  const formFields = extractFormFields(glyphsDoc, sourceKey);
   return {
     sourceKey,
     filename: file.name,
@@ -95,6 +102,7 @@ export async function loadSource(
     imagesByPage,
     shapesByPage,
     pages,
+    formFields,
   };
 }
 

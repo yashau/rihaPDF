@@ -1,0 +1,538 @@
+// AcroForm field extraction.
+//
+// Walks /Root /AcroForm /Fields recursively to enumerate every terminal
+// field; collects each field's widget annotations and resolves the
+// host page by scanning every page's /Annots (the /P back-reference is
+// optional in the spec and missing in practice for many gov-issued
+// forms). Output is consumed by FormFieldLayer to render the per-field
+// overlay and by saveFormFields to write /V back at save time.
+//
+// Pure read — never mutates the doc.
+
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFObject,
+  PDFRef,
+  PDFString,
+} from "pdf-lib";
+import { isRtlScript } from "./fonts";
+
+export type FormFieldWidget = {
+  /** Stable id: `<sourceKey>:<fullName>:<widgetIndex>`. */
+  id: string;
+  pageIndex: number;
+  /** PDF user-space [llx, lly, urx, ury]. */
+  rect: [number, number, number, number];
+};
+
+export type FormFieldRadioOption = FormFieldWidget & {
+  /** Non-Off appearance state for this widget — the value /V should
+   *  carry when this kid is the chosen one. */
+  onState: string;
+};
+
+export type FormFieldChoiceOption = {
+  /** Export value written into /V on selection. */
+  value: string;
+  /** Human-facing label shown in the dropdown — equals `value` when
+   *  /Opt's row is a single string rather than [value, label]. */
+  label: string;
+};
+
+type Common = {
+  id: string;
+  fullName: string;
+  sourceKey: string;
+  widgets: FormFieldWidget[];
+  /** /Ff bit 1 — UI renders disabled. */
+  readOnly: boolean;
+  /** /Ff bit 2 — UI renders with a subtle ring. */
+  required: boolean;
+};
+
+export type TextFormField = Common & {
+  kind: "text";
+  value: string;
+  /** /Ff bit 13 — render as <textarea>. */
+  multiline: boolean;
+  /** /Ff bit 14 — render as <input type="password">. */
+  password: boolean;
+  /** /Ff bit 21 — disabled in v1 (no file picker hookup). */
+  fileSelect: boolean;
+  maxLen: number | null;
+  /** Parsed from /DA's `Tf` token when present. */
+  fontSize: number | null;
+  /** Auto-detected from /V's strong codepoints. The user can flip via
+   *  the EditField-style dir toggle on focus. */
+  rtl: boolean;
+};
+
+export type CheckboxFormField = Common & {
+  kind: "checkbox";
+  checked: boolean;
+  /** Non-Off appearance state used as /V when the box is on. */
+  onState: string;
+};
+
+export type RadioFormField = Common & {
+  kind: "radio";
+  /** Currently-selected option's onState, or null when unset. */
+  chosen: string | null;
+  options: FormFieldRadioOption[];
+};
+
+export type ChoiceFormField = Common & {
+  kind: "choice";
+  /** /Ff bit 18 — combo box vs list box. */
+  combo: boolean;
+  /** /Ff bit 22 — multiple selections. */
+  multiSelect: boolean;
+  options: FormFieldChoiceOption[];
+  chosen: string[];
+};
+
+export type SignatureFormField = Common & {
+  kind: "signature";
+};
+
+export type FormField =
+  | TextFormField
+  | CheckboxFormField
+  | RadioFormField
+  | ChoiceFormField
+  | SignatureFormField;
+
+/** User fill for a single field. Discriminated by `kind` so the save
+ *  pipeline can route each fill to the right /V encoding: a text
+ *  field's `value` is the user-visible string (encoded UTF-16BE on
+ *  save), a checkbox's `checked` toggles between the field's pre-
+ *  discovered onState and `Off`, a radio's `chosen` is the on-state
+ *  name written into both the field's /V and the chosen kid's /AS,
+ *  and a choice's `chosen` carries export values matching /Opt rows. */
+export type FormValue =
+  | { kind: "text"; value: string }
+  | { kind: "checkbox"; checked: boolean }
+  | { kind: "radio"; chosen: string | null }
+  | { kind: "choice"; chosen: string[] };
+
+/** /Ff bit positions per PDF 32000-1 §12.7.3.1 (1-indexed in the spec
+ *  → 0-indexed shifts here). The bits mean different things per field
+ *  kind, but the kind-specific ones never overlap with the generic
+ *  ones (1 / 2 / 3) so a flat enum is fine. */
+const FF_READONLY = 1 << 0;
+const FF_REQUIRED = 1 << 1;
+const FF_NO_EXPORT = 1 << 2;
+const FF_TX_MULTILINE = 1 << 12;
+const FF_TX_PASSWORD = 1 << 13;
+const FF_TX_FILE_SELECT = 1 << 20;
+const FF_BTN_RADIO = 1 << 15;
+const FF_BTN_PUSH = 1 << 16;
+const FF_CH_COMBO = 1 << 17;
+const FF_CH_MULTI_SELECT = 1 << 21;
+void FF_NO_EXPORT; // surfaced via type but currently unused at extract time
+
+/** Decode a PDF text-string entry — handles UTF-16BE BOM and
+ *  PDFDocEncoding via pdf-lib's built-in `decodeText`. Returns "" for
+ *  anything else (e.g. null entries). */
+function decodeText(obj: PDFObject | undefined): string {
+  if (!obj) return "";
+  if (obj instanceof PDFString || obj instanceof PDFHexString) return obj.decodeText();
+  if (obj instanceof PDFName) return obj.asString().replace(/^\//, "");
+  return "";
+}
+
+function readNumber(obj: PDFObject | undefined): number | null {
+  if (obj instanceof PDFNumber) return obj.asNumber();
+  return null;
+}
+
+/** Walk the field's `/Parent` chain and return the first non-null
+ *  value of `key`. /FT, /Ff, /V, /DA are all inheritable per spec. */
+function inherited(dict: PDFDict, key: PDFName): PDFObject | undefined {
+  let node: PDFDict | null = dict;
+  while (node) {
+    const direct = node.lookup(key);
+    if (direct !== undefined) return direct;
+    const parent: PDFObject | undefined = node.lookup(PDFName.of("Parent"));
+    node = parent instanceof PDFDict ? parent : null;
+  }
+  return undefined;
+}
+
+/** Concat /T from root to this dict with `.` per spec — fields without
+ *  a /T are anonymous and their kids inherit the parent's name. */
+function fullyQualifiedName(dict: PDFDict): string {
+  const parts: string[] = [];
+  let node: PDFDict | null = dict;
+  while (node) {
+    const partial = decodeText(node.lookup(PDFName.of("T")));
+    if (partial) parts.unshift(partial);
+    const parent: PDFObject | undefined = node.lookup(PDFName.of("Parent"));
+    node = parent instanceof PDFDict ? parent : null;
+  }
+  return parts.join(".");
+}
+
+/** Parse the size token out of a `/DA` string. Pdf spec: `/Helv 10 Tf …`
+ *  — the number right before `Tf`. Returns null when /DA is missing or
+ *  doesn't carry an explicit size (some forms use 0 to mean "auto"). */
+function parseDaFontSize(da: string | null): number | null {
+  if (!da) return null;
+  const m = da.match(/(\d+(?:\.\d+)?)\s+Tf/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function readDa(dict: PDFDict): string | null {
+  const da = inherited(dict, PDFName.of("DA"));
+  if (da instanceof PDFString || da instanceof PDFHexString) return da.decodeText();
+  return null;
+}
+
+/** A widget's `/AP /N` keys list its on-state names. The non-`Off` key
+ *  is the one /V / /AS use when the box / radio is selected. Returns
+ *  the first non-`Off` key, or null if only `Off` is present. */
+function discoverOnState(widgetDict: PDFDict): string | null {
+  const ap = widgetDict.lookup(PDFName.of("AP"));
+  if (!(ap instanceof PDFDict)) return null;
+  const n = ap.lookup(PDFName.of("N"));
+  if (!(n instanceof PDFDict)) return null;
+  for (const [key] of n.entries()) {
+    const name = key.asString().replace(/^\//, "");
+    if (name && name !== "Off") return name;
+  }
+  return null;
+}
+
+/** Extract `[llx, lly, urx, ury]` from a `/Rect` array. Returns a
+ *  zero-rect when the array is missing or malformed — those widgets
+ *  render off-page in the overlay layer, which is the right fail-safe
+ *  (don't crash, don't paint nonsense). */
+function readRect(dict: PDFDict): [number, number, number, number] {
+  const r = dict.lookup(PDFName.of("Rect"));
+  if (!(r instanceof PDFArray) || r.size() < 4) return [0, 0, 0, 0];
+  const nums: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const v = r.get(i);
+    nums.push(v instanceof PDFNumber ? v.asNumber() : 0);
+  }
+  // PDF spec allows /Rect to encode opposite corners in any order;
+  // normalise so [llx, lly, urx, ury] really has lower-left first.
+  const [a, b, c, d] = nums;
+  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+}
+
+/** Build a Map<PDFRef, pageIndex> by walking each page's /Annots. The
+ *  map is the only reliable way to resolve a widget → page given that
+ *  widgets often omit the optional /P back-reference. */
+function buildWidgetPageMap(doc: PDFDocument): Map<PDFRef, number> {
+  const map = new Map<PDFRef, number>();
+  const pages = doc.getPages();
+  for (let i = 0; i < pages.length; i++) {
+    const annots = pages[i].node.lookup(PDFName.of("Annots"));
+    if (!(annots instanceof PDFArray)) continue;
+    for (let j = 0; j < annots.size(); j++) {
+      const entry = annots.get(j);
+      if (entry instanceof PDFRef) map.set(entry, i);
+    }
+  }
+  return map;
+}
+
+/** Decode /V for a text field. Acrobat / Preview write Thaana as
+ *  UTF-16BE-with-BOM; pdf-lib's `decodeText` handles that natively. */
+function readTextValue(dict: PDFDict): string {
+  const v = inherited(dict, PDFName.of("V"));
+  return decodeText(v);
+}
+
+/** /V for a Btn checkbox is a name (`/Yes` / `/Off`) or absent. */
+function readCheckboxChosenState(dict: PDFDict): string {
+  const v = inherited(dict, PDFName.of("V"));
+  if (v instanceof PDFName) return v.asString().replace(/^\//, "");
+  return "Off";
+}
+
+/** /V for a radio group is the chosen widget's appearance state name. */
+function readRadioChosen(dict: PDFDict): string | null {
+  const v = inherited(dict, PDFName.of("V"));
+  if (!(v instanceof PDFName)) return null;
+  const name = v.asString().replace(/^\//, "");
+  return name === "Off" ? null : name;
+}
+
+/** /V for a Ch field is a string or array of strings (multi-select). */
+function readChoiceChosen(dict: PDFDict): string[] {
+  const v = inherited(dict, PDFName.of("V"));
+  if (v instanceof PDFString || v instanceof PDFHexString) return [v.decodeText()];
+  if (v instanceof PDFArray) {
+    const out: string[] = [];
+    for (let i = 0; i < v.size(); i++) {
+      const entry = v.get(i);
+      if (entry instanceof PDFString || entry instanceof PDFHexString) out.push(entry.decodeText());
+    }
+    return out;
+  }
+  return [];
+}
+
+/** /Opt for a Ch field. Each row is either a string (= value AND label)
+ *  or a 2-element array `[exportValue, displayLabel]`. */
+function readChoiceOptions(dict: PDFDict): FormFieldChoiceOption[] {
+  const opt = dict.lookup(PDFName.of("Opt"));
+  if (!(opt instanceof PDFArray)) return [];
+  const out: FormFieldChoiceOption[] = [];
+  for (let i = 0; i < opt.size(); i++) {
+    const row = opt.get(i);
+    if (row instanceof PDFString || row instanceof PDFHexString) {
+      const text = row.decodeText();
+      out.push({ value: text, label: text });
+    } else if (row instanceof PDFArray && row.size() >= 2) {
+      const valueObj = row.get(0);
+      const labelObj = row.get(1);
+      const value = decodeText(valueObj);
+      const label = decodeText(labelObj) || value;
+      out.push({ value, label });
+    }
+  }
+  return out;
+}
+
+/** Collect a field's widget annotations. A field with a single widget
+ *  often inlines the widget into the field dict itself (`/Subtype
+ *  /Widget` on the field); otherwise the widgets sit in `/Kids`. We
+ *  only treat a kid as a widget when it has no `/T` of its own — kids
+ *  WITH /T are sub-fields, not widgets. */
+function collectFieldWidgets(
+  fieldDict: PDFDict,
+  widgetPageMap: Map<PDFRef, number>,
+  fieldRef: PDFRef | null,
+  fullName: string,
+  sourceKey: string,
+): { widgets: FormFieldWidget[]; widgetDicts: PDFDict[] } {
+  const widgets: FormFieldWidget[] = [];
+  const widgetDicts: PDFDict[] = [];
+  const subtype = fieldDict.lookup(PDFName.of("Subtype"));
+  const isMergedWidget = subtype instanceof PDFName && subtype.asString() === "/Widget";
+  if (isMergedWidget) {
+    const pageIndex = fieldRef ? (widgetPageMap.get(fieldRef) ?? -1) : -1;
+    widgets.push({
+      id: `${sourceKey}:${fullName}:0`,
+      pageIndex,
+      rect: readRect(fieldDict),
+    });
+    widgetDicts.push(fieldDict);
+    return { widgets, widgetDicts };
+  }
+  const kids = fieldDict.lookup(PDFName.of("Kids"));
+  if (!(kids instanceof PDFArray)) return { widgets, widgetDicts };
+  let widgetIdx = 0;
+  for (let i = 0; i < kids.size(); i++) {
+    const kidRef = kids.get(i);
+    const kidObj = kids.lookup(i);
+    if (!(kidObj instanceof PDFDict)) continue;
+    // Sub-field (has its own /T). Widgets-only-kids drop into the
+    // widget collection; a kid with /T is a nested field that the
+    // outer `walkFields` recursion will pick up separately.
+    if (kidObj.lookup(PDFName.of("T")) !== undefined) continue;
+    const kidSubtype = kidObj.lookup(PDFName.of("Subtype"));
+    if (kidSubtype instanceof PDFName && kidSubtype.asString() !== "/Widget") continue;
+    const pageIndex = kidRef instanceof PDFRef ? (widgetPageMap.get(kidRef) ?? -1) : -1;
+    widgets.push({
+      id: `${sourceKey}:${fullName}:${widgetIdx}`,
+      pageIndex,
+      rect: readRect(kidObj),
+    });
+    widgetDicts.push(kidObj);
+    widgetIdx += 1;
+  }
+  return { widgets, widgetDicts };
+}
+
+/** Resolve a field's /FT (inheritable). Returns the bare name without
+ *  the leading slash: "Tx", "Btn", "Ch", "Sig", or "" when absent. */
+function readFieldType(dict: PDFDict): string {
+  const ft = inherited(dict, PDFName.of("FT"));
+  if (ft instanceof PDFName) return ft.asString().replace(/^\//, "");
+  return "";
+}
+
+/** True iff a kid is itself a terminal field (has its own /T or its
+ *  own /Kids whose entries are also fields). The walk treats anything
+ *  with /T OR with kids-of-fields as a field, and anything else (or a
+ *  kid with /Subtype /Widget but no /T) as a widget annotation owned
+ *  by the parent field. */
+function isFieldKid(dict: PDFDict): boolean {
+  if (dict.lookup(PDFName.of("T")) !== undefined) return true;
+  const kids = dict.lookup(PDFName.of("Kids"));
+  if (!(kids instanceof PDFArray)) return false;
+  for (let i = 0; i < kids.size(); i++) {
+    const kid = kids.lookup(i);
+    if (kid instanceof PDFDict && isFieldKid(kid)) return true;
+  }
+  return false;
+}
+
+function buildField(
+  fieldDict: PDFDict,
+  fieldRef: PDFRef | null,
+  widgetPageMap: Map<PDFRef, number>,
+  sourceKey: string,
+): FormField | null {
+  const fullName = fullyQualifiedName(fieldDict);
+  if (!fullName) return null;
+  const ft = readFieldType(fieldDict);
+  const ff = readNumber(inherited(fieldDict, PDFName.of("Ff"))) ?? 0;
+  const readOnly = (ff & FF_READONLY) !== 0;
+  const required = (ff & FF_REQUIRED) !== 0;
+  const id = `${sourceKey}:${fullName}`;
+  const { widgets, widgetDicts } = collectFieldWidgets(
+    fieldDict,
+    widgetPageMap,
+    fieldRef,
+    fullName,
+    sourceKey,
+  );
+  const common: Common = { id, fullName, sourceKey, widgets, readOnly, required };
+
+  if (ft === "Tx") {
+    const da = readDa(fieldDict);
+    return {
+      ...common,
+      kind: "text",
+      value: readTextValue(fieldDict),
+      multiline: (ff & FF_TX_MULTILINE) !== 0,
+      password: (ff & FF_TX_PASSWORD) !== 0,
+      fileSelect: (ff & FF_TX_FILE_SELECT) !== 0,
+      maxLen: readNumber(fieldDict.lookup(PDFName.of("MaxLen"))),
+      fontSize: parseDaFontSize(da),
+      rtl: isRtlScript(readTextValue(fieldDict)),
+    };
+  }
+
+  if (ft === "Btn") {
+    if ((ff & FF_BTN_PUSH) !== 0) return null; // pushbuttons aren't fillable
+    if ((ff & FF_BTN_RADIO) !== 0) {
+      const options: FormFieldRadioOption[] = [];
+      for (let i = 0; i < widgets.length; i++) {
+        const onState = discoverOnState(widgetDicts[i]) ?? "";
+        if (!onState) continue;
+        options.push({ ...widgets[i], onState });
+      }
+      return {
+        ...common,
+        kind: "radio",
+        chosen: readRadioChosen(fieldDict),
+        options,
+      };
+    }
+    // Plain checkbox — single widget; multi-widget checkboxes are
+    // legal per spec but rare and behave as a synced group, which we
+    // approximate by treating the FIRST widget's on-state as canonical.
+    const onState = widgetDicts.length > 0 ? (discoverOnState(widgetDicts[0]) ?? "Yes") : "Yes";
+    const stored = readCheckboxChosenState(fieldDict);
+    return {
+      ...common,
+      kind: "checkbox",
+      checked: stored !== "Off",
+      onState,
+    };
+  }
+
+  if (ft === "Ch") {
+    return {
+      ...common,
+      kind: "choice",
+      combo: (ff & FF_CH_COMBO) !== 0,
+      multiSelect: (ff & FF_CH_MULTI_SELECT) !== 0,
+      options: readChoiceOptions(fieldDict),
+      chosen: readChoiceChosen(fieldDict),
+    };
+  }
+
+  if (ft === "Sig") {
+    return { ...common, kind: "signature" };
+  }
+
+  return null;
+}
+
+/** Recurse into /Kids until each terminal field is found. A node with
+ *  field-kids is an intermediate; a node whose kids are all widgets
+ *  (no /T on any kid) is a terminal field. The recursion enumerates
+ *  every terminal field exactly once. */
+function walkFields(
+  ref: PDFRef | null,
+  dict: PDFDict,
+  widgetPageMap: Map<PDFRef, number>,
+  sourceKey: string,
+  out: FormField[],
+): void {
+  const kids = dict.lookup(PDFName.of("Kids"));
+  // A node is "intermediate" iff at least one kid is itself a field
+  // (i.e. has /T or has field-kids). That distinction is what lets
+  // shared inheritable attributes (e.g. /FT on the parent group) sit
+  // on a non-terminal node without us trying to render it as a
+  // terminal field. Mixed broadcasts are rare; we honor the spec's
+  // canonical "field is terminal iff all kids are widgets" rule.
+  if (kids instanceof PDFArray) {
+    let allKidsAreWidgets = true;
+    for (let i = 0; i < kids.size(); i++) {
+      const kid = kids.lookup(i);
+      if (kid instanceof PDFDict && isFieldKid(kid)) {
+        allKidsAreWidgets = false;
+        break;
+      }
+    }
+    if (!allKidsAreWidgets) {
+      for (let i = 0; i < kids.size(); i++) {
+        const kidRef = kids.get(i);
+        const kidDict = kids.lookup(i);
+        if (kidDict instanceof PDFDict && isFieldKid(kidDict)) {
+          walkFields(
+            kidRef instanceof PDFRef ? kidRef : null,
+            kidDict,
+            widgetPageMap,
+            sourceKey,
+            out,
+          );
+        }
+      }
+      return;
+    }
+  }
+  const built = buildField(dict, ref, widgetPageMap, sourceKey);
+  if (built) out.push(built);
+}
+
+/** Top-level extractor. Walks /Root /AcroForm /Fields and returns one
+ *  FormField per terminal field. Returns an empty array for docs
+ *  without an AcroForm dict. */
+export function extractFormFields(doc: PDFDocument, sourceKey: string): FormField[] {
+  const acroForm = doc.catalog.lookup(PDFName.of("AcroForm"));
+  if (!(acroForm instanceof PDFDict)) return [];
+  const fields = acroForm.lookup(PDFName.of("Fields"));
+  if (!(fields instanceof PDFArray)) return [];
+  const widgetPageMap = buildWidgetPageMap(doc);
+  const out: FormField[] = [];
+  for (let i = 0; i < fields.size(); i++) {
+    const fieldRef = fields.get(i);
+    const fieldDict = fields.lookup(i);
+    if (!(fieldDict instanceof PDFDict)) continue;
+    walkFields(
+      fieldRef instanceof PDFRef ? fieldRef : null,
+      fieldDict,
+      widgetPageMap,
+      sourceKey,
+      out,
+    );
+  }
+  return out;
+}

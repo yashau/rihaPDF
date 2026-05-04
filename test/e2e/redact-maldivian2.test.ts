@@ -66,13 +66,10 @@ describe("redaction round-trip (maldivian2)", () => {
     await h.page.waitForTimeout(150);
 
     // Select the rect so its resize handles render.
-    const redactionEl = h.page.locator('[data-redaction-id]').first();
+    const redactionEl = h.page.locator("[data-redaction-id]").first();
     const redBox = await redactionEl.boundingBox();
     expect(redBox, "redaction overlay should have a bbox").not.toBeNull();
-    await h.page.mouse.click(
-      redBox!.x + redBox!.width / 2,
-      redBox!.y + redBox!.height / 2,
-    );
+    await h.page.mouse.click(redBox!.x + redBox!.width / 2, redBox!.y + redBox!.height / 2);
     await h.page.waitForTimeout(150);
 
     // Drag the bottom-right corner ~80% of the way toward the bottom-
@@ -96,9 +93,7 @@ describe("redaction round-trip (maldivian2)", () => {
     await h.page.waitForTimeout(150);
 
     const newBox = await redactionEl.boundingBox();
-    expect(newBox!.width, "rect should have actually shrunk").toBeLessThan(
-      redBox!.width * 0.5,
-    );
+    expect(newBox!.width, "rect should have actually shrunk").toBeLessThan(redBox!.width * 0.5);
 
     const dlPromise = h.page.waitForEvent("download", { timeout: 15_000 });
     await h.page.locator("header button").filter({ hasText: /^Save/ }).click();
@@ -110,10 +105,7 @@ describe("redaction round-trip (maldivian2)", () => {
 
     // (a) The full original text must NOT survive — we did strip
     //     something, just not everything.
-    expect(
-      text,
-      "redacted glyphs must be missing from the saved doc",
-    ).not.toContain(originalText);
+    expect(text, "redacted glyphs must be missing from the saved doc").not.toContain(originalText);
 
     // (b) At least one 4-char window from the original should still
     //     appear. Per-glyph strip removes only middle chars, leaving
@@ -160,7 +152,7 @@ describe("redaction round-trip (maldivian2)", () => {
 
     // The in-editor preview should now have a black rectangle on
     // page 0 (selectable / resizable, but here we just save).
-    const redactionCount = await h.page.locator('[data-redaction-id]').count();
+    const redactionCount = await h.page.locator("[data-redaction-id]").count();
     expect(redactionCount, "exactly one redaction overlay after one click").toBe(1);
 
     const dlPromise = h.page.waitForEvent("download", { timeout: 15_000 });

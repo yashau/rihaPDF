@@ -1,6 +1,7 @@
-import { PdfPage, type EditValue, type ImageMoveValue } from "./PdfPage";
+import { PdfPage, type EditValue, type FormValue, type ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation, AnnotationColor } from "../lib/annotations";
+import type { FormField } from "../lib/formFields";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { RenderedPage } from "../lib/pdf";
 import type { Redaction } from "../lib/redactions";
@@ -51,6 +52,9 @@ export function PageWithToolbar({
   crossPageImageArrivals,
   onSourceEdit,
   onSourceImageMove,
+  formFields,
+  formValues,
+  onFormFieldChange,
 }: {
   slotId: string;
   page: RenderedPage;
@@ -96,6 +100,9 @@ export function PageWithToolbar({
   crossPageImageArrivals: CrossPageImageArrival[];
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
   onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
+  formFields: FormField[];
+  formValues: Map<string, FormValue>;
+  onFormFieldChange: (fullName: string, value: FormValue) => void;
 }) {
   return (
     <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
@@ -146,6 +153,9 @@ export function PageWithToolbar({
         crossPageImageArrivals={crossPageImageArrivals}
         onSourceEdit={onSourceEdit}
         onSourceImageMove={onSourceImageMove}
+        formFields={formFields}
+        formValues={formValues}
+        onFormFieldChange={onFormFieldChange}
       />
     </div>
   );

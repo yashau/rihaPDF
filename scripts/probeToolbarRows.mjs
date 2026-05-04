@@ -30,10 +30,9 @@ await page
 await page.waitForSelector("[data-page-index]", { timeout: 30_000 });
 
 // Wait for runs to mount.
-await page.waitForFunction(
-  () => document.querySelectorAll("[data-run-id]").length > 0,
-  { timeout: 20_000 },
-);
+await page.waitForFunction(() => document.querySelectorAll("[data-run-id]").length > 0, {
+  timeout: 20_000,
+});
 
 // Find a run, tap its centre.
 const target = await page.evaluate(() => {
@@ -65,11 +64,7 @@ const layout = await page.evaluate(() => {
     for (const child of parent.children) {
       const r = child.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
-      if (
-        child.tagName === "DIV" &&
-        child !== tb &&
-        getComputedStyle(child).flexBasis === "100%"
-      ) {
+      if (child.tagName === "DIV" && child !== tb && getComputedStyle(child).flexBasis === "100%") {
         // Sub-flex wrapper around font picker + size — recurse into it
         // so we see the picker and the size input as separate items.
         collect(child);

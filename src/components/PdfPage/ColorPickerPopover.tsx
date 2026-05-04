@@ -46,7 +46,7 @@ export function ColorPickerPopover({
   ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
 
@@ -72,20 +72,12 @@ export function ColorPickerPopover({
     };
   }, [open]);
 
-  // Anchor the popover under the trigger when it opens. Recompute on
-  // open so the position picks up any toolbar reflow that happened
-  // since the last render (e.g. mobile keyboard show/hide). On mobile
-  // the popover is a centered sheet — no anchoring needed.
+  // Anchor the popover under the trigger. Computed in the open-press
+  // handler so the rect reflects any toolbar reflow at the moment the
+  // user opens it (e.g. mobile keyboard show/hide). On mobile the
+  // popover is a centered sheet — no anchoring needed, the anchor is
+  // simply ignored by the mobile style branch.
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
-  useEffect(() => {
-    if (!open || isMobile) {
-      setAnchor(null);
-      return;
-    }
-    const r = triggerRef.current?.getBoundingClientRect();
-    if (!r) return;
-    setAnchor({ left: r.left, top: r.bottom + 4 });
-  }, [open, isMobile]);
 
   const swatchCss = colorToCss(value) ?? "#000";
   const labelId = useId();
@@ -146,7 +138,7 @@ export function ColorPickerPopover({
       {/* Wrapper span owns the bounding-rect ref for popover anchoring
           — HeroUI's Button doesn't forward refs to the DOM element in a
           typed way, and the wrapper has the same box anyway. */}
-      <span ref={triggerRef as React.RefObject<HTMLSpanElement>} style={{ display: "inline-flex" }}>
+      <span ref={triggerRef} style={{ display: "inline-flex" }}>
         <Button
           isIconOnly
           size="sm"
@@ -154,7 +146,16 @@ export function ColorPickerPopover({
           aria-label={ariaLabel}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onPress={() => setOpen((v) => !v)}
+          onPress={() => {
+            // Measure the trigger before flipping `open` so the popover's
+            // first render already has its anchor — avoids the one-frame
+            // flash you'd get if we deferred this to a useEffect.
+            if (!open && !isMobile) {
+              const r = triggerRef.current?.getBoundingClientRect();
+              setAnchor(r ? { left: r.left, top: r.bottom + 4 } : null);
+            }
+            setOpen((v) => !v);
+          }}
           // Same focus-preservation pattern as every other toolbar
           // button: don't let the click steal focus from the editor
           // input that mounted us.

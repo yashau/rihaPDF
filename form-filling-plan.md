@@ -236,7 +236,7 @@ string's font to actually contain the codepoints. Two options:
 
 **Decision (revised)**: pick (2) from day one. Dhivehi-quality is
 the project's stated north star (see
-[memory: project_stirling_rtl](C:\Users\Yashau\.claude\projects\c--Users-Yashau-Projects-rihaPDF\memory\project_stirling_rtl.md)),
+[memory: project_stirling_rtl](C:\Users\Yashau.claude\projects\c--Users-Yashau-Projects-rihaPDF\memory\project_stirling_rtl.md)),
 and option (1) ships the same broken-Thaana behaviour in form
 fields that we already rejected for inline comments. Implement
 the shape-and-emit path for `Tx` fields whose `/V` contains

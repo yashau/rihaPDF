@@ -1,5 +1,5 @@
 import { PageWithToolbar } from "./PageWithToolbar";
-import type { EditValue, ImageMoveValue } from "./PdfPage";
+import type { EditValue, FormValue, ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation, AnnotationColor } from "../lib/annotations";
 import { blankRenderedPage, blankSourceKey } from "../lib/blankSource";
@@ -36,6 +36,7 @@ export function PageList({
   highlightColor,
   selection,
   renderScale,
+  formValues,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -54,6 +55,7 @@ export function PageList({
   onRedactionChange,
   onSelectRedaction,
   onSelectHighlight,
+  onFormFieldChange,
 }: {
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
@@ -77,6 +79,9 @@ export function PageList({
   highlightColor: AnnotationColor;
   selection: Selection;
   renderScale: number;
+  /** Per-source map of fullName → user-set fill, keyed by sourceKey.
+   *  Lookup at render time so a slot reorder doesn't restate fills. */
+  formValues: Map<string, Map<string, FormValue>>;
   onEdit: (slotId: string, runId: string, value: EditValue) => void;
   onImageMove: (slotId: string, imageId: string, value: ImageMoveValue) => void;
   onEditingChange: (slotId: string, runId: string | null) => void;
@@ -95,6 +100,7 @@ export function PageList({
   onRedactionChange: (slotId: string, id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (slotId: string, id: string) => void;
   onSelectHighlight: (slotId: string, id: string) => void;
+  onFormFieldChange: (sourceKey: string, fullName: string, value: FormValue) => void;
 }) {
   // Group cross-page-targeted edits by their target slot so each
   // slot's PdfPage can render the runs that have ARRIVED on it
@@ -204,6 +210,7 @@ export function PageList({
         let page: RenderedPage;
         let pageSourceKey: string;
         let previewKey: string | null = null;
+        let pageFormFields: LoadedSource["formFields"] = [];
         if (slot.kind === "blank") {
           page = blankRenderedPage(slot, renderScale);
           pageSourceKey = blankSourceKey(slot.id);
@@ -214,7 +221,13 @@ export function PageList({
           page = resolved;
           pageSourceKey = slot.sourceKey;
           previewKey = `${slot.sourceKey}:${slot.sourcePageIndex}`;
+          pageFormFields = source.formFields;
         }
+        // Per-source fills for this slot's source. Lookup keyed by
+        // sourceKey so external-PDF form fills stay isolated from the
+        // primary's fills — exactly the same isolation `imagesByPage`
+        // / `pages` get from being scoped to a LoadedSource.
+        const slotFormValues = formValues.get(pageSourceKey) ?? new Map<string, FormValue>();
         // Re-derive cross-page targetPageIndex from the stable
         // targetSlotId so reorder doesn't strand overlays.
         const slotIndexById = (id: string | undefined) => {
@@ -335,6 +348,11 @@ export function PageList({
             crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
             onSourceEdit={onEdit}
             onSourceImageMove={onImageMove}
+            formFields={pageFormFields}
+            formValues={slotFormValues}
+            onFormFieldChange={(fullName, value) =>
+              onFormFieldChange(pageSourceKey, fullName, value)
+            }
           />
         );
       })}

@@ -30,14 +30,7 @@
 // stripping. Over-stripping is the safe failure mode for redaction —
 // under-stripping would leave glyphs in the file.
 
-import {
-  PDFArray,
-  PDFContext,
-  PDFDict,
-  PDFName,
-  PDFNumber,
-  PDFRef,
-} from "pdf-lib";
+import { PDFArray, PDFContext, PDFDict, PDFName, PDFNumber, PDFRef } from "pdf-lib";
 import type { ContentOp, ContentToken } from "./contentStream";
 
 export type FontMetrics = {
@@ -464,8 +457,7 @@ function processShowOp(
       // Glyph horizontal advance in text-space: (w/1000) * Tfs * Th.
       // Char + word spacing apply AFTER the glyph advance, scaled by Th.
       const glyphAdvanceTextSpace = (g.widthFontUnits / 1000) * s.fontSize * s.Th;
-      const isSpaceChar =
-        metrics.twAppliesToSpace && g.bytes.length === 1 && g.bytes[0] === 0x20;
+      const isSpaceChar = metrics.twAppliesToSpace && g.bytes.length === 1 && g.bytes[0] === 0x20;
       const spacingTextSpace = (s.Tc + (isSpaceChar ? s.Tw : 0)) * s.Th;
 
       const bbox = bboxFromTextSpaceRect(s.tm, tx, tx + glyphAdvanceTextSpace, s.fontSize);

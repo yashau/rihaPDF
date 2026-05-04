@@ -45,6 +45,12 @@ export const FIXTURE = {
    *  horizontal rule near y=600pt and a filled rectangle at y=300pt.
    *  Used by the shape-delete test. */
   withShapes: path.join(FIXTURES, "with-shapes.pdf"),
+  /** Real Maldivian National University job-application form, fully
+   *  fillable AcroForm with 145 top-level fields (mostly text, with
+   *  hierarchical subform names like Text1.0.0). The canonical end-
+   *  to-end fixture for AcroForm fill round-trips: tests can fill
+   *  Latin / Thaana / both, save, reload, and assert /V. */
+  mnuJobApplication: path.join(FIXTURES, "mnu-job-application.pdf"),
 };
 
 export const APP_URL = "http://localhost:5173/";

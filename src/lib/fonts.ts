@@ -1661,7 +1661,6 @@ export const FONTS: DhivehiFont[] = [
     url: "/fonts/dhivehi/zaanathedhu-thin.ttf",
     script: "thaana",
   },
-
 ];
 
 /** Default font for the editor and for replacements when nothing else
