@@ -156,6 +156,7 @@ export function AboutModal({
                   <li>Insert and move text or images; delete any object</li>
                   <li>Highlight, comment, and ink annotations</li>
                   <li>Redact — no recoverable text under the rect</li>
+                  <li>Fill AcroForm fields — Thaana, checkboxes, dropdowns</li>
                   <li>Reorder, delete, or insert pages</li>
                   <li>Phonetic Latin → Thaana keyboard on mobile</li>
                   <li>Saved PDFs keep real, selectable, searchable text</li>
