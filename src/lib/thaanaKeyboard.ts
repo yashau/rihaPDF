@@ -89,14 +89,21 @@ export function thaanaForLatin(ch: string): string {
   return THAANA_KEYMAP[ch] ?? ch;
 }
 
-/** Cached lookup of the native HTMLInputElement value setter. We bypass
- *  React's synthetic value tracking by writing through this descriptor;
- *  dispatching a real `input` event afterwards lets the React-bound
- *  `onChange` / `onInput` pick the new value up via its event
- *  delegation. Standard pattern for "set a controlled input from
- *  outside React". */
-function nativeInputValueSetter(el: HTMLInputElement, value: string): boolean {
-  const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+/** Cached lookup of the native value setter on the element's own
+ *  prototype. We bypass React's synthetic value tracking by writing
+ *  through this descriptor; dispatching a real `input` event afterwards
+ *  lets the React-bound `onChange` / `onInput` pick the new value up
+ *  via its event delegation. Standard pattern for "set a controlled
+ *  input from outside React". Reads from `Object.getPrototypeOf(el)`
+ *  so this works for both `<input>` and `<textarea>` (whose value
+ *  descriptor lives on `HTMLTextAreaElement.prototype`, not
+ *  `HTMLInputElement.prototype`). */
+function nativeInputValueSetter(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+): boolean {
+  const proto = Object.getPrototypeOf(el) as object;
+  const desc = Object.getOwnPropertyDescriptor(proto, "value");
   // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked via .call below
   const setter = desc?.set;
   if (!setter) return false;
@@ -104,47 +111,65 @@ function nativeInputValueSetter(el: HTMLInputElement, value: string): boolean {
   return true;
 }
 
-/** Attach a `beforeinput` listener to the referenced input that
- *  intercepts single-character Latin insertions and replaces them with
- *  their Thaana equivalent. Composition events (Android Gboard
- *  predictive input) are intentionally ignored — callers should also
- *  set `autoCorrect="off" autoComplete="off" autoCapitalize="none"
- *  spellCheck={false}` on the input so the soft keyboard stays in raw
- *  per-keystroke mode.
+/** Attach a `beforeinput` listener to `el` that intercepts single-char
+ *  Latin insertions and replaces them with their Thaana equivalent.
+ *  Composition events (Android Gboard predictive input) are
+ *  intentionally ignored — callers should also set `autoCorrect="off"
+ *  autoComplete="off" autoCapitalize="none" spellCheck={false}` on the
+ *  field so the soft keyboard stays in raw per-keystroke mode.
  *
- *  Gated by `enabled` so callers can scope it to mobile only. On
- *  desktop the user usually has a Dhivehi system keyboard or wants the
- *  flexibility to type mixed Latin/Thaana freely; transliteration there
- *  would get in the way. */
+ *  Returns a teardown function. Exposed alongside the
+ *  `useThaanaTransliteration` hook so call sites that need to reattach
+ *  the listener when the underlying element changes — e.g. comment
+ *  layer switching the active textarea between comments — can drive
+ *  the lifecycle with their own `useEffect` keyed on the field's
+ *  identity. */
+export function attachThaanaTransliteration(
+  el: HTMLInputElement | HTMLTextAreaElement,
+): () => void {
+  const handler = (e: Event) => {
+    const ev = e as InputEvent;
+    // Only single-char keystrokes. IME composition, paste, autocorrect
+    // replacements, and delete events all pass through untouched.
+    if (ev.inputType !== "insertText") return;
+    const data = ev.data;
+    if (!data || data.length !== 1) return;
+    const mapped = THAANA_KEYMAP[data];
+    if (!mapped || mapped === data) return;
+    ev.preventDefault();
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    const next = el.value.slice(0, start) + mapped + el.value.slice(end);
+    const caret = start + mapped.length;
+    if (!nativeInputValueSetter(el, next)) el.value = next;
+    el.setSelectionRange(caret, caret);
+    // Bubbles up so the React-bound onInput / onChange fires and
+    // parent state stays in sync with the input's DOM value.
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  el.addEventListener("beforeinput", handler);
+  return () => el.removeEventListener("beforeinput", handler);
+}
+
+/** Hook wrapper around `attachThaanaTransliteration`. Gated by
+ *  `enabled` so callers can scope it to mobile only. On desktop the
+ *  user usually has a Dhivehi system keyboard or wants the flexibility
+ *  to type mixed Latin/Thaana freely; transliteration there would get
+ *  in the way.
+ *
+ *  Suitable for call sites where the input is mounted/unmounted in
+ *  sync with `enabled` (e.g. InsertedTextOverlay). When the active
+ *  field can swap WITHOUT `enabled` flipping, drive
+ *  `attachThaanaTransliteration` from your own effect with the swap
+ *  key in deps so the listener reattaches. */
 export function useThaanaTransliteration(
-  inputRef: RefObject<HTMLInputElement | null>,
+  inputRef: RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
   enabled: boolean,
 ): void {
   useEffect(() => {
     if (!enabled) return;
     const el = inputRef.current;
     if (!el) return;
-    const handler = (e: Event) => {
-      const ev = e as InputEvent;
-      // Only single-char keystrokes. IME composition, paste, autocorrect
-      // replacements, and delete events all pass through untouched.
-      if (ev.inputType !== "insertText") return;
-      const data = ev.data;
-      if (!data || data.length !== 1) return;
-      const mapped = THAANA_KEYMAP[data];
-      if (!mapped || mapped === data) return;
-      ev.preventDefault();
-      const start = el.selectionStart ?? el.value.length;
-      const end = el.selectionEnd ?? start;
-      const next = el.value.slice(0, start) + mapped + el.value.slice(end);
-      const caret = start + mapped.length;
-      if (!nativeInputValueSetter(el, next)) el.value = next;
-      el.setSelectionRange(caret, caret);
-      // Bubbles up so the React-bound onInput / onChange fires and
-      // parent state stays in sync with the input's DOM value.
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    };
-    el.addEventListener("beforeinput", handler);
-    return () => el.removeEventListener("beforeinput", handler);
+    return attachThaanaTransliteration(el);
   }, [inputRef, enabled]);
 }

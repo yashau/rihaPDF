@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { Button } from "@heroui/react";
 import { createPortal } from "react-dom";
 import type { Annotation, AnnotationColor } from "../../../lib/annotations";
 import type { ToolMode } from "../../../App";
 import { useDragGesture } from "../../../lib/useDragGesture";
-import { findPageAtPoint } from "../helpers";
+import { isRtlScript } from "../../../lib/fonts";
+import { useIsMobile } from "../../../lib/useMediaQuery";
+import { attachThaanaTransliteration } from "../../../lib/thaanaKeyboard";
+import { useVisualViewportFollow } from "../../../lib/useVisualViewport";
+import { findPageAtPoint, isFocusMovingToToolbar } from "../helpers";
 import { rgba, vpY } from "./helpers";
 
 /** Comment-box layer. HTML divs (not SVG) so we can drop a real
@@ -40,6 +45,35 @@ export function CommentLayer({
 }) {
   /** id of a comment whose body text is currently being edited inline. */
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  /** Mobile-only DV/EN toggle state, shared across editing sessions
+   *  in this layer. Defaults to DV (Latin → Thaana phonetic input)
+   *  since most mobile users have a Latin soft keyboard but want to
+   *  type Thaana into comments. The pinned floating button below
+   *  flips it; desktop ignores it (keystrokes pass through raw). */
+  const [thaanaInput, setThaanaInput] = useState(true);
+  const isMobile = useIsMobile();
+  /** Active textarea ref — there's only ever one open editor at a
+   *  time (gated by `editingCommentId`), so a single layer-level ref
+   *  is enough. The DV/EN-mode effect below attaches the Thaana
+   *  transliterator to whichever element this points at. */
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Pinned bottom-of-viewport DV/EN toggle ref. `useVisualViewport-
+   *  Follow` writes a transform onto it so it stays above the soft
+   *  keyboard and at constant visual size during pinch-zoom — same
+   *  recipe `EditTextToolbar` uses for the inserted-text editor. */
+  const dvEnToolbarRef = useRef<HTMLDivElement | null>(null);
+  // `editingCommentId` is in deps (rather than just an `enabled`
+  // boolean) so the listener reattaches when the user switches
+  // directly from editing comment A to comment B — `textareaRef`
+  // points at a different element each session, but the layer-level
+  // gate (mobile + thaanaInput) doesn't flip across that swap.
+  useEffect(() => {
+    if (!isMobile || editingCommentId === null || !thaanaInput) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    return attachThaanaTransliteration(el);
+  }, [isMobile, editingCommentId, thaanaInput]);
+  useVisualViewportFollow(dvEnToolbarRef, "bottom", isMobile && editingCommentId !== null);
   /** Comment ids the layer has already seen on a render. Used to detect
    *  a freshly-added empty comment so we can auto-open its editor —
    *  needs to outlive the typing-driven re-renders so we don't keep
@@ -221,6 +255,11 @@ export function CommentLayer({
         const fontSizePx = a.fontSize * pageScale;
         const isEditing = editingCommentId === a.id;
         const isDraggingThis = commentDragLive?.id === a.id && commentDragLive.moved;
+        // Faruma for Thaana, Arial for Latin. Comments don't carry
+        // an explicit font field — auto-detect from body codepoints
+        // so the rendered text matches what the save path will pick
+        // (saveAnnotations.ts also branches on `isRtlScript`).
+        const commentFontFamily = isRtlScript(a.text) ? '"Faruma"' : '"Arial"';
         return (
           <div
             key={a.id}
@@ -279,14 +318,35 @@ export function CommentLayer({
           >
             {isEditing ? (
               <textarea
+                ref={textareaRef}
                 autoFocus
                 className="absolute inset-0 w-full h-full bg-transparent text-zinc-900 outline-none resize-none px-1 py-0.5"
-                style={{ fontSize: fontSizePx, lineHeight: 1.2 }}
+                style={{ fontSize: fontSizePx, lineHeight: 1.2, fontFamily: commentFontFamily }}
+                // Auto-detect text direction from codepoints so a
+                // Thaana comment right-aligns and a Latin comment
+                // left-aligns without any explicit user toggle.
+                dir="auto"
+                // Mobile + DV mode: suppress soft-keyboard autocorrect /
+                // autocapitalise / spellcheck so each keystroke fires a
+                // single-char `insertText` event the Thaana
+                // transliterator can intercept (matches the
+                // InsertedTextOverlay's input).
+                autoComplete={isMobile && thaanaInput ? "off" : undefined}
+                autoCorrect={isMobile && thaanaInput ? "off" : undefined}
+                autoCapitalize={isMobile && thaanaInput ? "none" : undefined}
+                spellCheck={isMobile && thaanaInput ? false : undefined}
                 value={a.text}
                 placeholder="Type a comment..."
                 onChange={(e) => onAnnotationChange(a.id, { text: e.target.value })}
                 onClick={(e) => e.stopPropagation()}
-                onBlur={() => {
+                onBlur={(e) => {
+                  // Tapping the floating DV/EN toggle moves focus to
+                  // its button and would otherwise close the editor
+                  // (and delete an empty comment). The toggle wrapper
+                  // is tagged `data-edit-toolbar` so this check skips
+                  // the close — same pattern as EditField /
+                  // InsertedTextOverlay.
+                  if (isFocusMovingToToolbar(e.relatedTarget)) return;
                   setEditingCommentId(null);
                   // Drop the box if the user dismissed without typing
                   // anything -- avoids leaving stray empty boxes after
@@ -304,7 +364,8 @@ export function CommentLayer({
             ) : (
               <div
                 className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap break-words overflow-hidden"
-                style={{ fontSize: fontSizePx, lineHeight: 1.2 }}
+                style={{ fontSize: fontSizePx, lineHeight: 1.2, fontFamily: commentFontFamily }}
+                dir="auto"
               >
                 {a.text}
               </div>
@@ -353,10 +414,74 @@ export function CommentLayer({
                 style={{
                   fontSize: commentDragLive.fontSize * pageScale * displayScale,
                   lineHeight: 1.2,
+                  fontFamily: isRtlScript(commentDragLive.text) ? '"Faruma"' : '"Arial"',
                 }}
+                dir="auto"
               >
                 {commentDragLive.text}
               </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      {/* Mobile-only floating DV/EN toggle. Same recipe as
+          EditTextToolbar's mobile mode: portal to body so
+          `position: fixed` anchors to the visual viewport (not the
+          per-page transformed wrapper), tagged `data-edit-toolbar` so
+          the textarea's blur check ignores focus moving here, and
+          `useVisualViewportFollow` keeps it pinned above the soft
+          keyboard at constant visual size during pinch-zoom (with the
+          opacity-fade-during-scale-change polish baked into the hook).
+          Wrapper className + baseStyle mirror EditTextToolbar verbatim
+          so the chrome looks identical to the inserted-text editor;
+          only mounted while a comment is being edited. */}
+      {isMobile && editingCommentId !== null && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={dvEnToolbarRef}
+              data-edit-toolbar
+              className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+              style={{
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 30,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                padding: 8,
+                paddingBottom: `max(8px, var(--safe-bottom, 0px))`,
+                alignItems: "center",
+                pointerEvents: "auto",
+              }}
+              // Stop pointerdown from bubbling so the page-level
+              // click-to-create / drag handlers don't see it. Mirrors
+              // EditTextToolbar's wrapper.
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <Button
+                size="sm"
+                variant={thaanaInput ? "primary" : "ghost"}
+                onPress={() => setThaanaInput(!thaanaInput)}
+                // preventDefault on mousedown stops focus shifting off
+                // the textarea — without it the editor would blur and
+                // close on every toggle tap. Same protection
+                // EditTextToolbar's DV/EN button uses.
+                onMouseDown={(e) => e.preventDefault()}
+                aria-label={
+                  thaanaInput
+                    ? "Thaana phonetic input (click to type Latin)"
+                    : "Latin input (click to type Thaana)"
+                }
+                // `marginLeft: auto` pushes the button to the right
+                // edge of the bar — same trick EditTextToolbar uses for
+                // its trailing trash button so the affordance lands
+                // under the right-thumb resting position.
+                style={{ minWidth: 44, fontWeight: 600, fontSize: 12, marginLeft: "auto" }}
+              >
+                {thaanaInput ? "DV" : "EN"}
+              </Button>
             </div>,
             document.body,
           )
