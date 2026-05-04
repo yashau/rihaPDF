@@ -44,8 +44,8 @@ The form filling implementation should lean on:
   identical to EditField's.
 - [THAANA_KEYMAP](src/lib/thaanaKeyboard.ts#L22) for the
   per-keystroke Latin → Thaana table.
-- The RTL auto-detect regex used in [save.ts](src/lib/save.ts) for
-  `dir="auto"` plumbing on inputs.
+- [isRtlScript](src/lib/fonts.ts) for `dir="auto"` plumbing on
+  inputs and for picking the field's default direction from `/V`.
 - [EditField](src/components/PdfPage/EditField.tsx) as the design
   reference: focus management, blur-to-commit, Esc-to-cancel,
   mobile DV/EN toolbar toggle, font fallback to Faruma. Form text
@@ -54,17 +54,23 @@ The form filling implementation should lean on:
   [saveAnnotations.ts](src/lib/saveAnnotations.ts) as a structural
   precedent: store fills as plain values on `LoadedSource`-derived
   state, materialize them into pdf-lib dicts at save time. Mirror
-  `applyAnnotationsToDoc`'s pattern for `applyFormFillsToDoc`.
-- [encodeUtf16BE](src/lib/saveAnnotations.ts#L51) — already handles
+  [applyAnnotationsToDoc](src/lib/saveAnnotations.ts#L381)'s pattern
+  for `applyFormFillsToDoc`.
+- [encodeUtf16BE](src/lib/saveAnnotations.ts#L88) — already handles
   the PDF text-string encoding Thaana needs in `/V`.
+- [buildShapedTextOps + measureShapedWidth](src/lib/shapedDraw.ts) —
+  HarfBuzz-shaped operator emitter already used by FreeText comment
+  `/AP /N`. Reusable for self-generated text-field appearances (see
+  Phase 4 Thaana-font note).
 
 ## Phase 1 — Extract form fields at load
 
 New file: `src/lib/formFields.ts`.
 
 - After `PDFDocument.load` in
-  [loadSource.ts](src/lib/loadSource.ts#L46), walk
-  `/Root /AcroForm /Fields`, recursing into `/Kids` until each
+  [loadSource.ts:46](src/lib/loadSource.ts#L46) (the `glyphsDoc`
+  load that already runs as part of the parallel `Promise.all`),
+  walk `/Root /AcroForm /Fields`, recursing into `/Kids` until each
   terminal field is found. Skip docs with no AcroForm dict.
 - Resolve each field's full name (`a.b.c` per spec — concat `/T`
   with `.` from root to leaf), `/FT`, `/Ff` flag bits, default
@@ -92,29 +98,39 @@ New file: `src/lib/formFields.ts`.
     | { kind: "signature"; id; …; readOnly: true };
   ```
 - Add `formFields: FormField[]` to
-  [LoadedSource](src/lib/loadSource.ts#L21). Populated from the
-  same `glyphsDoc` that's already loaded — no extra round-trip
-  through bytes.
+  [LoadedSource](src/lib/loadSource.ts#L21) (alongside `glyphsDoc`,
+  `fontShowsByPage`, `imagesByPage`, `shapesByPage`, `pages`).
+  Populated from the same `glyphsDoc` that's already loaded — no
+  extra round-trip through bytes.
 - Read-only and hidden fields (`/Ff` bit 1 set, `/F` bit 2 set)
   surface but render disabled.
 
 **Decision**: parse `/V` codepoints to seed `rtl`. Auto-detect
-RTL on first Thaana char (same regex as save.ts). User can flip
-direction per field via the same dir toggle as EditField.
+RTL via [isRtlScript](src/lib/fonts.ts) on first Thaana char. User
+can flip direction per field via the same dir toggle as EditField.
 
 ## Phase 2 — Render form overlays
 
 New file: `src/components/PdfPage/FormFieldLayer.tsx`.
 
-- Sibling of [AnnotationLayer](src/components/PdfPage/AnnotationLayer.tsx).
-  Renders absolutely-positioned inputs over each widget's `/Rect`,
+- Composite layer in the spirit of
+  [AnnotationLayer](src/components/PdfPage/AnnotationLayer.tsx),
+  which is now a thin wrapper that delegates to
+  [HighlightLayer](src/components/PdfPage/annotations/HighlightLayer.tsx),
+  [InkLayer](src/components/PdfPage/annotations/InkLayer.tsx), and
+  [CommentLayer](src/components/PdfPage/annotations/CommentLayer.tsx).
+  FormFieldLayer can either dispatch to per-kind sub-layers under
+  `src/components/PdfPage/formFields/` or render inline if the
+  per-kind code stays small.
+- Renders absolutely-positioned inputs over each widget's `/Rect`,
   converted PDF y-up → viewport y-down via `pageScale` and
-  `viewHeight` (same conversion math AnnotationLayer uses at
-  [PdfPage/AnnotationLayer.tsx:52](src/components/PdfPage/AnnotationLayer.tsx#L52)).
-- Mount inside [PdfPage](src/components/PdfPage/index.tsx#L1004),
-  immediately after `<AnnotationLayer />`. Keep z-order below the
-  placement-mode capture layer so "addText" / "highlight" tools
-  still work over a form field if needed.
+  `viewHeight` — reuse the `vpY()` helper the annotation sub-layers
+  already share (e.g. [HighlightLayer.tsx:35](src/components/PdfPage/annotations/HighlightLayer.tsx#L35)).
+- Mount inside [PdfPage](src/components/PdfPage/index.tsx),
+  immediately after `<AnnotationLayer />` at
+  [index.tsx:535](src/components/PdfPage/index.tsx#L535). Keep
+  z-order below the placement-mode capture layer so "addText" /
+  "highlight" tools still work over a form field if needed.
 - Per field-kind:
   - **Text**: `<input>` for single-line, `<textarea>` for multiline.
     Default `dir="auto"`; explicit override from FormField. Default
@@ -141,10 +157,14 @@ In [App.tsx](src/App.tsx):
 
 - Add `formValues: Map<string, Map<string, FormValue>>` keyed by
   `sourceKey → fullName → value`. Mirror the existing `edits` /
-  `imageMoves` / `annotations` Maps so the same persistence,
+  `imageMoves` / `insertedTexts` / `insertedImages` /
+  `shapeDeletes` / `annotations` Maps (all declared around
+  [App.tsx:66-99](src/App.tsx#L66-L99)) so the same persistence,
   undo, and slot-aware save plumbing applies for free.
-- Include in `UndoSnapshot` ([App.tsx:69](src/App.tsx#L69)) so
-  fills participate in Ctrl+Z / Ctrl+Y.
+- Include in `UndoSnapshot` ([App.tsx:37](src/App.tsx#L37)) so
+  fills participate in Ctrl+Z / Ctrl+Y. Add a matching `useRef`
+  mirror next to `editsRef` / `annotationsRef` etc. so
+  `captureSnapshot` / `restoreSnapshot` stay symmetric.
 - Wire `onFormChange(sourceKey, fullName, value)` through PdfPage
   → FormFieldLayer → individual field overlays.
 - The undo coalesce key for text fields is `form:<sourceKey>:<fullName>`
@@ -154,8 +174,12 @@ In [App.tsx](src/App.tsx):
 
 New file: `src/lib/saveFormFields.ts`.
 
-- New export `applyFormFillsToDoc(doc, fills, glyphsDocFields)`.
-  Mirrors [applyAnnotationsToDoc](src/lib/saveAnnotations.ts#L171).
+- New export `applyFormFillsToDoc(doc, fills, options)`.
+  Mirrors [applyAnnotationsToDoc](src/lib/saveAnnotations.ts#L381).
+  `options` should carry the per-source `getFont` factory
+  (`AnnotationFontFactory` shape), since Thaana fields need Faruma
+  registered in `/AcroForm/DR` regardless of which `/AP` strategy
+  we land on.
 - For each filled field, walk the doc's `/Root /AcroForm /Fields`
   tree to find the field by full name, then:
   - `Tx`: set `/V` to `encodeUtf16BE(text)` (or `PDFString.of` for
@@ -168,38 +192,63 @@ New file: `src/lib/saveFormFields.ts`.
     `/AS` to its on-state name only if it's the chosen one;
     otherwise `Off`.
   - `Ch`: `/V` PDFString or PDFArray of strings.
-- Set `/NeedAppearances true` on the AcroForm dict. This is the
-  v1 trade-off (mirrored from saveAnnotations: viewers regen `/AP`
-  from `/DA + /V`; legacy readers may show empty). Document this
-  in the README.
-- Hook into the save pipeline at the cross-source phase in
-  [save.ts](src/lib/save.ts#L412) — after stream surgery and
-  before annotations. Bucket fills by source so each ctx's doc
-  gets its fields updated in one pass.
+- Hook into the save pipeline immediately before the annotations
+  pass at [save.ts:771-787](src/lib/save.ts#L771-L787): bucket
+  fills by `sourceKey` and look up each `ctx` from
+  [`ctxBySource`](src/lib/save.ts#L590) (the per-source
+  `LoadedSourceContext` map that already holds `doc` + `getFont`).
+  Each ctx's doc gets its fields updated in one pass before
+  `applyAnnotationsToDoc` runs and before pages are copied into
+  `output`. Remember to also extend `sourcesNeedingLoad` so a
+  source that has only fills (no edits / annotations) still gets
+  a ctx.
 - Acceptance: a saved PDF reopens in Acrobat / Preview / Chrome
   with all values visible; reopening in rihaPDF re-extracts and
   shows the same `/V`s. A manual flatten (post-save "flatten"
   button) is **not** in v1 — interactive forms remain interactive.
 
-### Thaana font in `/DA`
+### Thaana font in `/DA` and `/AP`
 
 Form text rendering inside the field requires the appearance
 string's font to actually contain the codepoints. Two options:
 
-1. **Trust viewer regen** (recommended for v1): set
-   `/NeedAppearances true` and rewrite each text field's `/DA`
-   to reference Faruma (or another registered Thaana font), and
-   embed that font under `/Root /AcroForm /DR /Font /Faruma`.
-   Acrobat / Preview will regenerate `/AP` using Faruma, picking
-   up the Thaana glyphs.
-2. **Generate /AP ourselves**: shape `/V` with HarfBuzz (already
-   wired in [src/lib/shape.ts](src/lib/shape.ts)) and write the
-   appearance stream. Higher fidelity in legacy viewers but
-   significantly more code.
+1. **Trust viewer regen**: set `/NeedAppearances true` on the
+   AcroForm dict, rewrite each text field's `/DA` to reference
+   Faruma (or another registered Thaana font), and embed that
+   font under `/Root /AcroForm /DR /Font /Faruma`. Acrobat /
+   Preview regenerate `/AP` from `/DA + /V`. Cheap, but viewer
+   regen does not run a complex-script shaper, so Thaana fili
+   stack at fixed offsets — same failure mode FreeText comments
+   used to have before the HarfBuzz `/AP` work.
+2. **Generate /AP ourselves with HarfBuzz**: shape `/V` and write
+   the `/AP /N` Form XObject directly. This was the costly option
+   when this plan was first written, but the infra is now landed
+   for FreeText comments — see
+   [shapedDraw.ts](src/lib/shapedDraw.ts) (`buildShapedTextOps`,
+   `measureShapedWidth`), [shapedBidi.ts](src/lib/shapedBidi.ts),
+   and the bidi-aware comment AP path in
+   [saveAnnotations.ts](src/lib/saveAnnotations.ts) (the
+   `CommentLayer` save path embeds Faruma, runs HB shaping, and
+   writes a `/AP /N` stream). The same pipeline applies to a `Tx`
+   field's widget rect with minor adjustments (single-line
+   horizontal centering / multiline line-breaking, plus a
+   `/MK /BC /BG` border honoring the widget's existing look).
 
-Pick (1) for v1, document the legacy-reader caveat. If real-world
-testing on gazette.gov.mv PDFs shows broken renders in a target
-viewer, escalate to (2) using the existing shape pipeline.
+**Decision (revised)**: pick (2) from day one. Dhivehi-quality is
+the project's stated north star (see
+[memory: project_stirling_rtl](C:\Users\Yashau\.claude\projects\c--Users-Yashau-Projects-rihaPDF\memory\project_stirling_rtl.md)),
+and option (1) ships the same broken-Thaana behaviour in form
+fields that we already rejected for inline comments. Implement
+the shape-and-emit path for `Tx` fields whose `/V` contains
+Thaana; keep (1) as the fallback for Latin-only `/V` to avoid
+the cost of an `/AP` stream when viewer regen would render the
+text correctly anyway. Still set `/NeedAppearances true` so any
+viewer that ignores our `/AP` falls back to `/DA + /V` instead
+of nothing — matches the saveAnnotations pattern.
+
+For `Btn` (checkbox / radio) and `Ch` (combo / list): trust
+viewer regen (option 1). The rendered glyphs are ASCII / arrow
+checkmarks that don't need shaping.
 
 ## Phase 5 — Edge cases & polish
 
@@ -257,13 +306,14 @@ Modified:
 - `src/lib/save.ts` — call `applyFormFillsToDoc` per source ctx.
 - `src/components/PdfPage/index.tsx` — mount `<FormFieldLayer />`.
 - `src/App.tsx` — `formValues` state, undo integration, save call.
-- `README.md` — document the `/NeedAppearances` v1 trade-off.
+- `README.md` — document AcroForm fill support and the
+  HarfBuzz-shaped `/AP` strategy for Thaana `Tx` fields (mirroring
+  the existing FreeText-comment note).
 
 ## Out of scope (followups)
 
 - XFA forms (rare in .mv gov PDFs; full replacement of AcroForm).
 - JavaScript actions (`/AA`, calculation order, validation).
 - Submit / Reset buttons that POST to a URL.
-- Generating our own `/AP` appearance streams via HarfBuzz.
 - Form flattening on save (lock fields into the content stream).
 - Digital signature creation; v1 only displays existing sigs.
