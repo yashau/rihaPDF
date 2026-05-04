@@ -97,7 +97,6 @@ export function SourceRunOverlay({
           }
           onEditingChange(null);
         }}
-        onCancel={() => onEditingChange(null)}
         onDelete={() => {
           // Mark the source run for deletion: save strips its Tj/TJ
           // ops, no replacement is drawn. The overlay is hidden via

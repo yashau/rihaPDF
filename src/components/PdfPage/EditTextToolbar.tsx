@@ -8,7 +8,6 @@ import {
   Strikethrough,
   Trash2,
   Underline,
-  X,
 } from "lucide-react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
@@ -16,10 +15,15 @@ import { FONTS } from "../../lib/fonts";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { useVisualViewportFollow } from "../../lib/useVisualViewport";
 
-/** Shared formatting toolbar — font picker, size, B / I / U toggles, X.
+/** Shared formatting toolbar — font picker, size, B / I / U toggles.
  *  Used by both the existing-run EditField and the InsertedTextOverlay
  *  so a brand-new text box has the exact same controls as an inline
- *  edit on a source-PDF run. */
+ *  edit on a source-PDF run.
+ *
+ *  No discard / cancel button: clicking outside commits in both
+ *  surfaces, and the global undo button reverses any unintended
+ *  commit. Keeping commit-on-outside-click as the only close
+ *  affordance avoids two competing "close" buttons on mobile. */
 export function EditTextToolbar({
   left,
   top,
@@ -33,7 +37,6 @@ export function EditTextToolbar({
   thaanaInput,
   onThaanaInputChange,
   onChange,
-  onCancel,
   onDelete,
 }: {
   /** Viewport-pixel position of the toolbar's top-left corner. */
@@ -63,7 +66,6 @@ export function EditTextToolbar({
     /** `null` clears an explicit direction back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
   }) => void;
-  onCancel?: () => void;
   /** When provided, renders a trash button. Source-run deletion sets
    *  `deleted=true` on the stored EditValue; inserted-text deletion
    *  removes the entry from its slot bucket. */
@@ -139,46 +141,56 @@ export function EditTextToolbar({
         e.stopPropagation();
       }}
     >
-      <select
-        aria-label="Font"
-        value={fontFamily}
-        className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-        style={{
-          padding: "4px 6px",
-          borderRadius: 4,
-          fontSize: 12,
-          minWidth: 140,
-          // On mobile the font picker takes the full first row so its
-          // long names don't truncate; size + B/I/U + ✕ wrap below.
-          flexBasis: isMobile ? "100%" : undefined,
-        }}
-        onChange={(e) => onChange({ fontFamily: e.target.value })}
+      {/* Mobile: font picker + size share row 1 (sub-flex with
+          flexBasis:100%) so the long font names don't truncate while
+          keeping size adjacent. Desktop: inline siblings. */}
+      <div
+        style={
+          isMobile
+            ? { display: "flex", gap: 6, flexBasis: "100%", alignItems: "center" }
+            : { display: "contents" }
+        }
       >
-        {FONTS.map((f) => (
-          <option key={f.family} value={f.family}>
-            {f.label}
-          </option>
-        ))}
-      </select>
-      <input
-        aria-label="Font size"
-        type="number"
-        min={6}
-        max={144}
-        step={1}
-        value={Math.round(fontSize)}
-        className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-        style={{
-          width: 56,
-          padding: "4px 6px",
-          borderRadius: 4,
-          fontSize: 12,
-        }}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          if (Number.isFinite(v)) onChange({ fontSize: v });
-        }}
-      />
+        <select
+          aria-label="Font"
+          value={fontFamily}
+          className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+          style={{
+            padding: "4px 6px",
+            borderRadius: 4,
+            fontSize: 12,
+            minWidth: 140,
+            flex: isMobile ? 1 : undefined,
+          }}
+          onChange={(e) => onChange({ fontFamily: e.target.value })}
+        >
+          {FONTS.map((f) => (
+            <option key={f.family} value={f.family}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="Font size"
+          type="number"
+          min={6}
+          max={144}
+          step={1}
+          value={Math.round(fontSize)}
+          className="border border-zinc-300 bg-white text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+          style={{
+            width: 56,
+            flexShrink: 0,
+            padding: "4px 6px",
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (Number.isFinite(v)) onChange({ fontSize: v });
+          }}
+        />
+      </div>
       <StyleToggle
         label="Bold"
         isSelected={bold}
@@ -269,19 +281,13 @@ export function EditTextToolbar({
           variant="danger-soft"
           onPress={() => onDelete()}
           aria-label="Delete text (Del)"
+          // Mobile: push to the right edge of row 2 so it's reachable
+          // by the thumb that's already over there. `marginLeft: auto`
+          // on a flex item eats the leftover row space. Desktop keeps
+          // its inline placement.
+          style={isMobile ? { marginLeft: "auto" } : undefined}
         >
           <Trash2 size={14} />
-        </Button>
-      ) : null}
-      {onCancel ? (
-        <Button
-          isIconOnly
-          size="sm"
-          variant="ghost"
-          onPress={() => onCancel()}
-          aria-label="Cancel edit"
-        >
-          <X size={14} />
         </Button>
       ) : null}
     </div>

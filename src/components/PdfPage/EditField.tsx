@@ -14,7 +14,6 @@ export function EditField({
   toolbarBlockers,
   initial,
   onCommit,
-  onCancel,
   onDelete,
 }: {
   run: TextRun;
@@ -28,7 +27,6 @@ export function EditField({
   toolbarBlockers: readonly ToolbarBlocker[];
   initial: EditValue;
   onCommit: (value: EditValue) => void;
-  onCancel: () => void;
   onDelete?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -174,7 +172,6 @@ export function EditField({
             return next;
           })
         }
-        onCancel={onCancel}
         onDelete={onDelete}
       />
       <input
@@ -226,8 +223,10 @@ export function EditField({
         }}
         onChange={() => {}}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          else if (e.key === "Escape") onCancel();
+          // Both Enter and Escape commit. The global undo button is
+          // the canonical "discard" affordance — no per-edit cancel
+          // path on either desktop or mobile.
+          if (e.key === "Enter" || e.key === "Escape") commit();
         }}
         onBlur={(e) => {
           // Don't commit when focus is just moving into the floating

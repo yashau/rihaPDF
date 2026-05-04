@@ -213,10 +213,6 @@ export function InsertedTextOverlay({
             // it directly on the insertion, no scale conversion.
             updateStyle(patch);
           }}
-          onCancel={() => {
-            if (ins.text === "") onDelete();
-            onClose();
-          }}
           onDelete={() => {
             onDelete();
             onClose();
