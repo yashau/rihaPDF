@@ -1,58 +1,49 @@
-import type { Annotation } from "../../../lib/annotations";
-import type { ToolMode } from "../../../App";
-import { rgba, vpY } from "./helpers";
+import type { Annotation, HighlightAnnotation } from "../../../lib/annotations";
+import { HighlightOverlay } from "./HighlightOverlay";
 
-/** SVG layer for highlight quads. One `<rect>` per quad, translucent
- *  fill in the annotation's chosen colour. Click-to-delete is gated
- *  on `tool === "select"` so highlight mode itself doesn't accidentally
- *  delete what the user just made. */
+/** Fan-out: one HighlightOverlay per quad. Each overlay handles its
+ *  own select / drag / resize / delete UX (mirrors the redact tool).
+ *  Resize handles are restricted to the FIRST quad of a multi-quad
+ *  highlight — multi-line highlights aren't a product feature yet, but
+ *  if they show up later, single-quad-resize-only is an obvious
+ *  default until the multi-quad UX is designed. */
 export function HighlightLayer({
   annotations,
   pageScale,
   viewHeight,
-  tool,
-  onAnnotationDelete,
+  displayScale,
+  selectedHighlightId,
+  onAnnotationChange,
+  onSelectHighlight,
 }: {
   annotations: Annotation[];
   pageScale: number;
   viewHeight: number;
-  tool: ToolMode;
-  onAnnotationDelete: (id: string) => void;
+  displayScale: number;
+  selectedHighlightId: string | null;
+  onAnnotationChange: (id: string, patch: Partial<HighlightAnnotation>) => void;
+  onSelectHighlight: (id: string) => void;
 }) {
   return (
-    <svg
-      className="absolute inset-0"
-      width="100%"
-      height="100%"
-      // Layer itself doesn't capture; individual rects opt-in via
-      // `pointerEvents: "auto"` when the select tool is active.
-      style={{ overflow: "visible", pointerEvents: "none" }}
-    >
+    <>
       {annotations.map((a) => {
         if (a.kind !== "highlight") return null;
-        return a.quads.map((q, i) => {
-          const x = Math.min(q.x1, q.x3) * pageScale;
-          const y = vpY(Math.max(q.y1, q.y2), pageScale, viewHeight);
-          const w = (Math.max(q.x2, q.x4) - Math.min(q.x1, q.x3)) * pageScale;
-          const h = (Math.max(q.y1, q.y2) - Math.min(q.y3, q.y4)) * pageScale;
-          return (
-            <rect
-              key={`${a.id}-${i}`}
-              x={x}
-              y={y}
-              width={w}
-              height={h}
-              fill={rgba(a.color, 0.4)}
-              style={{ pointerEvents: tool === "select" ? "auto" : "none" }}
-              onClick={(e) => {
-                if (tool !== "select") return;
-                e.stopPropagation();
-                if (window.confirm("Delete highlight?")) onAnnotationDelete(a.id);
-              }}
-            />
-          );
-        });
+        return a.quads.map((q, i) => (
+          <HighlightOverlay
+            key={`${a.id}-${i}`}
+            annotation={a}
+            quad={q}
+            quadIndex={i}
+            pageScale={pageScale}
+            viewHeight={viewHeight}
+            displayScale={displayScale}
+            isSelected={selectedHighlightId === a.id}
+            resizable={i === 0}
+            onChange={(patch) => onAnnotationChange(a.id, patch)}
+            onSelect={() => onSelectHighlight(a.id)}
+          />
+        ));
       })}
-    </svg>
+    </>
   );
 }

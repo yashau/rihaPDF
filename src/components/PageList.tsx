@@ -15,6 +15,7 @@ export type Selection =
   | { kind: "insertedImage"; slotId: string; id: string }
   | { kind: "shape"; slotId: string; shapeId: string }
   | { kind: "redaction"; slotId: string; id: string }
+  | { kind: "highlight"; slotId: string; id: string }
   | null;
 
 export function PageList({
@@ -32,6 +33,7 @@ export function PageList({
   tool,
   inkColor,
   inkThickness,
+  highlightColor,
   selection,
   renderScale,
   onEdit,
@@ -51,6 +53,7 @@ export function PageList({
   onRedactionAdd,
   onRedactionChange,
   onSelectRedaction,
+  onSelectHighlight,
 }: {
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
@@ -69,6 +72,9 @@ export function PageList({
    *  stamps these onto each new stroke at commit time. */
   inkColor: AnnotationColor;
   inkThickness: number;
+  /** Active highlight color — same lift-to-App rationale; PdfPage's
+   *  `addHighlightForRun` reads this when the user click-marks a run. */
+  highlightColor: AnnotationColor;
   selection: Selection;
   renderScale: number;
   onEdit: (slotId: string, runId: string, value: EditValue) => void;
@@ -88,6 +94,7 @@ export function PageList({
   onRedactionAdd: (slotId: string, redaction: Redaction) => void;
   onRedactionChange: (slotId: string, id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (slotId: string, id: string) => void;
+  onSelectHighlight: (slotId: string, id: string) => void;
 }) {
   // Group cross-page-targeted edits by their target slot so each
   // slot's PdfPage can render the runs that have ARRIVED on it
@@ -278,6 +285,8 @@ export function PageList({
           selection?.kind === "shape" && selection.slotId === slot.id ? selection.shapeId : null;
         const selectedRedactionId =
           selection?.kind === "redaction" && selection.slotId === slot.id ? selection.id : null;
+        const selectedHighlightId =
+          selection?.kind === "highlight" && selection.slotId === slot.id ? selection.id : null;
         const deletedShapeIds = shapeDeletes.get(slot.id) ?? new Set<string>();
         return (
           <PageWithToolbar
@@ -296,11 +305,13 @@ export function PageList({
             tool={tool}
             inkColor={inkColor}
             inkThickness={inkThickness}
+            highlightColor={highlightColor}
             editingId={editingByPage.get(slot.id) ?? null}
             selectedImageId={selectedImageId}
             selectedInsertedImageId={selectedInsertedImageId}
             selectedShapeId={selectedShapeId}
             selectedRedactionId={selectedRedactionId}
+            selectedHighlightId={selectedHighlightId}
             deletedShapeIds={deletedShapeIds}
             onEdit={(runId, value) => onEdit(slot.id, runId, value)}
             onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
@@ -319,6 +330,7 @@ export function PageList({
             onRedactionAdd={(r) => onRedactionAdd(slot.id, r)}
             onRedactionChange={(id, patch) => onRedactionChange(slot.id, id, patch)}
             onSelectRedaction={(id) => onSelectRedaction(slot.id, id)}
+            onSelectHighlight={(id) => onSelectHighlight(slot.id, id)}
             crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
             crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
             onSourceEdit={onEdit}

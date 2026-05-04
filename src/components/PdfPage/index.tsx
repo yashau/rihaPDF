@@ -6,7 +6,6 @@ import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import {
   type Annotation,
   type AnnotationColor,
-  DEFAULT_HIGHLIGHT_COLOR,
   HIGHLIGHT_LINE_PAD,
   lineMarkupRect,
   newAnnotationId,
@@ -69,6 +68,9 @@ type Props = {
    *  next stroke without reloading. */
   inkColor: AnnotationColor;
   inkThickness: number;
+  /** Active highlight color from App. `addHighlightForRun` stamps this
+   *  onto each new highlight; the HighlightToolbar writes to it. */
+  highlightColor: AnnotationColor;
   /** Currently-open editor id on this page (lifted to App so a fresh
    *  insertion can immediately open its editor without a round-trip
    *  through PdfPage's own state). null = nothing is being edited. */
@@ -92,6 +94,8 @@ type Props = {
   selectedShapeId: string | null;
   /** ID of the redaction currently selected on this page. */
   selectedRedactionId: string | null;
+  /** ID of the highlight currently selected on this page. */
+  selectedHighlightId: string | null;
   /** Set of shape ids on this page already flagged for delete — their
    *  overlays are hidden so the user can't re-grab them. */
   deletedShapeIds: Set<string>;
@@ -106,6 +110,7 @@ type Props = {
   onRedactionAdd: (redaction: Redaction) => void;
   onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (id: string) => void;
+  onSelectHighlight: (id: string) => void;
   /** Source-page text runs that have been moved cross-page and now
    *  visually live on THIS slot. Built by PageList from the source-
    *  side `edits` map. Rendered as non-interactive styled spans at
@@ -143,11 +148,13 @@ export function PdfPage({
   tool,
   inkColor,
   inkThickness,
+  highlightColor,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
   selectedShapeId,
   selectedRedactionId,
+  selectedHighlightId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -166,6 +173,7 @@ export function PdfPage({
   onRedactionAdd,
   onRedactionChange,
   onSelectRedaction,
+  onSelectHighlight,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -302,7 +310,7 @@ export function PdfPage({
       quads: [
         { x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly },
       ],
-      color: DEFAULT_HIGHLIGHT_COLOR,
+      color: highlightColor,
     });
   };
 
@@ -610,9 +618,11 @@ export function PdfPage({
             tool={tool}
             inkColor={inkColor}
             inkThickness={inkThickness}
+            selectedHighlightId={selectedHighlightId}
             onAnnotationAdd={onAnnotationAdd}
             onAnnotationChange={onAnnotationChange}
             onAnnotationDelete={onAnnotationDelete}
+            onSelectHighlight={onSelectHighlight}
           />
         </div>
       </div>

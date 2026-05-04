@@ -1,7 +1,8 @@
 // Per-page overlay for user-added annotations.
 //
 // Fans out to three sub-layers, each owning one annotation kind:
-//   - HighlightLayer : SVG <rect> per quad, click-to-delete in select.
+//   - HighlightLayer : interactive translucent rect per quad — select,
+//                      drag to move, corner-resize, Del to remove.
 //   - InkLayer       : SVG <path> per stroke + the pointer-event
 //                      capture surface for drawing new strokes.
 //   - CommentLayer   : HTML comment boxes with inline editor + the
@@ -36,9 +37,12 @@ type Props = {
    *  the InkLayer which stamps them onto the new annotation at commit. */
   inkColor: AnnotationColor;
   inkThickness: number;
+  /** ID of the highlight currently selected on this page (null = none). */
+  selectedHighlightId: string | null;
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onSelectHighlight: (id: string) => void;
 };
 
 export function AnnotationLayer({
@@ -51,9 +55,11 @@ export function AnnotationLayer({
   tool,
   inkColor,
   inkThickness,
+  selectedHighlightId,
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
+  onSelectHighlight,
 }: Props) {
   return (
     <>
@@ -61,8 +67,10 @@ export function AnnotationLayer({
         annotations={annotations}
         pageScale={pageScale}
         viewHeight={viewHeight}
-        tool={tool}
-        onAnnotationDelete={onAnnotationDelete}
+        displayScale={displayScale}
+        selectedHighlightId={selectedHighlightId}
+        onAnnotationChange={onAnnotationChange}
+        onSelectHighlight={onSelectHighlight}
       />
       <InkLayer
         annotations={annotations}

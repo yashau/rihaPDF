@@ -6,19 +6,24 @@
 
 import type { AnnotationColor } from "./annotations";
 
+/** Single entry in a color-picker preset palette. Shared between the
+ *  text-color (dark) and highlight-color (light) pickers so the same
+ *  ColorPickerPopover component can render either one.  */
+export type ColorPreset = {
+  /** Display label for the swatch's aria-label / tooltip. */
+  label: string;
+  /** Hex form for swatch fill + the picker's input. */
+  hex: string;
+  /** 0..1 RGB triple — what gets stored on annotations / EditStyle. */
+  value: AnnotationColor;
+};
+
 /** Preset palette for the format toolbar's text-color picker. All
  *  Tailwind-700 level so they're tonally consistent and stay legible
  *  on white paper (≥ 4.5:1 contrast against white, passes WCAG AA).
  *  Ordered by frequency of use, not spectrum: black → gray → primary
  *  accents. */
-export const TEXT_COLOR_PRESETS: ReadonlyArray<{
-  /** Display label for the swatch's aria-label / tooltip. */
-  label: string;
-  /** Hex form for swatch fill + the picker's input. */
-  hex: string;
-  /** 0..1 RGB triple — what gets stored on the EditStyle. */
-  value: AnnotationColor;
-}> = [
+export const TEXT_COLOR_PRESETS: ReadonlyArray<ColorPreset> = [
   { label: "Black", hex: "#000000", value: [0, 0, 0] },
   { label: "Slate", hex: "#334155", value: [0x33 / 255, 0x41 / 255, 0x55 / 255] },
   { label: "Red", hex: "#B91C1C", value: [0xb9 / 255, 0x1c / 255, 0x1c / 255] },
@@ -32,6 +37,24 @@ export const TEXT_COLOR_PRESETS: ReadonlyArray<{
 /** Default text color when no `style.color` is set. Black — matches
  *  prior hardcoded behavior so existing inserts/edits stay byte-identical. */
 export const DEFAULT_TEXT_COLOR: AnnotationColor = [0, 0, 0];
+
+/** Preset palette for the highlight-tool color picker. Light /
+ *  highlighter-style colors so a marker over black text keeps the
+ *  text legible. Yellow first since that's the conventional highlight
+ *  default and matches `DEFAULT_HIGHLIGHT_COLOR`. The remaining seven
+ *  are Tailwind-200 level for tonal consistency, frequency-ordered. */
+export const HIGHLIGHT_COLOR_PRESETS: ReadonlyArray<ColorPreset> = [
+  // [1, 0.92, 0.23] = #FFEB3B — matches the legacy DEFAULT_HIGHLIGHT_COLOR
+  // exactly so newly-defaulted highlights show as the active preset.
+  { label: "Yellow", hex: "#FFEB3B", value: [1, 0.92, 0.23] },
+  { label: "Green", hex: "#BBF7D0", value: [0xbb / 255, 0xf7 / 255, 0xd0 / 255] },
+  { label: "Pink", hex: "#FBCFE8", value: [0xfb / 255, 0xcf / 255, 0xe8 / 255] },
+  { label: "Orange", hex: "#FED7AA", value: [0xfe / 255, 0xd7 / 255, 0xaa / 255] },
+  { label: "Blue", hex: "#BFDBFE", value: [0xbf / 255, 0xdb / 255, 0xfe / 255] },
+  { label: "Cyan", hex: "#A5F3FC", value: [0xa5 / 255, 0xf3 / 255, 0xfc / 255] },
+  { label: "Purple", hex: "#E9D5FF", value: [0xe9 / 255, 0xd5 / 255, 0xff / 255] },
+  { label: "Red", hex: "#FECACA", value: [0xfe / 255, 0xca / 255, 0xca / 255] },
+];
 
 /** Parse `#RRGGBB` or `#RGB` into a 0..1 RGB triple. Returns null on
  *  malformed input (not a hex string, wrong length, non-hex chars) so

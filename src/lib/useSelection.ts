@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { Annotation } from "./annotations";
 import type { ImageInsertion } from "./insertions";
 import type { Redaction } from "./redactions";
 import type { ImageMoveValue } from "../components/PdfPage";
@@ -18,12 +19,14 @@ export function useSelection({
   setInsertedImages,
   setShapeDeletes,
   setRedactions,
+  setAnnotations,
 }: {
   recordHistory: (coalesceKey: string | null) => void;
   setImageMoves: React.Dispatch<React.SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
   setInsertedImages: React.Dispatch<React.SetStateAction<Map<string, ImageInsertion[]>>>;
   setShapeDeletes: React.Dispatch<React.SetStateAction<Map<string, Set<string>>>>;
   setRedactions: React.Dispatch<React.SetStateAction<Map<string, Redaction[]>>>;
+  setAnnotations: React.Dispatch<React.SetStateAction<Map<string, Annotation[]>>>;
 }) {
   const [selection, setSelection] = useState<Selection>(null);
 
@@ -38,6 +41,9 @@ export function useSelection({
   }, []);
   const onSelectRedaction = useCallback((slotId: string, id: string) => {
     setSelection({ kind: "redaction", slotId, id });
+  }, []);
+  const onSelectHighlight = useCallback((slotId: string, id: string) => {
+    setSelection({ kind: "highlight", slotId, id });
   }, []);
 
   const onDeleteSelection = useCallback(() => {
@@ -76,9 +82,26 @@ export function useSelection({
         next.set(selection.slotId, arr);
         return next;
       });
+    } else if (selection.kind === "highlight") {
+      // Highlights live in the same per-slot annotations array as
+      // comments and ink — drop the matching id.
+      setAnnotations((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(selection.slotId) ?? []).filter((a) => a.id !== selection.id);
+        next.set(selection.slotId, arr);
+        return next;
+      });
     }
     setSelection(null);
-  }, [selection, recordHistory, setImageMoves, setInsertedImages, setShapeDeletes, setRedactions]);
+  }, [
+    selection,
+    recordHistory,
+    setImageMoves,
+    setInsertedImages,
+    setShapeDeletes,
+    setRedactions,
+    setAnnotations,
+  ]);
 
   useEffect(() => {
     if (!selection) return;
@@ -119,6 +142,7 @@ export function useSelection({
     onSelectInsertedImage,
     onSelectShape,
     onSelectRedaction,
+    onSelectHighlight,
     onDeleteSelection,
   };
 }

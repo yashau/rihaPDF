@@ -1,3 +1,4 @@
+import { Button } from "@heroui/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -6,28 +7,43 @@ import {
   colorToHex,
   colorsEqual,
   hexToColor,
+  type ColorPreset,
 } from "../../lib/color";
 import type { AnnotationColor } from "../../lib/annotations";
 import { useIsMobile } from "../../lib/useMediaQuery";
 
-/** Format-toolbar text-color picker. The trigger is a small swatch
- *  button (filled with the current color); clicking opens a popover
- *  with the preset palette + a hex input.
+/** Universal color picker — the trigger button IS the swatch (whole
+ *  face filled with the current color), clicking opens a popover with
+ *  a preset grid + a hex input.
  *
  *  Why a custom popover instead of HeroUI's: HeroUI's color picker
  *  pulled in enough of react-aria's overlay stack to cause noticeable
  *  jank on a fast machine. This is presets-first anyway — users who
- *  want arbitrary colors type a hex. */
+ *  want arbitrary colors type a hex.
+ *
+ *  Reused by the format toolbar (text colors, dark presets), the ink
+ *  toolbar (any color), and the highlight toolbar (light presets) —
+ *  the `presets` prop swaps the swatch grid; the trigger renders the
+ *  CURRENT value regardless. */
 export function ColorPickerPopover({
   value,
   onChange,
+  presets = TEXT_COLOR_PRESETS,
+  ariaLabel = "Color",
 }: {
-  /** Current text color, 0..1 RGB. Undefined means "no override" —
-   *  the swatch renders black (the default) and the grid's Black
-   *  preset shows as active. */
+  /** Current color, 0..1 RGB. Undefined means "no override" — the
+   *  swatch renders black (the default) and the grid's Black preset
+   *  shows as active when present. */
   value: AnnotationColor | undefined;
   /** Called when the user picks a preset or commits a valid hex. */
   onChange: (next: AnnotationColor) => void;
+  /** Swatch palette for the popover. Defaults to the dark text-color
+   *  preset for backward compatibility with the format toolbar. */
+  presets?: ReadonlyArray<ColorPreset>;
+  /** aria-label for the trigger button — varies by use site so the
+   *  same component can describe itself as "Text color" / "Stroke
+   *  color" / "Highlight color" without parent boilerplate. */
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -110,47 +126,58 @@ export function ColorPickerPopover({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div id={labelId} className="sr-only">
-        Text color
+        {ariaLabel}
       </div>
-      <SwatchGrid value={value} onPick={(c) => { onChange(c); setOpen(false); }} isMobile={isMobile} />
+      <SwatchGrid
+        value={value}
+        presets={presets}
+        onPick={(c) => {
+          onChange(c);
+          setOpen(false);
+        }}
+        isMobile={isMobile}
+      />
       <HexInput value={value} onCommit={onChange} />
     </div>
   ) : null;
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Text color"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        // Match the size + padding of the HeroUI iconOnly buttons
-        // adjacent to us so the toolbar row stays tonally consistent.
-        className="inline-flex items-center justify-center rounded border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
-        style={{
-          width: 32,
-          height: 32,
-          padding: 4,
-        }}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {/* "A" with a colored bar underneath — the standard
-            text-color affordance from Word / Docs. */}
-        <span aria-hidden style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, lineHeight: "12px" }}>A</span>
+      {/* Wrapper span owns the bounding-rect ref for popover anchoring
+          — HeroUI's Button doesn't forward refs to the DOM element in a
+          typed way, and the wrapper has the same box anyway. */}
+      <span ref={triggerRef as React.RefObject<HTMLSpanElement>} style={{ display: "inline-flex" }}>
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          aria-label={ariaLabel}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onPress={() => setOpen((v) => !v)}
+          // Same focus-preservation pattern as every other toolbar
+          // button: don't let the click steal focus from the editor
+          // input that mounted us.
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {/* U+25A0 BLACK SQUARE rendered in the active color — sits
+              inside the standard HeroUI button frame so the toolbar
+              row stays tonally consistent with the B/I/U buttons. The
+              text-shadow gives a near-white swatch a tiny dark edge so
+              it doesn't disappear against the button's white fill. */}
           <span
+            aria-hidden
             style={{
-              width: 16,
-              height: 4,
-              background: swatchCss,
-              borderRadius: 1,
-              boxShadow: "0 0 0 1px rgba(0,0,0,0.15) inset",
+              color: swatchCss,
+              fontSize: 18,
+              lineHeight: 1,
+              textShadow: "0 0 1px rgba(0,0,0,0.35)",
             }}
-          />
-        </span>
-      </button>
+          >
+            ■
+          </span>
+        </Button>
+      </span>
       {popover && typeof document !== "undefined" ? createPortal(popover, document.body) : popover}
     </>
   );
@@ -158,10 +185,12 @@ export function ColorPickerPopover({
 
 function SwatchGrid({
   value,
+  presets,
   onPick,
   isMobile,
 }: {
   value: AnnotationColor | undefined;
+  presets: ReadonlyArray<ColorPreset>;
   onPick: (c: AnnotationColor) => void;
   isMobile: boolean;
 }) {
@@ -169,7 +198,7 @@ function SwatchGrid({
   return (
     <div
       role="listbox"
-      aria-label="Preset text colors"
+      aria-label="Preset colors"
       style={{
         display: "grid",
         // 4 columns on both — desktop fits 4×2 in ~120px, mobile in ~180px.
@@ -178,7 +207,7 @@ function SwatchGrid({
         marginBottom: 8,
       }}
     >
-      {TEXT_COLOR_PRESETS.map((p) => {
+      {presets.map((p) => {
         const active = colorsEqual(value, p.value);
         return (
           <button

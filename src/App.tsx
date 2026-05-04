@@ -12,11 +12,14 @@ import {
   COMMENT_DEFAULT_HEIGHT,
   COMMENT_DEFAULT_WIDTH,
   DEFAULT_COMMENT_COLOR,
+  DEFAULT_HIGHLIGHT_COLOR,
   DEFAULT_INK_COLOR,
   newAnnotationId,
 } from "./lib/annotations";
 import type { Redaction } from "./lib/redactions";
 import type { EditValue, ImageMoveValue } from "./components/PdfPage";
+import { CommentToolbar } from "./components/CommentToolbar";
+import { HighlightToolbar } from "./components/HighlightToolbar";
 import { InkToolbar } from "./components/InkToolbar";
 import { PageSidebar } from "./components/PageSidebar";
 import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
@@ -105,6 +108,15 @@ export default function App() {
    *  stroke at commit time. */
   const [inkColor, setInkColor] = useState<AnnotationColor>(DEFAULT_INK_COLOR);
   const [inkThickness, setInkThickness] = useState<number>(1.5);
+  /** Active highlight color. Same lift-to-App rationale as ink — the
+   *  HighlightToolbar reads/writes here, and PdfPage's
+   *  `addHighlightForRun` stamps it onto each new highlight. */
+  const [highlightColor, setHighlightColor] = useState<AnnotationColor>(DEFAULT_HIGHLIGHT_COLOR);
+  /** Active comment box-background color. Comment text stays black —
+   *  this only paints the rect behind it (= the /FreeText /C array
+   *  on save). The CommentToolbar reads/writes here; the per-page
+   *  comment-creation handler stamps it on each new comment. */
+  const [commentColor, setCommentColor] = useState<AnnotationColor>(DEFAULT_COMMENT_COLOR);
   /** Per-slot net-new text/image insertions — separate from edits
    *  because they don't reference an existing run/image. Keyed by
    *  slotId so an insertion follows its slot through reorder. */
@@ -215,12 +227,14 @@ export default function App() {
     onSelectInsertedImage,
     onSelectShape,
     onSelectRedaction,
+    onSelectHighlight,
   } = useSelection({
     recordHistory,
     setImageMoves,
     setInsertedImages,
     setShapeDeletes,
     setRedactions,
+    setAnnotations,
   });
   useEffect(() => {
     setSelectionRef.current = setSelection;
@@ -465,7 +479,7 @@ export default function App() {
               pdfY: pdfY - COMMENT_DEFAULT_HEIGHT,
               pdfWidth: COMMENT_DEFAULT_WIDTH,
               pdfHeight: COMMENT_DEFAULT_HEIGHT,
-              color: DEFAULT_COMMENT_COLOR,
+              color: commentColor,
               text: "",
               fontSize: COMMENT_DEFAULT_FONT_SIZE,
             } satisfies Annotation,
@@ -476,7 +490,7 @@ export default function App() {
         setTool("select");
       }
     },
-    [tool, pendingImage, recordHistory],
+    [tool, pendingImage, commentColor, recordHistory],
   );
 
   /** Update an inserted text box (text/style/position changes). When
@@ -980,12 +994,12 @@ export default function App() {
         mobileHeaderRef={mobileHeaderRef}
         slotsLength={slots.length}
       />
-      {/* Ink-tool options bar. Desktop: a second header row attached
-          below the main toolbar so the color / thickness controls sit
-          near the Draw button that activated the tool. Mobile: a
-          bottom-pinned strip that stays above the soft keyboard. The
-          InkToolbar component owns the mobile-vs-desktop branch
-          internally; we only mount it when the tool is active. */}
+      {/* Tool-options bars. Desktop: an attached second header row
+          below the main toolbar so the controls sit near the tool
+          button that activated them. Mobile: a fixed bottom strip
+          above the soft keyboard. Each toolbar owns the mobile/
+          desktop branch internally; we only mount one at a time
+          based on the active tool. */}
       {tool === "ink" ? (
         <InkToolbar
           color={inkColor}
@@ -993,6 +1007,10 @@ export default function App() {
           onColorChange={setInkColor}
           onThicknessChange={setInkThickness}
         />
+      ) : tool === "highlight" ? (
+        <HighlightToolbar color={highlightColor} onColorChange={setHighlightColor} />
+      ) : tool === "comment" ? (
+        <CommentToolbar color={commentColor} onColorChange={setCommentColor} />
       ) : null}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar is a static left rail on desktop and an overlay
@@ -1075,6 +1093,7 @@ export default function App() {
               tool={tool}
               inkColor={inkColor}
               inkThickness={inkThickness}
+              highlightColor={highlightColor}
               selection={selection}
               renderScale={RENDER_SCALE}
               onEdit={onEdit}
@@ -1094,6 +1113,7 @@ export default function App() {
               onRedactionAdd={onRedactionAdd}
               onRedactionChange={onRedactionChange}
               onSelectRedaction={onSelectRedaction}
+              onSelectHighlight={onSelectHighlight}
             />
           )}
         </main>

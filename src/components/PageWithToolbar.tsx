@@ -21,11 +21,13 @@ export function PageWithToolbar({
   tool,
   inkColor,
   inkThickness,
+  highlightColor,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
   selectedShapeId,
   selectedRedactionId,
+  selectedHighlightId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -44,6 +46,7 @@ export function PageWithToolbar({
   onRedactionAdd,
   onRedactionChange,
   onSelectRedaction,
+  onSelectHighlight,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -63,11 +66,13 @@ export function PageWithToolbar({
   tool: ToolMode;
   inkColor: AnnotationColor;
   inkThickness: number;
+  highlightColor: AnnotationColor;
   editingId: string | null;
   selectedImageId: string | null;
   selectedInsertedImageId: string | null;
   selectedShapeId: string | null;
   selectedRedactionId: string | null;
+  selectedHighlightId: string | null;
   deletedShapeIds: Set<string>;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
@@ -86,6 +91,7 @@ export function PageWithToolbar({
   onRedactionAdd: (redaction: Redaction) => void;
   onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (id: string) => void;
+  onSelectHighlight: (id: string) => void;
   crossPageArrivals: CrossPageArrival[];
   crossPageImageArrivals: CrossPageImageArrival[];
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
@@ -110,11 +116,13 @@ export function PageWithToolbar({
         tool={tool}
         inkColor={inkColor}
         inkThickness={inkThickness}
+        highlightColor={highlightColor}
         editingId={editingId}
         selectedImageId={selectedImageId}
         selectedInsertedImageId={selectedInsertedImageId}
         selectedShapeId={selectedShapeId}
         selectedRedactionId={selectedRedactionId}
+        selectedHighlightId={selectedHighlightId}
         deletedShapeIds={deletedShapeIds}
         onEdit={onEdit}
         onImageMove={onImageMove}
@@ -133,6 +141,7 @@ export function PageWithToolbar({
         onRedactionAdd={onRedactionAdd}
         onRedactionChange={onRedactionChange}
         onSelectRedaction={onSelectRedaction}
+        onSelectHighlight={onSelectHighlight}
         crossPageArrivals={crossPageArrivals}
         crossPageImageArrivals={crossPageImageArrivals}
         onSourceEdit={onSourceEdit}
