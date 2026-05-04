@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Modal } from "@heroui/react";
+import { Globe, Mail } from "lucide-react";
 import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "../lib/polyfills";
 
 type BrowserId = "ios-safari" | "safari" | "firefox" | "chromium";
@@ -120,11 +121,11 @@ export function AboutModal({
         <Modal.Container size="md">
           <Modal.Dialog>
             <Modal.Header>
-              <Modal.Heading>rihaPDF</Modal.Heading>
-              <Modal.CloseTrigger />
+              <Modal.CloseTrigger className="ml-auto" />
             </Modal.Header>
             <Modal.Body className="space-y-5 text-sm text-zinc-800 dark:text-zinc-200">
               <section className="flex flex-col items-center text-center gap-3">
+                <Modal.Heading className="text-xl font-semibold">rihaPDF</Modal.Heading>
                 <img src="/riha-logo.png" alt="" className="h-28 w-auto" />
                 <p>
                   Browser-based PDF editor for Dhivehi / Thaana, with full RTL support.{" "}
@@ -143,11 +144,12 @@ export function AboutModal({
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
                 <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
-                  <li>Edit text in place — RTL/LTR, italic, underline, strikethrough</li>
+                  <li>Edit text in place — RTL/LTR, bold, italic, underline, strikethrough</li>
                   <li>Insert and move text or images; delete any object</li>
                   <li>Highlight, comment, and ink annotations</li>
+                  <li>Redact — no recoverable text under the rect</li>
                   <li>Reorder, delete, or insert pages (blank or from another PDF)</li>
-                  <li>Undo / redo, dark mode, mobile Thaana keyboard</li>
+                  <li>Phonetic Latin → Thaana keyboard, on-screen on mobile</li>
                   <li>Saved PDFs keep real, selectable, searchable text</li>
                 </ul>
               </section>
@@ -164,27 +166,27 @@ export function AboutModal({
 
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Author</h3>
-                <p className="text-zinc-700 dark:text-zinc-300">Ibrahim Yashau</p>
-                <ul className="mt-1 space-y-0.5">
-                  <li>
-                    <a
-                      href="https://yashau.com"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      yashau.com
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="mailto:ibrahim@yashau.com"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      ibrahim@yashau.com
-                    </a>
-                  </li>
-                </ul>
+                <p className="text-zinc-700 dark:text-zinc-300 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>Ibrahim Yashau</span>
+                  <span aria-hidden>·</span>
+                  <a
+                    href="https://yashau.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Globe size={14} aria-hidden />
+                    yashau.com
+                  </a>
+                  <span aria-hidden>·</span>
+                  <a
+                    href="mailto:ibrahim@yashau.com"
+                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Mail size={14} aria-hidden />
+                    ibrahim@yashau.com
+                  </a>
+                </p>
               </section>
 
               <BrowserSupportSection />
