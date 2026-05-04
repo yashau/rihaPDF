@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { colorToCss } from "../../lib/color";
 import type { RenderedPage, TextRun } from "../../lib/pdf";
 import type { ToolMode } from "../../App";
 import { EditField } from "./EditField";
@@ -34,6 +35,7 @@ export function SourceRunOverlay({
   onEdit,
   onEditingChange,
   addHighlightForRun,
+  addRedactionForRun,
 }: {
   run: TextRun;
   page: RenderedPage;
@@ -54,6 +56,7 @@ export function SourceRunOverlay({
   onEdit: (runId: string, value: EditValue) => void;
   onEditingChange: (next: string | null) => void;
   addHighlightForRun: (run: TextRun) => void;
+  addRedactionForRun: (run: TextRun) => void;
 }) {
   // Deleted runs have no overlay at all — the preview canvas already
   // stripped them; with no overlay there's nothing to re-grab, which
@@ -147,7 +150,11 @@ export function SourceRunOverlay({
             ? "1px dashed rgba(255, 180, 30, 0.9)"
             : "1px solid rgba(255, 200, 60, 0.5)",
           pointerEvents: "auto",
-          cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
+          cursor: isDragging
+            ? "grabbing"
+            : tool === "highlight" || tool === "redact"
+              ? "text"
+              : "grab",
           display: "flex",
           alignItems: "center",
           overflow: "visible",
@@ -188,6 +195,10 @@ export function SourceRunOverlay({
             addHighlightForRun(run);
             return;
           }
+          if (tool === "redact") {
+            addRedactionForRun(run);
+            return;
+          }
           onEditingChange(run.id);
         }}
         onKeyDown={(e) => {
@@ -196,6 +207,10 @@ export function SourceRunOverlay({
             e.stopPropagation();
             if (tool === "highlight") {
               addHighlightForRun(run);
+              return;
+            }
+            if (tool === "redact") {
+              addRedactionForRun(run);
               return;
             }
             onEditingChange(run.id);
@@ -214,7 +229,7 @@ export function SourceRunOverlay({
               style.underline ?? run.underline ?? false,
               style.strikethrough ?? run.strikethrough ?? false,
             ),
-            color: "black",
+            color: colorToCss(style.color) ?? "black",
             width: "100%",
             whiteSpace: "pre",
             paddingLeft: padX,
@@ -263,7 +278,11 @@ export function SourceRunOverlay({
         // wrapper's overflow:hidden clip. Gesture-start alone keeps
         // the span visible so a no-motion click reaches it.
         visibility: isDragging && drag?.moved ? "hidden" : "visible",
-        cursor: isDragging ? "grabbing" : tool === "highlight" ? "text" : "grab",
+        cursor: isDragging
+          ? "grabbing"
+          : tool === "highlight" || tool === "redact"
+            ? "text"
+            : "grab",
         // `pan-y pinch-zoom` so the page scrolls on a quick finger
         // swipe; the run is only claimed after the 400ms touch-hold
         // gate in useDragGesture.
@@ -283,6 +302,10 @@ export function SourceRunOverlay({
           addHighlightForRun(run);
           return;
         }
+        if (tool === "redact") {
+          addRedactionForRun(run);
+          return;
+        }
         onEditingChange(run.id);
       }}
       onKeyDown={(e) => {
@@ -291,6 +314,10 @@ export function SourceRunOverlay({
           e.stopPropagation();
           if (tool === "highlight") {
             addHighlightForRun(run);
+            return;
+          }
+          if (tool === "redact") {
+            addRedactionForRun(run);
             return;
           }
           onEditingChange(run.id);

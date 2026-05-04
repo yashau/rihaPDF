@@ -10,6 +10,7 @@ import {
   Pencil,
   Redo2,
   Save,
+  Square,
   Type,
   Undo2,
 } from "lucide-react";
@@ -231,6 +232,20 @@ function DesktopHeader({
         </Button>
         <Button
           size="sm"
+          variant={tool === "redact" ? "primary" : "ghost"}
+          isDisabled={busy || !hasSources}
+          onPress={() => {
+            setTool((t) => (t === "redact" ? "select" : "redact"));
+            setPendingImage(null);
+          }}
+          aria-label="Redact"
+          data-testid="tool-redact"
+        >
+          <Square size={14} aria-hidden fill="currentColor" />
+          Redact
+        </Button>
+        <Button
+          size="sm"
           variant={tool === "comment" ? "primary" : "ghost"}
           isDisabled={busy || !hasSources}
           onPress={() => {
@@ -294,7 +309,6 @@ function MobileHeader({
   imageFileInputRef,
   onAboutOpen,
   hasSources,
-  toolTip,
   mobileSidebarOpen,
   setMobileSidebarOpen,
   mobileHeaderRef,
@@ -335,8 +349,7 @@ function MobileHeader({
           </h1>
         </button>
         {/* Filename slot doubles as the open-file affordance.
-            Three render branches:
-              - mid-action: plain hint text (e.g. "Tap a page…").
+            Two render branches:
               - file loaded: subtle tappable filename with a
                 folder-icon prefix to hint it swaps files.
               - empty: the primary "Open" Button itself sits in
@@ -344,12 +357,12 @@ function MobileHeader({
                 button so it pulls the eye on first paint.
             The standalone Open button is omitted from the
             second row on mobile in all branches; this slot is
-            the only path. */}
-        {toolTip ? (
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate min-w-0 flex-1">
-            {toolTip}
-          </span>
-        ) : primaryFilename ? (
+            the only path. The mid-tool tip text used to live
+            here too — dropped to keep this row stable while a
+            tool is active (the icon-only tool button is its own
+            cue, and the row was getting crowded once Undo/Redo
+            moved up here). */}
+        {primaryFilename ? (
           <button
             type="button"
             onClick={onOpen}
@@ -377,21 +390,47 @@ function MobileHeader({
             </Button>
           </div>
         )}
-        {/* Save sits adjacent to the filename so the two
-            file-level controls cluster on the first row.
-            Rendered only when a file is loaded; in the empty
-            state the Open button takes the whole slot. */}
+        {/* Save + Undo/Redo cluster: file-level controls grouped
+            on the first row so the second row only carries the
+            sidebar toggle + tool palette. Undo/Redo were on row
+            2; moved up here to free row-2 space for an extra
+            tool (Redact). All three are gated on `primaryFilename`
+            because none make sense before a file is loaded. */}
         {primaryFilename && (
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={saveDisabled}
-            onPress={onSave}
-            aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
-          >
-            <Save size={14} aria-hidden />
-            Save
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={saveDisabled}
+              onPress={onSave}
+              aria-label={`Save (${totalChangeCount} change${totalChangeCount === 1 ? "" : "s"})`}
+            >
+              <Save size={14} aria-hidden />
+              Save
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              isDisabled={busy || !canUndo}
+              onPress={onUndo}
+              aria-label="Undo"
+              data-testid="undo-mobile"
+            >
+              <Undo2 size={14} aria-hidden />
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              isDisabled={busy || !canRedo}
+              onPress={onRedo}
+              aria-label="Redo"
+              data-testid="redo-mobile"
+            >
+              <Redo2 size={14} aria-hidden />
+            </Button>
+          </>
         )}
         <div className="shrink-0">
           <ThemeToggle mode={themeMode} onChange={setThemeMode} cycle />
@@ -409,28 +448,6 @@ function MobileHeader({
           data-testid="mobile-sidebar-toggle"
         >
           <PanelLeft size={14} aria-hidden />
-        </Button>
-        <Button
-          isIconOnly
-          size="sm"
-          variant="ghost"
-          isDisabled={busy || !canUndo}
-          onPress={onUndo}
-          aria-label="Undo"
-          data-testid="undo-mobile"
-        >
-          <Undo2 size={14} aria-hidden />
-        </Button>
-        <Button
-          isIconOnly
-          size="sm"
-          variant="ghost"
-          isDisabled={busy || !canRedo}
-          onPress={onRedo}
-          aria-label="Redo"
-          data-testid="redo-mobile"
-        >
-          <Redo2 size={14} aria-hidden />
         </Button>
         <div className="flex items-center gap-1 ml-1 pl-1 border-l border-zinc-200 dark:border-zinc-800">
           <Button
@@ -489,6 +506,19 @@ function MobileHeader({
             aria-label="Highlight"
           >
             <Highlighter size={14} aria-hidden />
+          </Button>
+          <Button
+            isIconOnly
+            size="sm"
+            variant={tool === "redact" ? "primary" : "ghost"}
+            isDisabled={busy || !hasSources}
+            onPress={() => {
+              setTool((t) => (t === "redact" ? "select" : "redact"));
+              setPendingImage(null);
+            }}
+            aria-label="Redact"
+          >
+            <Square size={14} aria-hidden fill="currentColor" />
           </Button>
           <Button
             isIconOnly

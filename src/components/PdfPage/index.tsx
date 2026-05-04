@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { colorToCss } from "../../lib/color";
 import type { RenderedPage, TextRun } from "../../lib/pdf";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
 import {
@@ -9,8 +10,15 @@ import {
   lineMarkupRect,
   newAnnotationId,
 } from "../../lib/annotations";
+import { newRedactionId, REDACTION_LINE_PAD, type Redaction } from "../../lib/redactions";
 import type { ToolMode } from "../../App";
-import { ImageOverlay, InsertedImageOverlay, InsertedTextOverlay, ShapeOverlay } from "./overlays";
+import {
+  ImageOverlay,
+  InsertedImageOverlay,
+  InsertedTextOverlay,
+  RedactionOverlay,
+  ShapeOverlay,
+} from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { CrossPageImageArrivalOverlay, CrossPageTextArrivalOverlay } from "./arrivals";
 import { SourceRunOverlay } from "./SourceRunOverlay";
@@ -45,6 +53,7 @@ type Props = {
   insertedTexts: TextInsertion[];
   insertedImages: ImageInsertion[];
   annotations: Annotation[];
+  redactions: Redaction[];
   /** Live-preview canvas — when present, paint this in place of
    *  page.canvas. The preview has the currently-edited runs and moved
    *  images stripped from its content stream so HTML overlays don't
@@ -74,6 +83,8 @@ type Props = {
   selectedInsertedImageId: string | null;
   /** ID of the source vector shape currently selected on this page. */
   selectedShapeId: string | null;
+  /** ID of the redaction currently selected on this page. */
+  selectedRedactionId: string | null;
   /** Set of shape ids on this page already flagged for delete — their
    *  overlays are hidden so the user can't re-grab them. */
   deletedShapeIds: Set<string>;
@@ -85,6 +96,9 @@ type Props = {
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onRedactionAdd: (redaction: Redaction) => void;
+  onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
+  onSelectRedaction: (id: string) => void;
   /** Source-page text runs that have been moved cross-page and now
    *  visually live on THIS slot. Built by PageList from the source-
    *  side `edits` map. Rendered as non-interactive styled spans at
@@ -117,12 +131,14 @@ export function PdfPage({
   insertedTexts,
   insertedImages,
   annotations,
+  redactions,
   previewCanvas,
   tool,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
   selectedShapeId,
+  selectedRedactionId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -138,6 +154,9 @@ export function PdfPage({
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
+  onRedactionAdd,
+  onRedactionChange,
+  onSelectRedaction,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -275,6 +294,31 @@ export function PdfPage({
         { x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly },
       ],
       color: DEFAULT_HIGHLIGHT_COLOR,
+    });
+  };
+
+  /** Drop a redaction rect over a single run. The default size comes
+   *  from `lineMarkupRect` with `REDACTION_LINE_PAD` — generous
+   *  enough that no glyph extents leak past the box on typical
+   *  Thaana/Latin runs. The user can drag corners to tighten or
+   *  expand after the click; the save pipeline strips whatever runs
+   *  intersect the FINAL rect (not the originally-clicked run), so
+   *  resize is meaningful, not cosmetic. */
+  const addRedactionForRun = (run: TextRun) => {
+    const [llx, lly, urx, ury] = lineMarkupRect(
+      run,
+      page.scale,
+      page.viewHeight,
+      REDACTION_LINE_PAD,
+    );
+    onRedactionAdd({
+      id: newRedactionId(),
+      sourceKey,
+      pageIndex,
+      pdfX: llx,
+      pdfY: lly,
+      pdfWidth: urx - llx,
+      pdfHeight: ury - lly,
     });
   };
 
@@ -434,6 +478,7 @@ export function PdfPage({
               onEdit={onEdit}
               onEditingChange={setEditingId}
               addHighlightForRun={addHighlightForRun}
+              addRedactionForRun={addRedactionForRun}
             />
           ))}
           {page.images.map((img) => {
@@ -497,6 +542,21 @@ export function PdfPage({
               onChange={(patch) => onImageInsertChange(ins.id, patch)}
               onDelete={() => onImageInsertDelete(ins.id)}
               onSelect={() => onSelectInsertedImage(ins.id)}
+            />
+          ))}
+          {/* Redactions — opaque black rectangles. Preview-only here:
+            the underlying glyphs are still in the live canvas; the
+            save pipeline strips them at output time. Click to select,
+            then drag corners to resize or Del to remove. */}
+          {redactions.map((r) => (
+            <RedactionOverlay
+              key={r.id}
+              redaction={r}
+              page={page}
+              displayScale={displayScale}
+              isSelected={selectedRedactionId === r.id}
+              onChange={(patch) => onRedactionChange(r.id, patch)}
+              onSelect={() => onSelectRedaction(r.id)}
             />
           ))}
           {/* Cross-page-arrived runs: source-page text the user dragged
@@ -571,6 +631,7 @@ export function PdfPage({
             const underline = style.underline ?? dragRun.underline ?? false;
             const strikethrough = style.strikethrough ?? dragRun.strikethrough ?? false;
             const dir = style.dir ?? "auto";
+            const cssColor = colorToCss(style.color) ?? "black";
             // The portal sits in document.body where there's no CSS
             // transform — convert the natural-pixel font/line-height
             // values to screen pixels via the captured originDisplayScale.
@@ -610,7 +671,7 @@ export function PdfPage({
                     fontWeight: bold ? 700 : 400,
                     fontStyle: italic ? "italic" : "normal",
                     textDecoration: cssTextDecoration(underline, strikethrough),
-                    color: "black",
+                    color: cssColor,
                     whiteSpace: "pre",
                     width: "100%",
                     paddingLeft: 2 * ds,

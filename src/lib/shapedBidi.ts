@@ -101,6 +101,10 @@ export type MixedShapedOptions = {
   /** Paragraph base direction. Undefined → bidi-js auto-detects from
    *  the first strong character. */
   baseDir?: "ltr" | "rtl";
+  /** Fill color in 0..1 RGB. Applied to every emitted segment — both
+   *  the HarfBuzz-shaped op blocks and the standard-14 `drawText`
+   *  fallback. Undefined renders black (the default). */
+  color?: [number, number, number];
 };
 
 type Segment = {
@@ -149,18 +153,20 @@ export async function drawMixedShapedText(
         x: xPt,
         y: opts.y,
         size: opts.size,
+        color: opts.color,
       });
       page.pushOperators(...ops);
     } else {
       // Standard-14 fallback for Latin segments with no TTF bytes —
       // pdf-lib emits its own BT/Tj/ET via fontkit's layout. Latin
       // shaping is shallow enough that fontkit handles it correctly.
+      const c = opts.color ?? [0, 0, 0];
       page.drawText(seg.text, {
         x: xPt,
         y: opts.y,
         size: opts.size,
         font: f.font,
-        color: rgb(0, 0, 0),
+        color: rgb(c[0], c[1], c[2]),
       });
     }
     cursorPt += seg.widthPt;

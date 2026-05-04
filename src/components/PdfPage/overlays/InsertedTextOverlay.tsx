@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { AnnotationColor } from "../../../lib/annotations";
+import { colorToCss } from "../../../lib/color";
 import type { RenderedPage } from "../../../lib/pdf";
 import type { TextInsertion } from "../../../lib/insertions";
 import { useThaanaTransliteration } from "../../../lib/thaanaKeyboard";
@@ -70,6 +72,10 @@ export function InsertedTextOverlay({
   const italic = !!style.italic;
   const underline = !!style.underline;
   const strikethrough = !!style.strikethrough;
+  // Default to black when no color override is set — same as the
+  // pre-color-picker hardcoded behavior. `colorToCss` returns null
+  // for undefined so the `??` lets us fall back inline.
+  const cssColor = colorToCss(style.color) ?? "black";
   const fontSizePt = ins.fontSize;
   const fontSizePx = fontSizePt * page.scale;
   // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
@@ -115,6 +121,7 @@ export function InsertedTextOverlay({
     strikethrough?: boolean;
     /** `null` clears an explicit dir back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
+    color?: AnnotationColor;
   }) => {
     // fontSize lives outside `style` (it's a top-level field on the
     // insertion since it's also used to derive the box height); split
@@ -130,6 +137,7 @@ export function InsertedTextOverlay({
       if (patch.dir === null) delete nextStyle.dir;
       else nextStyle.dir = patch.dir;
     }
+    if (patch.color !== undefined) nextStyle.color = patch.color;
     const insPatch: Partial<TextInsertion> = { style: nextStyle };
     if (patch.fontSize !== undefined) insPatch.fontSize = patch.fontSize;
     onChange(insPatch);
@@ -206,6 +214,7 @@ export function InsertedTextOverlay({
           underline={underline}
           strikethrough={strikethrough}
           dir={style.dir}
+          color={style.color}
           thaanaInput={thaanaInput}
           onThaanaInputChange={setThaanaInput}
           onChange={(patch) => {
@@ -310,8 +319,9 @@ export function InsertedTextOverlay({
               background: "transparent",
               // Wrapper paints rgba(255,255,255,0.9) — without explicit
               // color, dark mode lets text inherit the page's near-white
-              // and the user types into invisible ink.
-              color: "black",
+              // and the user types into invisible ink. When the user
+              // picks a color the same property carries it.
+              color: cssColor,
               colorScheme: "light",
             }}
             onChange={(e) => onChange({ text: e.target.value })}
@@ -348,7 +358,7 @@ export function InsertedTextOverlay({
               textDecoration: cssTextDecoration(underline, strikethrough),
               paddingLeft: 4,
               paddingRight: 4,
-              color: "black",
+              color: cssColor,
               whiteSpace: "pre",
               width: "100%",
             }}
@@ -380,7 +390,7 @@ export function InsertedTextOverlay({
             textDecoration: cssTextDecoration(underline, strikethrough),
             paddingLeft: 4,
             paddingRight: 4,
-            color: "black",
+            color: cssColor,
             whiteSpace: "pre",
             width: "100%",
           }}

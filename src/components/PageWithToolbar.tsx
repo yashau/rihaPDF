@@ -3,6 +3,7 @@ import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation } from "../lib/annotations";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { RenderedPage } from "../lib/pdf";
+import type { Redaction } from "../lib/redactions";
 import type { ToolMode } from "../App";
 
 export function PageWithToolbar({
@@ -15,12 +16,14 @@ export function PageWithToolbar({
   insertedTexts,
   insertedImages,
   annotations,
+  redactions,
   previewCanvas,
   tool,
   editingId,
   selectedImageId,
   selectedInsertedImageId,
   selectedShapeId,
+  selectedRedactionId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -36,6 +39,9 @@ export function PageWithToolbar({
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
+  onRedactionAdd,
+  onRedactionChange,
+  onSelectRedaction,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -50,12 +56,14 @@ export function PageWithToolbar({
   insertedTexts: TextInsertion[];
   insertedImages: ImageInsertion[];
   annotations: Annotation[];
+  redactions: Redaction[];
   previewCanvas: HTMLCanvasElement | null;
   tool: ToolMode;
   editingId: string | null;
   selectedImageId: string | null;
   selectedInsertedImageId: string | null;
   selectedShapeId: string | null;
+  selectedRedactionId: string | null;
   deletedShapeIds: Set<string>;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
@@ -71,6 +79,9 @@ export function PageWithToolbar({
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
+  onRedactionAdd: (redaction: Redaction) => void;
+  onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
+  onSelectRedaction: (id: string) => void;
   crossPageArrivals: CrossPageArrival[];
   crossPageImageArrivals: CrossPageImageArrival[];
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
@@ -90,12 +101,14 @@ export function PageWithToolbar({
         insertedTexts={insertedTexts}
         insertedImages={insertedImages}
         annotations={annotations}
+        redactions={redactions}
         previewCanvas={previewCanvas}
         tool={tool}
         editingId={editingId}
         selectedImageId={selectedImageId}
         selectedInsertedImageId={selectedInsertedImageId}
         selectedShapeId={selectedShapeId}
+        selectedRedactionId={selectedRedactionId}
         deletedShapeIds={deletedShapeIds}
         onEdit={onEdit}
         onImageMove={onImageMove}
@@ -111,6 +124,9 @@ export function PageWithToolbar({
         onAnnotationAdd={onAnnotationAdd}
         onAnnotationChange={onAnnotationChange}
         onAnnotationDelete={onAnnotationDelete}
+        onRedactionAdd={onRedactionAdd}
+        onRedactionChange={onRedactionChange}
+        onSelectRedaction={onSelectRedaction}
         crossPageArrivals={crossPageArrivals}
         crossPageImageArrivals={crossPageImageArrivals}
         onSourceEdit={onSourceEdit}

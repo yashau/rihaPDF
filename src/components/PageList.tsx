@@ -6,6 +6,7 @@ import { blankRenderedPage, blankSourceKey } from "../lib/blankSource";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { LoadedSource } from "../lib/loadSource";
 import type { RenderedPage } from "../lib/pdf";
+import type { Redaction } from "../lib/redactions";
 import type { PageSlot } from "../lib/slots";
 import type { ToolMode } from "../App";
 
@@ -13,6 +14,7 @@ export type Selection =
   | { kind: "image"; slotId: string; imageId: string }
   | { kind: "insertedImage"; slotId: string; id: string }
   | { kind: "shape"; slotId: string; shapeId: string }
+  | { kind: "redaction"; slotId: string; id: string }
   | null;
 
 export function PageList({
@@ -23,6 +25,7 @@ export function PageList({
   insertedTexts,
   insertedImages,
   annotations,
+  redactions,
   shapeDeletes,
   previewCanvases,
   editingByPage,
@@ -43,6 +46,9 @@ export function PageList({
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
+  onRedactionAdd,
+  onRedactionChange,
+  onSelectRedaction,
 }: {
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
@@ -51,6 +57,7 @@ export function PageList({
   insertedTexts: Map<string, TextInsertion[]>;
   insertedImages: Map<string, ImageInsertion[]>;
   annotations: Map<string, Annotation[]>;
+  redactions: Map<string, Redaction[]>;
   shapeDeletes: Map<string, Set<string>>;
   previewCanvases: Map<string, HTMLCanvasElement>;
   editingByPage: Map<string, string>;
@@ -71,6 +78,9 @@ export function PageList({
   onAnnotationAdd: (slotId: string, annotation: Annotation) => void;
   onAnnotationChange: (slotId: string, id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (slotId: string, id: string) => void;
+  onRedactionAdd: (slotId: string, redaction: Redaction) => void;
+  onRedactionChange: (slotId: string, id: string, patch: Partial<Redaction>) => void;
+  onSelectRedaction: (slotId: string, id: string) => void;
 }) {
   // Group cross-page-targeted edits by their target slot so each
   // slot's PdfPage can render the runs that have ARRIVED on it
@@ -111,6 +121,7 @@ export function PageList({
         underline: style.underline ?? sourceRun.underline ?? false,
         strikethrough: style.strikethrough ?? sourceRun.strikethrough ?? false,
         dir: style.dir,
+        color: style.color,
       });
       arrivalsBySlot.set(edit.targetSlotId, arr);
     }
@@ -258,6 +269,8 @@ export function PageList({
           selection?.kind === "insertedImage" && selection.slotId === slot.id ? selection.id : null;
         const selectedShapeId =
           selection?.kind === "shape" && selection.slotId === slot.id ? selection.shapeId : null;
+        const selectedRedactionId =
+          selection?.kind === "redaction" && selection.slotId === slot.id ? selection.id : null;
         const deletedShapeIds = shapeDeletes.get(slot.id) ?? new Set<string>();
         return (
           <PageWithToolbar
@@ -271,12 +284,14 @@ export function PageList({
             insertedTexts={insertedTexts.get(slot.id) ?? []}
             insertedImages={insertedImages.get(slot.id) ?? []}
             annotations={annotations.get(slot.id) ?? []}
+            redactions={redactions.get(slot.id) ?? []}
             previewCanvas={previewKey ? (previewCanvases.get(previewKey) ?? null) : null}
             tool={tool}
             editingId={editingByPage.get(slot.id) ?? null}
             selectedImageId={selectedImageId}
             selectedInsertedImageId={selectedInsertedImageId}
             selectedShapeId={selectedShapeId}
+            selectedRedactionId={selectedRedactionId}
             deletedShapeIds={deletedShapeIds}
             onEdit={(runId, value) => onEdit(slot.id, runId, value)}
             onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
@@ -292,6 +307,9 @@ export function PageList({
             onAnnotationAdd={(a) => onAnnotationAdd(slot.id, a)}
             onAnnotationChange={(id, patch) => onAnnotationChange(slot.id, id, patch)}
             onAnnotationDelete={(id) => onAnnotationDelete(slot.id, id)}
+            onRedactionAdd={(r) => onRedactionAdd(slot.id, r)}
+            onRedactionChange={(id, patch) => onRedactionChange(slot.id, id, patch)}
+            onSelectRedaction={(id) => onSelectRedaction(slot.id, id)}
             crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
             crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
             onSourceEdit={onEdit}

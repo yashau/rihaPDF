@@ -41,10 +41,12 @@ import { DEFAULT_FONT_FAMILY, FONTS, loadFontBytes } from "./fonts";
 import type { PageSlot } from "./slots";
 import type { LoadedSource } from "./loadSource";
 import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "./blankSource";
-import type { Annotation } from "./annotations";
+import type { Annotation, AnnotationColor } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
+import { DEFAULT_TEXT_COLOR } from "./color";
+import { rectsOverlap, type Redaction } from "./redactions";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -68,6 +70,11 @@ export type EditStyle = {
    *  auto-detection misclassifies (e.g. an all-digit run that should
    *  render RTL inside a Dhivehi paragraph). */
   dir?: "rtl" | "ltr";
+  /** Fill color for the rendered text + decorations, as a 0..1 RGB
+   *  triple (same shape as `AnnotationColor`). Undefined renders
+   *  black — matches the prior hardcoded behavior so existing edits
+   *  with no `color` set save byte-identical to before. */
+  color?: AnnotationColor;
 };
 
 export type Edit = {
@@ -236,16 +243,22 @@ function drawDecorations(
     size: number;
     underline: boolean;
     strikethrough: boolean;
+    /** Stroke color for the rule(s); falls back to black when the
+     *  caller hasn't set a text color override. Kept aligned with
+     *  the text fill so a colored run gets matching decorations. */
+    color?: AnnotationColor;
   },
 ): void {
   const thickness = Math.max(0.5, opts.size * 0.05);
+  const c = opts.color ?? DEFAULT_TEXT_COLOR;
+  const lineColor = rgb(c[0], c[1], c[2]);
   if (opts.underline) {
     const underlineY = opts.y - Math.max(1, opts.size * 0.08);
     page.drawLine({
       start: { x: opts.x, y: underlineY },
       end: { x: opts.x + opts.width, y: underlineY },
       thickness,
-      color: rgb(0, 0, 0),
+      color: lineColor,
     });
   }
   if (opts.strikethrough) {
@@ -254,7 +267,7 @@ function drawDecorations(
       start: { x: opts.x, y: strikeY },
       end: { x: opts.x + opts.width, y: strikeY },
       thickness,
-      color: rgb(0, 0, 0),
+      color: lineColor,
     });
   }
 }
@@ -296,6 +309,11 @@ async function drawTextWithStyle(
      *  when primary is Faruma, or Faruma for Thaana spans when primary
      *  is Latin). Single-script paths ignore it. */
     getFont: EmbeddedFontFactory;
+    /** Fill color in 0..1 RGB; undefined renders black. Threaded into
+     *  every dispatch branch — pdf-lib's `drawText` takes it directly,
+     *  the shaped paths emit a non-stroking color setter inside their
+     *  BT/ET block (wrapped in q/Q so other content keeps its state). */
+    color?: AnnotationColor;
   },
 ): Promise<void> {
   const synth = opts.italic && !fontHasNativeItalic(opts.family);
@@ -305,6 +323,8 @@ async function drawTextWithStyle(
       concatTransformationMatrix(1, 0, ITALIC_SHEAR, 1, -ITALIC_SHEAR * opts.y, 0),
     );
   }
+  const c = opts.color ?? DEFAULT_TEXT_COLOR;
+  const drawColor = rgb(c[0], c[1], c[2]);
   if (opts.dir === undefined && isMixedScriptText(text)) {
     const pair = await resolveMixedFontPair(opts.family, opts.font, opts.fontBytes, opts.getFont);
     await drawMixedShapedText(page, {
@@ -314,6 +334,7 @@ async function drawTextWithStyle(
       x: opts.x,
       y: opts.y,
       size: opts.size,
+      color: opts.color,
     });
   } else if (opts.fontBytes) {
     await drawShapedText(page, {
@@ -324,6 +345,7 @@ async function drawTextWithStyle(
       y: opts.y,
       size: opts.size,
       dir: opts.dir,
+      color: opts.color,
     });
   } else {
     page.drawText(text, {
@@ -331,7 +353,7 @@ async function drawTextWithStyle(
       y: opts.y,
       size: opts.size,
       font: opts.font,
-      color: rgb(0, 0, 0),
+      color: drawColor,
     });
   }
   if (synth) {
@@ -552,7 +574,50 @@ export async function applyEditsAndSave(
   imageInserts: ImageInsert[] = [],
   shapeDeletes: ShapeDelete[] = [],
   annotations: Annotation[] = [],
+  redactions: Redaction[] = [],
 ): Promise<Uint8Array> {
+  // Redactions strip glyphs (via the existing deleted-edit pipeline)
+  // AND paint an opaque black rect into the page content stream. The
+  // glyph strip step needs to know which RUNS overlap each redaction
+  // — we compute that here, in payload terms, then push synthetic
+  // `deleted: true` Edits for each run hit so the surgery loop below
+  // doesn't need to know about redactions at all.
+  //
+  // Resolution lives in PDF user space (y-up). TextRun.bounds is in
+  // viewport pixels (y-down), so we convert each run before testing.
+  // Any overlap (no minimum-area threshold) counts: a Tj op is atomic
+  // — you can't strip half of one — so partial intersections still
+  // need full-run removal.
+  if (redactions.length > 0) {
+    const synth: Edit[] = [];
+    for (const r of redactions) {
+      const source = sources.get(r.sourceKey);
+      const sourcePage = source?.pages[r.pageIndex];
+      if (!sourcePage) continue;
+      for (const run of sourcePage.textRuns) {
+        const runPdfX = run.bounds.left / sourcePage.scale;
+        const runPdfWidth = run.bounds.width / sourcePage.scale;
+        const runPdfY = (sourcePage.viewHeight - run.bounds.top - run.bounds.height) /
+          sourcePage.scale;
+        const runPdfHeight = run.bounds.height / sourcePage.scale;
+        const runRect = {
+          pdfX: runPdfX,
+          pdfY: runPdfY,
+          pdfWidth: runPdfWidth,
+          pdfHeight: runPdfHeight,
+        };
+        if (!rectsOverlap(r, runRect)) continue;
+        synth.push({
+          sourceKey: r.sourceKey,
+          pageIndex: r.pageIndex,
+          runId: run.id,
+          newText: "",
+          deleted: true,
+        });
+      }
+    }
+    edits = [...edits, ...synth];
+  }
   // Bucket ops by source so each source's doc gets surgery in one pass.
   const editsBySource = new Map<string, Edit[]>();
   const movesBySource = new Map<string, ImageMove[]>();
@@ -752,6 +817,7 @@ export async function applyEditsAndSave(
       italic,
       dir,
       getFont: ctx.getFont,
+      color: ins.style?.color,
     });
     drawDecorations(page, {
       x: baseX,
@@ -760,6 +826,7 @@ export async function applyEditsAndSave(
       size: fontSizePt,
       underline: !!ins.style?.underline,
       strikethrough: !!ins.style?.strikethrough,
+      color: ins.style?.color,
     });
   }
 
@@ -807,6 +874,31 @@ export async function applyEditsAndSave(
       const ctx = ctxBySource.get(sourceKey);
       if (!ctx) continue;
       await applyAnnotationsToDoc(ctx.doc, list, { getFont: ctx.getFont });
+    }
+  }
+
+  // Redactions — opaque black rectangles drawn into each target
+  // page's content stream. The glyph strip half is already wired
+  // upstream (synthetic deleted Edits), so by the time we reach this
+  // pass the underlying Tj/TJ ops are gone; we just need to paint
+  // the rect. `page.drawRectangle` appends to the page's content
+  // stream, so the result is real graphics ops, not an /Annot — no
+  // viewer can hide it, and no extractor can recover anything from
+  // beneath it (there's nothing left beneath it to recover).
+  if (redactions.length > 0) {
+    for (const r of redactions) {
+      const ctx = ctxBySource.get(r.sourceKey);
+      if (!ctx) continue;
+      const page = ctx.doc.getPages()[r.pageIndex];
+      if (!page) continue;
+      page.drawRectangle({
+        x: r.pdfX,
+        y: r.pdfY,
+        width: r.pdfWidth,
+        height: r.pdfHeight,
+        color: rgb(0, 0, 0),
+        borderWidth: 0,
+      });
     }
   }
 
@@ -1237,6 +1329,7 @@ async function emitTextDraw(
     italic,
     dir,
     getFont: ctx.getFont,
+    color: style.color,
   });
 
   // Effective decoration: the user's toolbar override wins; otherwise
@@ -1253,6 +1346,7 @@ async function emitTextDraw(
     size: fontSizePt,
     underline,
     strikethrough,
+    color: style.color,
   });
 }
 

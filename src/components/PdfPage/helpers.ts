@@ -94,7 +94,8 @@ export function hasStyle(s: EditStyle): boolean {
     s.italic !== undefined ||
     s.underline !== undefined ||
     s.strikethrough !== undefined ||
-    s.dir !== undefined
+    s.dir !== undefined ||
+    s.color !== undefined
   );
 }
 

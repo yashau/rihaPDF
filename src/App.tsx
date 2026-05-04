@@ -13,6 +13,7 @@ import {
   DEFAULT_COMMENT_COLOR,
   newAnnotationId,
 } from "./lib/annotations";
+import type { Redaction } from "./lib/redactions";
 import type { EditValue, ImageMoveValue } from "./components/PdfPage";
 import { PageSidebar } from "./components/PageSidebar";
 import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
@@ -26,7 +27,14 @@ import { AboutModal } from "./components/AboutModal";
 import { AppHeader, AppFileInputs } from "./components/AppHeader";
 import { PageList } from "./components/PageList";
 
-export type ToolMode = "select" | "addText" | "addImage" | "highlight" | "comment" | "ink";
+export type ToolMode =
+  | "select"
+  | "addText"
+  | "addImage"
+  | "highlight"
+  | "redact"
+  | "comment"
+  | "ink";
 
 const RENDER_SCALE = 1.5;
 
@@ -42,6 +50,7 @@ type UndoSnapshot = {
   insertedImages: Map<string, ImageInsertion[]>;
   shapeDeletes: Map<string, Set<string>>;
   annotations: Map<string, Annotation[]>;
+  redactions: Map<string, Redaction[]>;
   slots: PageSlot[];
   sources: Map<string, LoadedSource>;
 };
@@ -98,6 +107,12 @@ export default function App() {
    *  ink strokes. Keyed by slotId so an annotation follows its page
    *  through reorder, same as the insertion / edit maps. */
   const [annotations, setAnnotations] = useState<Map<string, Annotation[]>>(new Map());
+  /** Map<slotId, Redaction[]> — opaque-black redaction rectangles.
+   *  Kept separate from `annotations` because at save time these
+   *  paint into the page content stream + strip overlapping glyphs,
+   *  rather than appending /Annot dicts (which leave underlying
+   *  text selectable / extractable). */
+  const [redactions, setRedactions] = useState<Map<string, Redaction[]>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
@@ -118,6 +133,7 @@ export default function App() {
   const insertedImagesRef = useRef(insertedImages);
   const shapeDeletesRef = useRef(shapeDeletes);
   const annotationsRef = useRef(annotations);
+  const redactionsRef = useRef(redactions);
   const sourcesRef = useRef(sources);
   useEffect(() => {
     editsRef.current = edits;
@@ -138,6 +154,9 @@ export default function App() {
     annotationsRef.current = annotations;
   }, [annotations]);
   useEffect(() => {
+    redactionsRef.current = redactions;
+  }, [redactions]);
+  useEffect(() => {
     sourcesRef.current = sources;
   }, [sources]);
 
@@ -149,6 +168,7 @@ export default function App() {
       insertedImages: insertedImagesRef.current,
       shapeDeletes: shapeDeletesRef.current,
       annotations: annotationsRef.current,
+      redactions: redactionsRef.current,
       slots: slotsRef.current,
       sources: sourcesRef.current,
     }),
@@ -167,6 +187,7 @@ export default function App() {
     setInsertedImages(s.insertedImages);
     setShapeDeletes(s.shapeDeletes);
     setAnnotations(s.annotations);
+    setRedactions(s.redactions);
     setSlots(s.slots);
     setSources(s.sources);
     setSelectionRef.current(null);
@@ -177,13 +198,20 @@ export default function App() {
     restoreSnapshot,
   });
 
-  const { selection, setSelection, onSelectImage, onSelectInsertedImage, onSelectShape } =
-    useSelection({
-      recordHistory,
-      setImageMoves,
-      setInsertedImages,
-      setShapeDeletes,
-    });
+  const {
+    selection,
+    setSelection,
+    onSelectImage,
+    onSelectInsertedImage,
+    onSelectShape,
+    onSelectRedaction,
+  } = useSelection({
+    recordHistory,
+    setImageMoves,
+    setInsertedImages,
+    setShapeDeletes,
+    setRedactions,
+  });
   useEffect(() => {
     setSelectionRef.current = setSelection;
   }, [setSelection]);
@@ -214,6 +242,7 @@ export default function App() {
         setImageMoves(new Map());
         setShapeDeletes(new Map());
         setAnnotations(new Map());
+        setRedactions(new Map());
         // previewCanvases auto-clears via usePreviewCanvases when the
         // inputs reset to empty, so no explicit reset needed here.
         setInsertedTexts(new Map());
@@ -673,6 +702,38 @@ export default function App() {
     [recordHistory],
   );
 
+  const onRedactionAdd = useCallback(
+    (slotId: string, redaction: Redaction) => {
+      // Discrete user action — one snapshot per add.
+      recordHistory(null);
+      setRedactions((prev) => {
+        const next = new Map(prev);
+        const arr = [...(next.get(slotId) ?? []), redaction];
+        next.set(slotId, arr);
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+  /** Patch a redaction by id (used by drag/resize on RedactionOverlay).
+   *  Coalesces same-(slot, id) updates inside the undo window so a
+   *  drag or resize is one undo step. */
+  const onRedactionChange = useCallback(
+    (slotId: string, id: string, patch: Partial<Redaction>) => {
+      recordHistory(`redaction:${slotId}:${id}`);
+      setRedactions((prev) => {
+        const next = new Map(prev);
+        const arr = next.get(slotId) ?? [];
+        next.set(
+          slotId,
+          arr.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+        );
+        return next;
+      });
+    },
+    [recordHistory],
+  );
+
   /** "+ From PDF" handler: load one or more external PDFs and append
    *  their pages as full first-class slots. Each external goes through
    *  `loadSource` so its pages get the same font / glyph-map / image
@@ -737,6 +798,7 @@ export default function App() {
         flatImageInserts,
         flatShapeDeletes,
         flatAnnotations,
+        flatRedactions,
       } = buildSavePayload({
         slots,
         edits,
@@ -745,6 +807,7 @@ export default function App() {
         insertedImages,
         shapeDeletes,
         annotations,
+        redactions,
       });
       const out = await applyEditsAndSave(
         sources,
@@ -755,6 +818,7 @@ export default function App() {
         flatImageInserts,
         flatShapeDeletes,
         flatAnnotations,
+        flatRedactions,
       );
       const baseName = primaryFilename.replace(/\.pdf$/i, "");
       downloadBlob(out, `${baseName}.edited.pdf`);
@@ -771,6 +835,7 @@ export default function App() {
     insertedTexts,
     insertedImages,
     annotations,
+    redactions,
   ]);
 
   const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
@@ -788,6 +853,10 @@ export default function App() {
     0,
   );
   const totalAnnotations = Array.from(annotations.values()).reduce(
+    (sum, arr) => sum + arr.length,
+    0,
+  );
+  const totalRedactions = Array.from(redactions.values()).reduce(
     (sum, arr) => sum + arr.length,
     0,
   );
@@ -830,7 +899,8 @@ export default function App() {
     totalInsertedTexts +
     totalInsertedImages +
     totalShapeDeletes +
-    totalAnnotations;
+    totalAnnotations +
+    totalRedactions;
   const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
   const toolTip =
     tool === "addText"
@@ -839,11 +909,13 @@ export default function App() {
         ? "Tap a page to place the image"
         : tool === "highlight"
           ? "Tap a text run to highlight"
-          : tool === "comment"
-            ? "Tap a page to drop a comment"
-            : tool === "ink"
-              ? "Drag on a page to draw"
-              : null;
+          : tool === "redact"
+            ? "Tap a text run to redact (drag corners to resize)"
+            : tool === "comment"
+              ? "Tap a page to drop a comment"
+              : tool === "ink"
+                ? "Drag on a page to draw"
+                : null;
 
   return (
     <div className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
@@ -972,6 +1044,7 @@ export default function App() {
               insertedTexts={insertedTexts}
               insertedImages={insertedImages}
               annotations={annotations}
+              redactions={redactions}
               shapeDeletes={shapeDeletes}
               previewCanvases={previewCanvases}
               editingByPage={editingByPage}
@@ -992,6 +1065,9 @@ export default function App() {
               onAnnotationAdd={onAnnotationAdd}
               onAnnotationChange={onAnnotationChange}
               onAnnotationDelete={onAnnotationDelete}
+              onRedactionAdd={onRedactionAdd}
+              onRedactionChange={onRedactionChange}
+              onSelectRedaction={onSelectRedaction}
             />
           )}
         </main>

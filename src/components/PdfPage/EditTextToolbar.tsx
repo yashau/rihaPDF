@@ -11,9 +11,11 @@ import {
 } from "lucide-react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
+import type { AnnotationColor } from "../../lib/annotations";
 import { FONTS } from "../../lib/fonts";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { useVisualViewportFollow } from "../../lib/useVisualViewport";
+import { ColorPickerPopover } from "./ColorPickerPopover";
 
 /** Shared formatting toolbar — font picker, size, B / I / U toggles.
  *  Used by both the existing-run EditField and the InsertedTextOverlay
@@ -34,6 +36,7 @@ export function EditTextToolbar({
   underline,
   strikethrough,
   dir,
+  color,
   thaanaInput,
   onThaanaInputChange,
   onChange,
@@ -50,6 +53,10 @@ export function EditTextToolbar({
   strikethrough: boolean;
   /** Explicit text direction. `undefined` = auto-detect from text. */
   dir: "rtl" | "ltr" | undefined;
+  /** Current text fill color, 0..1 RGB. Undefined = no override
+   *  (renders black). The picker shows the active swatch + hex
+   *  reflecting this value. */
+  color?: AnnotationColor;
   /** Mobile-only DV/EN toggle. When `true`, the input transliterates
    *  Latin keystrokes to Thaana; when `false`, the input takes raw
    *  Latin / system-keyboard text. The button is only rendered on
@@ -65,6 +72,7 @@ export function EditTextToolbar({
     strikethrough?: boolean;
     /** `null` clears an explicit direction back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
+    color?: AnnotationColor;
   }) => void;
   /** When provided, renders a trash button. Source-run deletion sets
    *  `deleted=true` on the stored EditValue; inserted-text deletion
@@ -215,6 +223,10 @@ export function EditTextToolbar({
         onChange={(v) => onChange({ strikethrough: v })}
         icon={<Strikethrough size={14} />}
       />
+      {/* Text color picker — preset swatches + hex input. Sits between
+          the inline style toggles and the direction button so it's
+          adjacent to the formatting controls users reach for together. */}
+      <ColorPickerPopover value={color} onChange={(c) => onChange({ color: c })} />
       {/* Direction button — cycles auto → rtl → ltr → auto. Lets the
           user override the codepoint-based auto-detection used by the
           overlay (`dir="auto"`) and the save path. Useful when the

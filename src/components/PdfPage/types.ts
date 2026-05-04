@@ -107,6 +107,10 @@ export type CrossPageArrival = {
   underline: boolean;
   strikethrough: boolean;
   dir: "rtl" | "ltr" | undefined;
+  /** Override fill color from the edit's style. Undefined means the
+   *  arrival inherits whatever the source run had (currently always
+   *  black — buildTextRuns hasn't extracted source colors yet). */
+  color?: import("../../lib/annotations").AnnotationColor;
 };
 
 /** A source-page image that has been moved across pages and now

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ImageInsertion } from "./insertions";
+import type { Redaction } from "./redactions";
 import type { ImageMoveValue } from "../components/PdfPage";
 import type { Selection } from "../components/PageList";
 
@@ -16,11 +17,13 @@ export function useSelection({
   setImageMoves,
   setInsertedImages,
   setShapeDeletes,
+  setRedactions,
 }: {
   recordHistory: (coalesceKey: string | null) => void;
   setImageMoves: React.Dispatch<React.SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
   setInsertedImages: React.Dispatch<React.SetStateAction<Map<string, ImageInsertion[]>>>;
   setShapeDeletes: React.Dispatch<React.SetStateAction<Map<string, Set<string>>>>;
+  setRedactions: React.Dispatch<React.SetStateAction<Map<string, Redaction[]>>>;
 }) {
   const [selection, setSelection] = useState<Selection>(null);
 
@@ -32,6 +35,9 @@ export function useSelection({
   }, []);
   const onSelectShape = useCallback((slotId: string, shapeId: string) => {
     setSelection({ kind: "shape", slotId, shapeId });
+  }, []);
+  const onSelectRedaction = useCallback((slotId: string, id: string) => {
+    setSelection({ kind: "redaction", slotId, id });
   }, []);
 
   const onDeleteSelection = useCallback(() => {
@@ -63,9 +69,16 @@ export function useSelection({
         next.set(selection.slotId, set);
         return next;
       });
+    } else if (selection.kind === "redaction") {
+      setRedactions((prev) => {
+        const next = new Map(prev);
+        const arr = (next.get(selection.slotId) ?? []).filter((r) => r.id !== selection.id);
+        next.set(selection.slotId, arr);
+        return next;
+      });
     }
     setSelection(null);
-  }, [selection, recordHistory, setImageMoves, setInsertedImages, setShapeDeletes]);
+  }, [selection, recordHistory, setImageMoves, setInsertedImages, setShapeDeletes, setRedactions]);
 
   useEffect(() => {
     if (!selection) return;
@@ -105,6 +118,7 @@ export function useSelection({
     onSelectImage,
     onSelectInsertedImage,
     onSelectShape,
+    onSelectRedaction,
     onDeleteSelection,
   };
 }

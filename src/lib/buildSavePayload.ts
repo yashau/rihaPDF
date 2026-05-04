@@ -8,6 +8,7 @@ import {
 import type { Annotation } from "./annotations";
 import { blankSourceKey } from "./blankSource";
 import type { ImageInsertion, TextInsertion } from "./insertions";
+import type { Redaction } from "./redactions";
 import type { PageSlot } from "./slots";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
 
@@ -29,6 +30,7 @@ export function buildSavePayload({
   insertedImages,
   shapeDeletes,
   annotations,
+  redactions,
 }: {
   slots: PageSlot[];
   edits: Map<string, Map<string, EditValue>>;
@@ -37,6 +39,7 @@ export function buildSavePayload({
   insertedImages: Map<string, ImageInsertion[]>;
   shapeDeletes: Map<string, Set<string>>;
   annotations: Map<string, Annotation[]>;
+  redactions: Map<string, Redaction[]>;
 }) {
   const slotAddr = new Map<string, { sourceKey: string; pageIndex: number; slot: PageSlot }>();
   for (const slot of slots) {
@@ -196,6 +199,22 @@ export function buildSavePayload({
     }
   }
 
+  const flatRedactions: Redaction[] = [];
+  for (const [slotId, arr] of redactions) {
+    const addr = slotAddr.get(slotId);
+    if (!addr) continue;
+    for (const r of arr) {
+      // Same re-address pattern as annotations: a slot reorder
+      // before save rewrites the destination so the redaction
+      // lands on the right page in the output.
+      flatRedactions.push({
+        ...r,
+        sourceKey: addr.sourceKey,
+        pageIndex: addr.pageIndex,
+      });
+    }
+  }
+
   return {
     flatEdits,
     flatImageMoves,
@@ -203,5 +222,6 @@ export function buildSavePayload({
     flatImageInserts,
     flatShapeDeletes,
     flatAnnotations,
+    flatRedactions,
   };
 }

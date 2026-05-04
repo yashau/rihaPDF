@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { colorToCss } from "../../lib/color";
 import type { RenderedPage } from "../../lib/pdf";
 import { cropCanvasToDataUrl, cssTextDecoration, findPageAtPoint } from "./helpers";
 import type { CrossPageArrival, CrossPageImageArrival, EditValue, ImageMoveValue } from "./types";
@@ -96,7 +97,7 @@ export function CrossPageTextArrivalOverlay({
             fontWeight: arr.bold ? 700 : 400,
             fontStyle: arr.italic ? "italic" : "normal",
             textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
-            color: "black",
+            color: colorToCss(arr.color) ?? "black",
             whiteSpace: "pre",
             pointerEvents: "none",
           }}
@@ -121,7 +122,7 @@ export function CrossPageTextArrivalOverlay({
             fontWeight: arr.bold ? 700 : 400,
             fontStyle: arr.italic ? "italic" : "normal",
             textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
-            color: "black",
+            color: colorToCss(arr.color) ?? "black",
             whiteSpace: "pre",
           }}
         >

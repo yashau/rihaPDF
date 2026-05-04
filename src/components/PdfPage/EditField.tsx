@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { colorToCss } from "../../lib/color";
 import type { TextRun } from "../../lib/pdf";
 import type { EditStyle } from "../../lib/save";
 import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
@@ -53,6 +54,10 @@ export function EditField({
   const effectiveItalic = style.italic ?? run.italic;
   const effectiveUnderline = style.underline ?? run.underline ?? false;
   const effectiveStrikethrough = style.strikethrough ?? run.strikethrough ?? false;
+  // The source-PDF run's color isn't yet captured by buildTextRuns —
+  // we only have the toolbar override. Undefined falls back to black,
+  // matching the prior hardcoded behavior.
+  const cssColor = colorToCss(style.color) ?? "black";
   // style.fontSize is stored in PDF points (the same unit as the saved
   // PDF). Default to the run's measured height, which buildTextRuns
   // returns in viewport pixels — divide by scale to convert.
@@ -152,6 +157,7 @@ export function EditField({
         underline={effectiveUnderline}
         strikethrough={effectiveStrikethrough}
         dir={style.dir}
+        color={style.color}
         thaanaInput={thaanaInput}
         onThaanaInputChange={setThaanaInput}
         onChange={(patch) =>
@@ -169,6 +175,7 @@ export function EditField({
               if (patch.dir === null) delete next.dir;
               else next.dir = patch.dir;
             }
+            if (patch.color !== undefined) next.color = patch.color;
             return next;
           })
         }
@@ -209,8 +216,9 @@ export function EditField({
           background: "white",
           // Explicit color + color-scheme so dark mode (`.dark` on <html>)
           // doesn't resolve the UA default input text color to a light
-          // tone, which leaves white-on-white text.
-          color: "black",
+          // tone, which leaves white-on-white text. When the user picks
+          // a color this same property carries it.
+          color: cssColor,
           colorScheme: "light",
           pointerEvents: "auto",
           boxSizing: "border-box",

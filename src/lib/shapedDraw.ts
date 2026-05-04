@@ -40,6 +40,9 @@ import {
   PDFName,
   PDFOperator,
   PDFPage,
+  popGraphicsState,
+  pushGraphicsState,
+  setFillingRgbColor,
   setFontAndSize,
   setTextMatrix,
   showText,
@@ -63,6 +66,11 @@ export type ShapedTextOptions = {
   /** Direction. "rtl" forces RTL shaping, "ltr" forces LTR, undefined
    *  auto-detects from codepoints (Thaana / Hebrew / Arabic → RTL). */
   dir?: "rtl" | "ltr";
+  /** Fill color in 0..1 RGB. When set, the emitted op block wraps its
+   *  BT/ET in q/Q and pushes a non-stroking color setter so other
+   *  content keeps its prior fill. Undefined falls through to whatever
+   *  the page's current fill is — which is black by default. */
+  color?: [number, number, number];
 };
 
 export type ShapedDrawResult = {
@@ -89,6 +97,7 @@ export async function drawShapedText(
     x: opts.x,
     y: opts.y,
     size: opts.size,
+    color: opts.color,
   });
   page.pushOperators(...ops);
   return { width: widthPt, shape };
@@ -109,6 +118,7 @@ export async function buildShapedTextOps(
     x: opts.x,
     y: opts.y,
     size: opts.size,
+    color: opts.color,
   });
   return { ops, width: widthPt, shape };
 }
@@ -127,11 +137,20 @@ export function shapedAdvancePt(shape: ShapeResult, sizePt: number): number {
 export function buildShapedTextOpsFromShape(
   shape: ShapeResult,
   fontKey: PDFName | string,
-  geom: { x: number; y: number; size: number },
+  geom: { x: number; y: number; size: number; color?: [number, number, number] },
 ): PDFOperator[] {
   const upem = shape.unitsPerEm || 1000;
   const scale = geom.size / upem;
-  const ops: PDFOperator[] = [beginText(), setFontAndSize(fontKey, geom.size)];
+  // Only wrap in q/Q + emit a non-stroking color setter when an
+  // explicit color was passed. With no color, fall through to whatever
+  // fill state the page already has — same byte output as before color
+  // support, so existing PDFs keep saving byte-identically.
+  const ops: PDFOperator[] = [];
+  if (geom.color) {
+    ops.push(pushGraphicsState());
+    ops.push(setFillingRgbColor(geom.color[0], geom.color[1], geom.color[2]));
+  }
+  ops.push(beginText(), setFontAndSize(fontKey, geom.size));
   if (shape.direction === "rtl") {
     // HarfBuzz emits RTL output in *visual* order with cluster IDs
     // decreasing across glyphs. Within each cluster the buffer is in
@@ -197,6 +216,7 @@ export function buildShapedTextOpsFromShape(
     }
   }
   ops.push(endText());
+  if (geom.color) ops.push(popGraphicsState());
   return ops;
 }
 
