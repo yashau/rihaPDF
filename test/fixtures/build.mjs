@@ -20,6 +20,13 @@ import path from "path";
 import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_DATE = new Date("2024-01-01T00:00:00.000Z");
+
+/** @param {PDFDocument} doc */
+function freezePdfMetadata(doc) {
+  doc.setCreationDate(FIXTURE_DATE);
+  doc.setModificationDate(FIXTURE_DATE);
+}
 
 // Two distinguishable solid-color PNGs so per-image asserts can tell
 // them apart even after a save/reload roundtrip. Pre-encoded base64 to
@@ -36,6 +43,7 @@ const BLUE_PNG = Buffer.from(
 );
 
 const doc = await PDFDocument.create();
+freezePdfMetadata(doc);
 const page = doc.addPage([595, 842]);
 const helv = await doc.embedFont(StandardFonts.Helvetica);
 page.drawText("E2E test fixture (with images).", {
@@ -65,6 +73,7 @@ console.log("wrote", out, fs.statSync(out).size, "bytes");
 // the saved PDF reflects the move.
 {
   const doc2 = await PDFDocument.create();
+  freezePdfMetadata(doc2);
   const helv2 = await doc2.embedFont(StandardFonts.Helvetica);
   const red2 = await doc2.embedPng(RED_PNG);
   const blue2 = await doc2.embedPng(BLUE_PNG);
@@ -103,6 +112,7 @@ console.log("wrote", out, fs.statSync(out).size, "bytes");
 // save+reload through copyPages out of an external source.
 {
   const docExt = await PDFDocument.create();
+  freezePdfMetadata(docExt);
   const helvE = await docExt.embedFont(StandardFonts.Helvetica);
   const greenPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAtIbi/wAAAABJRU5ErkJggg==",
@@ -150,6 +160,7 @@ console.log("wrote", out, fs.statSync(out).size, "bytes");
 // while leaving the other in place to assert the delete is scoped.
 {
   const docS = await PDFDocument.create();
+  freezePdfMetadata(docS);
   const helvS = await docS.embedFont(StandardFonts.Helvetica);
   const ps = docS.addPage([595, 842]);
   ps.drawText("SHAPES_FIXTURE", {

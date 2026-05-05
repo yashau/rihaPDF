@@ -125,12 +125,7 @@ async function runScenario({
   // Reload fresh each run so previous edits don't bleed.
   await loadFixture(h, FIXTURE.maldivian2, { expectedPages: PAGES });
 
-  const titleRunId = await h.page.evaluate((title) => {
-    for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
-      if ((el.textContent || "") === title) return el.getAttribute("data-run-id");
-    }
-    return null;
-  }, TITLE_TEXT);
+  const titleRunId = await waitForTitleRunId();
   if (!titleRunId) {
     const all = await h.page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-page-index="0"] [data-run-id]')).map((el) => ({
@@ -167,21 +162,26 @@ async function runScenario({
     const inp = h.page.locator("input[data-editor]").first();
     await inp.fill(edit);
     await inp.press("Enter");
-    await h.page.waitForTimeout(300);
+    await h.page.locator("input[data-editor]").first().waitFor({ state: "detached" });
   }
 
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
+  const dlPromise = h.page.waitForEvent("download", { timeout: 20_000 });
+  await h.page.locator("button").filter({ hasText: /^Save/ }).first().click({ timeout: 20_000 });
   const dl = await dlPromise;
   const out = path.join(SCREENSHOTS, `move-edit-maldivian2-${name}.pdf`);
   await dl.saveAs(out);
 
   await loadFixture(h, out, { expectedPages: PAGES });
   const savedRuns = await captureRuns(h.page);
-  await h.page
-    .locator('[data-page-index="0"] canvas')
-    .first()
-    .screenshot({ path: path.join(SCREENSHOTS, `move-edit-maldivian2-${name}.png`) });
+  try {
+    const canvas = h.page.locator('[data-page-index="0"] canvas').first();
+    await canvas.waitFor({ state: "visible", timeout: 10_000 });
+    await canvas.screenshot({ path: path.join(SCREENSHOTS, `move-edit-maldivian2-${name}.png`) });
+  } catch (err) {
+    console.warn(
+      `Could not capture move-edit-maldivian2-${name}.png diagnostic screenshot: ${(err as Error).message}`,
+    );
+  }
 
   // Drift: every page-0 run except the title should still match a
   // saved run within 2px on x/y/width.
@@ -235,4 +235,25 @@ async function runScenario({
   }
 
   return { titleOk, titleNote, drift };
+}
+
+async function waitForTitleRunId(): Promise<string | null> {
+  try {
+    await h.page.waitForFunction(
+      (title) =>
+        Array.from(document.querySelectorAll('[data-page-index="0"] [data-run-id]')).some(
+          (el) => (el.textContent || "") === title,
+        ),
+      TITLE_TEXT,
+      { timeout: 20_000 },
+    );
+  } catch {
+    return null;
+  }
+  return h.page.evaluate((title) => {
+    for (const el of document.querySelectorAll('[data-page-index="0"] [data-run-id]')) {
+      if ((el.textContent || "") === title) return el.getAttribute("data-run-id");
+    }
+    return null;
+  }, TITLE_TEXT);
 }
