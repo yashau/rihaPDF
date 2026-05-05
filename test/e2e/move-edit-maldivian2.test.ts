@@ -173,15 +173,6 @@ async function runScenario({
 
   await loadFixture(h, out, { expectedPages: PAGES });
   const savedRuns = await captureRuns(h.page);
-  try {
-    const canvas = h.page.locator('[data-page-index="0"] canvas').first();
-    await canvas.waitFor({ state: "visible", timeout: 10_000 });
-    await canvas.screenshot({ path: path.join(SCREENSHOTS, `move-edit-maldivian2-${name}.png`) });
-  } catch (err) {
-    console.warn(
-      `Could not capture move-edit-maldivian2-${name}.png diagnostic screenshot: ${(err as Error).message}`,
-    );
-  }
 
   // Drift: every page-0 run except the title should still match a
   // saved run within 2px on x/y/width.
