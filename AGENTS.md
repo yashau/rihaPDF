@@ -193,6 +193,19 @@ Relevant tests include:
 - `test/e2e/form-fill.test.ts`
 - `test/e2e/annotations.test.ts`
 
+### Visual Signatures
+
+Visual signatures are not cryptographic PDF signatures. They are local PNG assets that reuse the inserted-image placement/save pipeline.
+
+- Signature UI lives in `src/components/SignatureModal.tsx`; do not couple it to About modal internals.
+- Signature storage and image processing live in `src/lib/signatures.ts` and use IndexedDB so saved signatures remain browser-local.
+- Drawn signatures support the signing colour presets in `src/lib/color.ts`.
+- Imported signatures should be processed client-side only: remove a simple background where possible, trim transparent pixels, and avoid uploads or remote model/API calls unless explicitly approved.
+
+Relevant tests include:
+
+- `test/e2e/signature.test.ts`
+
 ## Testing Guidance
 
 The E2E suite is the main regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup.

@@ -28,7 +28,8 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 
 - **Edit text runs.** Click → input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
 - **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
-- **Insert text, images, and signatures.** Click-to-place tools that share the edit toolbar. Signatures can be drawn with signing colour presets or imported from an image; imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse.
+- **Insert text and images.** Click-to-place tools that share the edit toolbar.
+- **Visual signatures.** Draw a signature with signing colour presets or import one from an image. Imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse. These are visual PDF image inserts only, not cryptographic PDF signatures.
 - **Resize images.** 4 corner handles on source and inserted images, anchored opposite corner.
 - **Delete anything.** `Del`/`Backspace` on selected images; trash button on the text toolbar.
 - **Undo / redo.** Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y. Coalesces typing and drags into single steps.
