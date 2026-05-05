@@ -108,6 +108,17 @@ function findScrollableAncestorY(el: Element | null): Element | null {
   return null;
 }
 
+function visibleScrollBoundsY(el: Element): { top: number; bottom: number } {
+  const rect = el.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const viewportTop = vv?.offsetTop ?? 0;
+  const viewportBottom = viewportTop + (vv?.height ?? window.innerHeight);
+  return {
+    top: Math.max(rect.top, viewportTop),
+    bottom: Math.min(rect.bottom, viewportBottom),
+  };
+}
+
 export function useDragGesture<C>({
   onStart,
   onMove,
@@ -195,9 +206,9 @@ export function useDragGesture<C>({
       const tick = () => {
         rafId = null;
         if (!active || !scrollEl) return;
-        const rect = scrollEl.getBoundingClientRect();
-        const inTopBand = latestY < rect.top + AUTO_SCROLL_EDGE_PX;
-        const inBotBand = latestY > rect.bottom - AUTO_SCROLL_EDGE_PX;
+        const bounds = visibleScrollBoundsY(scrollEl);
+        const inTopBand = latestY < bounds.top + AUTO_SCROLL_EDGE_PX;
+        const inBotBand = latestY > bounds.bottom - AUTO_SCROLL_EDGE_PX;
         if (!inTopBand) armedTop = true;
         if (!inBotBand) armedBot = true;
         // Negative dy = scroll up, positive = scroll down. Velocity
@@ -207,13 +218,13 @@ export function useDragGesture<C>({
         if (armedTop && inTopBand) {
           const intensity = Math.min(
             1,
-            (rect.top + AUTO_SCROLL_EDGE_PX - latestY) / AUTO_SCROLL_EDGE_PX,
+            (bounds.top + AUTO_SCROLL_EDGE_PX - latestY) / AUTO_SCROLL_EDGE_PX,
           );
           dy = -Math.ceil(intensity * AUTO_SCROLL_MAX_PX_PER_FRAME);
         } else if (armedBot && inBotBand) {
           const intensity = Math.min(
             1,
-            (latestY - (rect.bottom - AUTO_SCROLL_EDGE_PX)) / AUTO_SCROLL_EDGE_PX,
+            (latestY - (bounds.bottom - AUTO_SCROLL_EDGE_PX)) / AUTO_SCROLL_EDGE_PX,
           );
           dy = Math.ceil(intensity * AUTO_SCROLL_MAX_PX_PER_FRAME);
         }
