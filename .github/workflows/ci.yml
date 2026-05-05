@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting, types, and lint
+        run: pnpm run check
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Build test fixtures
+        run: pnpm run test:fixtures
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        run: |
+          pnpm dev -- --host 127.0.0.1 > vite.log 2>&1 &
+
+          for i in {1..60}; do
+            if curl -fsS http://localhost:5173/ > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://localhost:5173/ > /dev/null
+          pnpm run test
+
+      - name: Upload Vite log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-log
+          path: vite.log
+          if-no-files-found: ignore
