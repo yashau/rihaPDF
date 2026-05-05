@@ -23,6 +23,7 @@ Reference docs already in the repo:
 - `README.md`: product behavior, architecture, commands, limitations, and test inventory.
 - `form-filling-plan.md`: form field design notes.
 - `harfbuzz-plan.md`: shaping notes.
+- `pnpm-workspace.yaml`: pnpm build-script approval policy.
 - `public/fonts/dhivehi/README.md`: bundled font attributions and policy.
 
 ## Working Principles
@@ -32,6 +33,7 @@ Reference docs already in the repo:
 - Treat save, redaction, glyph stripping, form-field persistence, and bidi/Thaana shaping as high-risk code. Add or update focused tests when touching them.
 - Do not weaken privacy guarantees. PDFs should remain client-side; do not add uploads, analytics, remote processing, or third-party calls without explicit product direction.
 - Do not commit generated outputs such as `dist/`, `.wrangler/`, `test-logs/`, or fixture outputs unless the user explicitly asks and the file is intended to be tracked.
+- Generated PDF fixtures under `test/fixtures/` are tracked when intentionally regenerated. The fixture generator freezes PDF metadata dates so repeated runs should be byte-stable.
 - Preserve the bundled font metadata and attributions. If adding or changing fonts, update `src/lib/fonts.ts`, `NOTICE`, and `public/fonts/dhivehi/README.md` as appropriate.
 - Use ASCII in new code and docs unless a file already uses non-ASCII or the content specifically requires Dhivehi/Thaana examples.
 
@@ -40,8 +42,16 @@ Reference docs already in the repo:
 Use pnpm. The CI workflow uses:
 
 - Node 24
-- pnpm 10
+- pnpm 11
 - Chromium via Playwright
+
+The repo pins pnpm in `package.json` via `packageManager`. With pnpm 11, dependency build scripts must be explicitly reviewed. Approved build-script packages live in `pnpm-workspace.yaml`:
+
+- `esbuild`
+- `sharp`
+- `workerd`
+
+If a future dependency adds a lifecycle build script, do not bypass the approval prompt casually. Review why the package needs the script, then update `pnpm-workspace.yaml` deliberately.
 
 Install dependencies:
 
@@ -201,6 +211,8 @@ If a synthetic PDF fixture changes, regenerate it with:
 ```bash
 pnpm test:fixtures
 ```
+
+The generated PDFs should be deterministic. If rerunning `pnpm test:fixtures` changes tracked fixture bytes unexpectedly, inspect PDF metadata, object ordering, compression, or dependency changes before committing.
 
 Use diagnostic scripts in `scripts/` for investigation. Do not treat them as a replacement for updating E2E tests when behavior changes.
 
