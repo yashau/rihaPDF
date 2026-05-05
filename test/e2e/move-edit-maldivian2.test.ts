@@ -175,7 +175,21 @@ async function runScenario({
   const savedRuns = await captureRuns(h.page);
 
   // Drift: every page-0 run except the title should still match a
-  // saved run within 2px on x/y/width.
+  // saved run within 2px on x/y/width, relative to the median whole-
+  // page render shift. The saved PDF can land at a slightly different
+  // sub-pixel viewport offset in pdf.js, especially under CI.
+  const deltas: { dx: number; dy: number }[] = [];
+  for (const orig of originalRuns) {
+    if (orig.id === titleRun.id) continue;
+    const match = savedRuns.find((s) => s.text === orig.text);
+    if (!match) continue;
+    deltas.push({ dx: match.x - orig.x, dy: match.y - orig.y });
+  }
+  const median = (xs: number[]) =>
+    xs.length === 0 ? 0 : [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const offX = median(deltas.map((d) => d.dx));
+  const offY = median(deltas.map((d) => d.dy));
+
   const drift: string[] = [];
   for (const orig of originalRuns) {
     if (orig.id === titleRun.id) continue;
@@ -185,12 +199,12 @@ async function runScenario({
       continue;
     }
     if (
-      Math.abs(match.x - orig.x) > 2 ||
-      Math.abs(match.y - orig.y) > 2 ||
+      Math.abs(match.x - orig.x - offX) > 2 ||
+      Math.abs(match.y - orig.y - offY) > 2 ||
       Math.abs(match.w - orig.w) > 2
     ) {
       drift.push(
-        `MOVED: "${orig.text.slice(0, 30)}" orig=(${orig.x},${orig.y},${orig.w}) → (${match.x},${match.y},${match.w})`,
+        `MOVED: "${orig.text.slice(0, 30)}" orig=(${orig.x},${orig.y},${orig.w}) → (${match.x},${match.y},${match.w}) (median dx=${offX},dy=${offY})`,
       );
     }
   }
@@ -211,11 +225,11 @@ async function runScenario({
     const dyExp = drag?.dy ?? 0;
     let dx, dy;
     if (isRtl) {
-      dx = nowRight - origRight - dxExp;
-      dy = titleNow.y - titleRun.y - dyExp;
+      dx = nowRight - origRight - dxExp - offX;
+      dy = titleNow.y - titleRun.y - dyExp - offY;
     } else {
-      dx = titleNow.x - titleRun.x - dxExp;
-      dy = titleNow.y - titleRun.y - dyExp;
+      dx = titleNow.x - titleRun.x - dxExp - offX;
+      dy = titleNow.y - titleRun.y - dyExp - offY;
     }
     const off = Math.hypot(dx, dy);
     if (off > 8) {
