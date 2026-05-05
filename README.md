@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-85%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-87%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -108,6 +108,8 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 - **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
 - **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q…Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
 - **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
+- **Redaction scope is page-content focused.** Current redaction surgery destroys text-show ops, supported image pixels / image draws, Form XObject draws, and vector paint ops in the page content stream. PDF annotation objects and AcroForm widget values live outside that stream; do not rely on redaction rectangles to sanitize source annotations, newly-added annotation contents, or form-field values until annotation/widget redaction is implemented and tested.
+- **Form widgets need a touched-field save path today.** Filled fields save with `/V` and rebuild `/Root /AcroForm /Fields`, but a form PDF saved after unrelated edits with no form-field changes may keep copied widget annotations without a rebuilt AcroForm field tree. Until the save path rebuilds AcroForm whenever copied widgets exist, make at least one form-field change before saving a fillable document that must remain interactive.
 
 ## Scripts
 
@@ -153,7 +155,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 
 | File                                          | What it covers                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| `annotations.test.ts`                         | highlight / comment / ink → save → parse `/Annots` → fields round-trip       |
+| `annotations.test.ts`                         | highlight / comment / ink → save → parse native `/Annots`                    |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages   |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line        |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable     |
@@ -199,6 +201,8 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Save pipeline
 
 - [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/lib/shapedDraw.ts) / [shapedBidi.ts](src/lib/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
+- [ ] **Redact annotations and form widgets.** Redaction currently targets page content streams, XObjects, raster image streams, and vector paint ops. Annotation dictionaries and AcroForm widget values can still carry data outside the content stream; add overlap-based annotation/widget removal or sanitization before claiming redaction covers those layers.
+- [ ] **Rebuild AcroForm on any saved output containing widgets.** `rebuildOutputAcroForm` currently runs when form fills are present. It should also run for unrelated saves of fillable PDFs so `copyPages` output keeps widgets reachable through `/Root /AcroForm /Fields`.
 
 ### Overlay / interaction
 
@@ -209,6 +213,10 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 - [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
 - [ ] **Round-trip existing `/Annots`.** Source annotations pass through `copyPages` but aren't surfaced as editable. Parse `/Annots` in [loadSource.ts](src/lib/loadSource.ts).
+
+### Testing / CI
+
+- [ ] **Assert fixture determinism in CI.** CI regenerates synthetic PDFs with `pnpm test:fixtures`; add a follow-up `git diff --exit-code test/fixtures` so fixture drift is caught instead of silently tested.
 
 ### Source-PDF support
 
