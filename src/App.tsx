@@ -32,6 +32,7 @@ import { useMobileChrome } from "./lib/useMobileChrome";
 import { AboutModal } from "./components/AboutModal";
 import { AppHeader, AppFileInputs } from "./components/AppHeader";
 import { PageList } from "./components/PageList";
+import { SignatureModal } from "./components/SignatureModal";
 
 export type ToolMode =
   | "select"
@@ -86,6 +87,7 @@ export default function App() {
   const [imageMoves, setImageMoves] = useState<Map<string, Map<string, ImageMoveValue>>>(new Map());
   const [busy, setBusy] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [signatureOpen, setSignatureOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   /** Mirror of `slots` so callbacks that need slotIndex→slotId lookups
    *  (cross-page insertion drags land via slot index from PdfPage's
@@ -144,6 +146,7 @@ export default function App() {
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
   const [pendingImage, setPendingImage] = useState<{
+    kind: "image" | "signature";
     bytes: Uint8Array;
     format: "png" | "jpeg";
     naturalWidth: number;
@@ -826,7 +829,7 @@ export default function App() {
       console.warn("Unsupported image format (PNG/JPEG only):", file.name);
       return;
     }
-    setPendingImage(parsed);
+    setPendingImage({ ...parsed, kind: "image" });
     setTool("addImage");
   }, []);
 
@@ -964,7 +967,9 @@ export default function App() {
     tool === "addText"
       ? "Tap a page to drop a text box"
       : tool === "addImage" && pendingImage
-        ? "Tap a page to place the image"
+        ? pendingImage.kind === "signature"
+          ? "Tap a page to place the signature"
+          : "Tap a page to place the image"
         : tool === "highlight"
           ? "Tap a text run to highlight"
           : tool === "redact"
@@ -1021,6 +1026,7 @@ export default function App() {
         setThemeMode={setThemeMode}
         imageFileInputRef={imageFileInputRef}
         onAboutOpen={() => setAboutOpen(true)}
+        onSignatureOpen={() => setSignatureOpen(true)}
         hasSources={sources.size > 0}
         toolTip={toolTip}
         mobileSidebarOpen={mobileSidebarOpen}
@@ -1155,6 +1161,14 @@ export default function App() {
         </main>
       </div>
       <AboutModal isOpen={aboutOpen} onOpenChange={setAboutOpen} />
+      <SignatureModal
+        isOpen={signatureOpen}
+        onOpenChange={setSignatureOpen}
+        onUseSignature={(image) => {
+          setPendingImage({ ...image, kind: "signature" });
+          setTool("addImage");
+        }}
+      />
     </div>
   );
 }

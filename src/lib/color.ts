@@ -34,6 +34,16 @@ export const TEXT_COLOR_PRESETS: ReadonlyArray<ColorPreset> = [
   { label: "Violet", hex: "#6D28D9", value: [0x6d / 255, 0x28 / 255, 0xd9 / 255] },
 ];
 
+/** Preset palette for signature strokes. Kept intentionally small:
+ *  these are document-signing colours users expect, not a general
+ *  drawing palette. */
+export const SIGNATURE_COLOR_PRESETS: ReadonlyArray<ColorPreset> = [
+  { label: "Black", hex: "#000000", value: [0, 0, 0] },
+  { label: "Blue", hex: "#1D4ED8", value: [0x1d / 255, 0x4e / 255, 0xd8 / 255] },
+  { label: "Dark blue", hex: "#1E3A8A", value: [0x1e / 255, 0x3a / 255, 0x8a / 255] },
+  { label: "Red", hex: "#B91C1C", value: [0xb9 / 255, 0x1c / 255, 0x1c / 255] },
+];
+
 /** Default text color when no `style.color` is set. Black — matches
  *  prior hardcoded behavior so existing inserts/edits stay byte-identical. */
 export const DEFAULT_TEXT_COLOR: AnnotationColor = [0, 0, 0];

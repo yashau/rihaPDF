@@ -10,6 +10,7 @@ import {
   Pencil,
   Redo2,
   Save,
+  Signature,
   Square,
   Type,
   Undo2,
@@ -19,6 +20,7 @@ import type { ThemeMode } from "../lib/theme";
 import type { ToolMode } from "../App";
 
 type PendingImage = {
+  kind: "image" | "signature";
   bytes: Uint8Array;
   format: "png" | "jpeg";
   naturalWidth: number;
@@ -44,6 +46,7 @@ type CommonProps = {
   setThemeMode: (mode: ThemeMode) => void;
   imageFileInputRef: React.RefObject<HTMLInputElement | null>;
   onAboutOpen: () => void;
+  onSignatureOpen: () => void;
   hasSources: boolean;
   toolTip: string | null;
 };
@@ -119,6 +122,7 @@ function DesktopHeader({
   setThemeMode,
   imageFileInputRef,
   onAboutOpen,
+  onSignatureOpen,
   hasSources,
   toolTip,
 }: CommonProps) {
@@ -202,10 +206,10 @@ function DesktopHeader({
         </Button>
         <Button
           size="sm"
-          variant={tool === "addImage" ? "primary" : "ghost"}
+          variant={tool === "addImage" && pendingImage?.kind !== "signature" ? "primary" : "ghost"}
           isDisabled={busy || !hasSources}
           onPress={() => {
-            if (tool === "addImage") {
+            if (tool === "addImage" && pendingImage?.kind !== "signature") {
               setTool("select");
               setPendingImage(null);
             } else {
@@ -214,7 +218,23 @@ function DesktopHeader({
           }}
         >
           <ImageIcon size={14} aria-hidden />+ Image
-          {pendingImage ? <Check size={14} aria-label="image queued" /> : null}
+          {pendingImage?.kind === "image" ? <Check size={14} aria-label="image queued" /> : null}
+        </Button>
+        <Button
+          size="sm"
+          variant={tool === "addImage" && pendingImage?.kind === "signature" ? "primary" : "ghost"}
+          isDisabled={busy || !hasSources}
+          onPress={() => {
+            setPendingImage(null);
+            onSignatureOpen();
+          }}
+          aria-label="Signature"
+          data-testid="tool-signature"
+        >
+          <Signature size={14} aria-hidden />+ Signature
+          {pendingImage?.kind === "signature" ? (
+            <Check size={14} aria-label="signature queued" />
+          ) : null}
         </Button>
         <Button
           size="sm"
@@ -308,6 +328,7 @@ function MobileHeader({
   setThemeMode,
   imageFileInputRef,
   onAboutOpen,
+  onSignatureOpen,
   hasSources,
   mobileSidebarOpen,
   setMobileSidebarOpen,
@@ -479,10 +500,12 @@ function MobileHeader({
           <Button
             isIconOnly
             size="sm"
-            variant={tool === "addImage" ? "primary" : "ghost"}
+            variant={
+              tool === "addImage" && pendingImage?.kind !== "signature" ? "primary" : "ghost"
+            }
             isDisabled={busy || !hasSources}
             onPress={() => {
-              if (tool === "addImage") {
+              if (tool === "addImage" && pendingImage?.kind !== "signature") {
                 setTool("select");
                 setPendingImage(null);
               } else {
@@ -492,7 +515,25 @@ function MobileHeader({
             aria-label="Add image"
           >
             <ImageIcon size={14} aria-hidden />
-            {pendingImage ? <Check size={12} aria-label="image queued" /> : null}
+            {pendingImage?.kind === "image" ? <Check size={12} aria-label="image queued" /> : null}
+          </Button>
+          <Button
+            isIconOnly
+            size="sm"
+            variant={
+              tool === "addImage" && pendingImage?.kind === "signature" ? "primary" : "ghost"
+            }
+            isDisabled={busy || !hasSources}
+            onPress={() => {
+              setPendingImage(null);
+              onSignatureOpen();
+            }}
+            aria-label="Signature"
+          >
+            <Signature size={14} aria-hidden />
+            {pendingImage?.kind === "signature" ? (
+              <Check size={12} aria-label="signature queued" />
+            ) : null}
           </Button>
           <Button
             isIconOnly
