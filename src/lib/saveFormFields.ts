@@ -36,7 +36,11 @@ import {
 } from "pdf-lib";
 import type { FormValue } from "./formFields";
 import { isRtlScript } from "./fonts";
-import type { AnnotationFontFactory } from "./saveAnnotations";
+import {
+  encodePdfTextString,
+  makeAcroFormFontSetup,
+  type EmbeddedFontFactory,
+} from "./pdfAcroForm";
 
 /** Flat fill record passed into the save pipeline — the App's
  *  formValues Map<sourceKey, Map<fullName, FormValue>> is flattened to
@@ -53,46 +57,12 @@ export type FormFillSaveOptions = {
    *  applied to. Used to embed Faruma into /AcroForm/DR/Font for Tx
    *  fields whose value contains Thaana — viewer regen reads /DA's
    *  font reference from there. */
-  getFont: AnnotationFontFactory;
+  getFont: EmbeddedFontFactory;
 };
-
-/** PDF text-string encoding for non-PDFDocEncoding values (Thaana /
- *  emoji / any non-Latin-1 codepoint): UTF-16BE with a 0xFEFF BOM,
- *  written as a hex string. Same encoder saveAnnotations.ts uses for
- *  /Contents — kept private here to avoid a cross-import. */
-function encodeUtf16BE(s: string): PDFHexString {
-  const bytes: number[] = [0xfe, 0xff];
-  for (const ch of s) {
-    const cp = ch.codePointAt(0)!;
-    if (cp <= 0xffff) {
-      bytes.push((cp >> 8) & 0xff, cp & 0xff);
-    } else {
-      const off = cp - 0x10000;
-      const hi = 0xd800 + (off >> 10);
-      const lo = 0xdc00 + (off & 0x3ff);
-      bytes.push((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff);
-    }
-  }
-  const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
-  return PDFHexString.of(hex);
-}
-
-/** True iff every codepoint is in PDFDocEncoding's safe ASCII subset
- *  (printable Latin-1, tab, newline, carriage return). When true we
- *  can write /V as a plain `(string)` literal — saves a few bytes vs
- *  hex-encoded UTF-16BE. */
-function isAsciiSafe(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c === 9 || c === 10 || c === 13) continue;
-    if (c < 0x20 || c > 0x7e) return false;
-  }
-  return true;
-}
 
 /** Encode a string for /V. ASCII → PDFString, otherwise UTF-16BE hex. */
 function encodeFieldString(s: string): PDFString | PDFHexString {
-  return isAsciiSafe(s) ? PDFString.of(s) : encodeUtf16BE(s);
+  return encodePdfTextString(s);
 }
 
 /** Walk /Parent until we find a node that has `key` directly. /FT,
@@ -214,38 +184,6 @@ function setNeedAppearances(catalog: PDFDict): void {
   // viewer can't fall back to a stale appearance for the OLD /V.
 }
 
-/** Idempotently register `font` under `alias` in the doc's
- *  /AcroForm/DR/Font dict. Identical recipe to the one in
- *  saveAnnotations.ts — duplicated rather than cross-imported because
- *  the save flow keeps each phase independent and the function is
- *  small. */
-function registerAcroFormFont(
-  ctx: PDFContext,
-  catalog: PDFDict,
-  alias: string,
-  fontRef: PDFRef,
-): void {
-  let acroForm = catalog.lookup(PDFName.of("AcroForm"));
-  if (!(acroForm instanceof PDFDict)) {
-    acroForm = PDFDict.withContext(ctx);
-    catalog.set(PDFName.of("AcroForm"), acroForm);
-  }
-  let dr = (acroForm as PDFDict).lookup(PDFName.of("DR"));
-  if (!(dr instanceof PDFDict)) {
-    dr = PDFDict.withContext(ctx);
-    (acroForm as PDFDict).set(PDFName.of("DR"), dr);
-  }
-  let fontDict = (dr as PDFDict).lookup(PDFName.of("Font"));
-  if (!(fontDict instanceof PDFDict)) {
-    fontDict = PDFDict.withContext(ctx);
-    (dr as PDFDict).set(PDFName.of("Font"), fontDict);
-  }
-  const aliasName = PDFName.of(alias);
-  if (!(fontDict as PDFDict).has(aliasName)) {
-    (fontDict as PDFDict).set(aliasName, fontRef);
-  }
-}
-
 type ResolvedThaanaFont = {
   pdfFont: PDFFont;
   alias: string;
@@ -258,21 +196,13 @@ type AcroFormSetup = {
 function makeAcroFormSetup(
   ctx: PDFContext,
   catalog: PDFDict,
-  getFont: AnnotationFontFactory,
+  getFont: EmbeddedFontFactory,
 ): AcroFormSetup {
-  let cached: ResolvedThaanaFont | null | undefined = undefined;
+  const setup = makeAcroFormFontSetup({ context: ctx, catalog }, getFont, { requireBytes: true });
   return {
     async ensureThaanaFont() {
-      if (cached !== undefined) return cached;
-      const embedded = await getFont("Faruma");
-      if (!embedded.bytes) {
-        cached = null;
-        return cached;
-      }
-      const alias = "RihaThaana";
-      registerAcroFormFont(ctx, catalog, alias, embedded.pdfFont.ref);
-      cached = { pdfFont: embedded.pdfFont, alias };
-      return cached;
+      const font = await setup.ensureFont();
+      return font ? { pdfFont: font.pdfFont, alias: font.alias } : null;
     },
   };
 }

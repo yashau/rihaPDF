@@ -32,6 +32,7 @@
 
 import { PDFArray, PDFContext, PDFDict, PDFName, PDFNumber, PDFRef } from "pdf-lib";
 import type { ContentOp, ContentToken } from "./contentStream";
+import { rectsOverlap, type PdfRect } from "./pdfGeometry";
 
 export type FontMetrics = {
   /** 1 for simple fonts (Type1/TrueType/MMType1); 2 for /Identity-H
@@ -47,7 +48,7 @@ export type FontMetrics = {
   twAppliesToSpace: boolean;
 };
 
-export type Rect = { pdfX: number; pdfY: number; pdfWidth: number; pdfHeight: number };
+export type Rect = PdfRect;
 
 /** Per-op rewrite plan produced by `planRedactionStrip`. */
 export type OpStripPlan =
@@ -269,15 +270,6 @@ function bboxFromTextSpaceRect(
     if (wy > ury) ury = wy;
   }
   return { pdfX: llx, pdfY: lly, pdfWidth: urx - llx, pdfHeight: ury - lly };
-}
-
-function rectsOverlap(a: Rect, b: Rect): boolean {
-  return (
-    a.pdfX < b.pdfX + b.pdfWidth &&
-    a.pdfX + a.pdfWidth > b.pdfX &&
-    a.pdfY < b.pdfY + b.pdfHeight &&
-    a.pdfY + a.pdfHeight > b.pdfY
-  );
 }
 
 /** Plan a per-glyph redaction strip across every text-show in `ops`.

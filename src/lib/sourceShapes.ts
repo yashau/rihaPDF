@@ -26,6 +26,7 @@
 import { PDFDocument } from "pdf-lib";
 import { parseContentStream, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "./pdfGeometry";
 
 export type ShapeInstance = {
   /** Stable id: "p<pageNumber>-s<index>". */
@@ -59,29 +60,9 @@ export async function extractPageShapes(pdfBytes: ArrayBuffer): Promise<PageShap
   return out;
 }
 
-type Mat6 = [number, number, number, number, number, number];
-
-const IDENTITY: Mat6 = [1, 0, 0, 1, 0, 0];
-
 const PAINT_OPS = new Set(["S", "s", "f", "F", "f*", "B", "B*", "b", "b*"]);
 const PATH_END_OPS = new Set([...PAINT_OPS, "n"]);
 const CLIP_OPS = new Set(["W", "W*"]);
-
-/** 6-element affine A × B (PDF row-vector convention: P' = P × M). */
-function mulCm(a: Mat6, b: Mat6): Mat6 {
-  return [
-    a[0] * b[0] + a[1] * b[2],
-    a[0] * b[1] + a[1] * b[3],
-    a[2] * b[0] + a[3] * b[2],
-    a[2] * b[1] + a[3] * b[3],
-    a[4] * b[0] + a[5] * b[2] + b[4],
-    a[4] * b[1] + a[5] * b[3] + b[5],
-  ];
-}
-
-function transformPoint(m: Mat6, x: number, y: number): [number, number] {
-  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-}
 
 function readNumberOperands(op: ContentOp): number[] | null {
   const out: number[] = [];
@@ -153,7 +134,7 @@ function findShapesInOps(ops: ContentOp[], pageNumber: number): ShapeInstance[] 
 
   const blockStack: Block[] = [];
   const ctmStack: Mat6[] = [];
-  let ctm: Mat6 = [...IDENTITY];
+  let ctm: Mat6 = [...IDENTITY_MATRIX] as Mat6;
 
   // Propagate child-block flags up to the outer block on Q so a
   // nested image / text inside the outermost q…Q correctly disqualifies
@@ -186,7 +167,7 @@ function findShapesInOps(ops: ContentOp[], pageNumber: number): ShapeInstance[] 
 
     switch (o.op) {
       case "q":
-        ctmStack.push([...ctm]);
+        ctmStack.push([...ctm] as Mat6);
         blockStack.push(newBlock(i));
         break;
 

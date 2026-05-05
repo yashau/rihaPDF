@@ -226,7 +226,12 @@ export function EditTextToolbar({
       {/* Text color picker — preset swatches + hex input. Sits between
           the inline style toggles and the direction button so it's
           adjacent to the formatting controls users reach for together. */}
-      <ColorPickerPopover value={color} onChange={(c) => onChange({ color: c })} />
+      <ColorPickerPopover
+        value={color}
+        onChange={(c) => onChange({ color: c })}
+        ariaLabel="Text color"
+        trigger="text"
+      />
       {/* Direction button — cycles auto → rtl → ltr → auto. Lets the
           user override the codepoint-based auto-detection used by the
           overlay (`dir="auto"`) and the save path. Useful when the

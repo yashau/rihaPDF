@@ -28,7 +28,6 @@ import {
   PDFContext,
   PDFDict,
   PDFFont,
-  PDFHexString,
   PDFName,
   PDFNumber,
   PDFObject,
@@ -50,16 +49,13 @@ import {
   type InkAnnotation,
 } from "./annotations";
 import { isRtlScript } from "./fonts";
+import { encodeUtf16BE, makeAcroFormFontSetup, type EmbeddedFontFactory } from "./pdfAcroForm";
 import { buildShapedTextOps, measureShapedWidth } from "./shapedDraw";
 
 /** Subset of save.ts's per-source font factory needed by the comment
  *  /AP path. Defined structurally here so saveAnnotations.ts doesn't
  *  cross-import the bigger save-pipeline types. */
-export type AnnotationFontFactory = (
-  family: string,
-  bold?: boolean,
-  italic?: boolean,
-) => Promise<{ pdfFont: PDFFont; bytes: Uint8Array | null }>;
+export type AnnotationFontFactory = EmbeddedFontFactory;
 
 export type AnnotationSaveOptions = {
   /** Embedded-font factory bound to the same doc the annotations are
@@ -79,27 +75,6 @@ function appendAnnotRef(page: PDFPage, ref: PDFRef): void {
   }
   const arr = page.doc.context.obj([ref]);
   page.node.set(PDFName.of("Annots"), arr);
-}
-
-/** PDF text strings supporting Unicode use a UTF-16BE byte sequence
- *  prefixed with the BOM 0xFEFF, written as a hex string. /Contents on
- *  /Text and /Highlight comment fields needs this encoding to carry
- *  Thaana / emoji / any non-PDFDocEncoding codepoint. */
-function encodeUtf16BE(s: string): PDFHexString {
-  const bytes: number[] = [0xfe, 0xff];
-  for (const ch of s) {
-    const cp = ch.codePointAt(0)!;
-    if (cp <= 0xffff) {
-      bytes.push((cp >> 8) & 0xff, cp & 0xff);
-    } else {
-      const off = cp - 0x10000;
-      const hi = 0xd800 + (off >> 10);
-      const lo = 0xdc00 + (off & 0x3ff);
-      bytes.push((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff);
-    }
-  }
-  const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
-  return PDFHexString.of(hex);
 }
 
 function rectArray(ctx: PDFContext, r: [number, number, number, number]): PDFArray {
@@ -254,58 +229,18 @@ function makeAcroFormSetup(
   doc: { context: PDFContext; catalog: PDFDict },
   getFont: AnnotationFontFactory,
 ): AcroFormSetup {
-  let cached: ResolvedThaanaFont | null | undefined = undefined;
+  const setup = makeAcroFormFontSetup(doc, getFont, { requireBytes: true });
   return {
     async ensureThaanaFont() {
-      if (cached !== undefined) return cached;
-      const embedded = await getFont("Faruma");
-      if (!embedded.bytes) {
-        cached = null;
-        return cached;
-      }
-      const alias = "RihaThaana";
-      registerAcroFormFont(doc, alias, embedded.pdfFont.ref);
-      cached = {
-        pdfFont: embedded.pdfFont,
-        fontBytes: embedded.bytes,
-        alias,
+      const font = await setup.ensureFont();
+      if (!font?.fontBytes) return null;
+      return {
+        pdfFont: font.pdfFont,
+        fontBytes: font.fontBytes,
+        alias: font.alias,
       };
-      return cached;
     },
   };
-}
-
-/** Idempotently register `font` under `alias` in the doc's
- *  /AcroForm/DR/Font dict. Creates /AcroForm and /DR if missing. This
- *  is the legacy-viewer fallback for comments whose /AP we ship —
- *  viewers that bypass /AP and re-render from /DA need to resolve the
- *  font reference our /DA uses, and /AcroForm/DR/Font is where the
- *  spec says they should look. */
-function registerAcroFormFont(
-  doc: { context: PDFContext; catalog: PDFDict },
-  alias: string,
-  fontRef: PDFRef,
-): void {
-  const ctx = doc.context;
-  let acroForm = doc.catalog.lookup(PDFName.of("AcroForm"));
-  if (!(acroForm instanceof PDFDict)) {
-    acroForm = PDFDict.withContext(ctx);
-    doc.catalog.set(PDFName.of("AcroForm"), acroForm);
-  }
-  let dr = (acroForm as PDFDict).lookup(PDFName.of("DR"));
-  if (!(dr instanceof PDFDict)) {
-    dr = PDFDict.withContext(ctx);
-    (acroForm as PDFDict).set(PDFName.of("DR"), dr);
-  }
-  let fontDict = (dr as PDFDict).lookup(PDFName.of("Font"));
-  if (!(fontDict instanceof PDFDict)) {
-    fontDict = PDFDict.withContext(ctx);
-    (dr as PDFDict).set(PDFName.of("Font"), fontDict);
-  }
-  const aliasName = PDFName.of(alias);
-  if (!(fontDict as PDFDict).has(aliasName)) {
-    (fontDict as PDFDict).set(aliasName, fontRef);
-  }
 }
 
 /** Build the /AP /N Form XObject that paints a comment with HarfBuzz-

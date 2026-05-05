@@ -30,6 +30,7 @@ export function ColorPickerPopover({
   onChange,
   presets = TEXT_COLOR_PRESETS,
   ariaLabel = "Color",
+  trigger = "swatch",
 }: {
   /** Current color, 0..1 RGB. Undefined means "no override" — the
    *  swatch renders black (the default) and the grid's Black preset
@@ -44,6 +45,9 @@ export function ColorPickerPopover({
    *  same component can describe itself as "Text color" / "Stroke
    *  color" / "Highlight color" without parent boilerplate. */
   ariaLabel?: string;
+  /** Trigger style. Text formatting uses the conventional "A" with a
+   *  color bar; annotation/tool pickers keep the plain swatch. */
+  trigger?: "swatch" | "text";
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement | null>(null);
@@ -161,22 +165,35 @@ export function ColorPickerPopover({
           // input that mounted us.
           onMouseDown={(e) => e.preventDefault()}
         >
-          {/* U+25A0 BLACK SQUARE rendered in the active color — sits
-              inside the standard HeroUI button frame so the toolbar
-              row stays tonally consistent with the B/I/U buttons. The
-              text-shadow gives a near-white swatch a tiny dark edge so
-              it doesn't disappear against the button's white fill. */}
-          <span
-            aria-hidden
-            style={{
-              color: swatchCss,
-              fontSize: 18,
-              lineHeight: 1,
-              textShadow: "0 0 1px rgba(0,0,0,0.35)",
-            }}
-          >
-            ■
-          </span>
+          {trigger === "text" ? (
+            <span
+              aria-hidden
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, lineHeight: "12px" }}>A</span>
+              <span
+                style={{
+                  width: 16,
+                  height: 4,
+                  background: swatchCss,
+                  borderRadius: 1,
+                  boxShadow: "0 0 0 1px rgba(0,0,0,0.15) inset",
+                }}
+              />
+            </span>
+          ) : (
+            <span
+              aria-hidden
+              style={{
+                color: swatchCss,
+                fontSize: 18,
+                lineHeight: 1,
+                textShadow: "0 0 1px rgba(0,0,0,0.35)",
+              }}
+            >
+              ■
+            </span>
+          )}
         </Button>
       </span>
       {popover && typeof document !== "undefined" ? createPortal(popover, document.body) : popover}

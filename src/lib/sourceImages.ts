@@ -24,6 +24,7 @@
 import { PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
 import { parseContentStream, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "./pdfGeometry";
 
 export type ImageInstance = {
   /** Stable id for UI / save plumbing: "p<pageNumber>-i<index>". */
@@ -98,7 +99,6 @@ function resolveXObjectDict(pageNode: PDFDict, doc: PDFDocument): PDFDict | null
   return null;
 }
 
-type Mat6 = [number, number, number, number, number, number];
 type BBox4 = [number, number, number, number];
 
 /** Subtype + Form-specific geometry (BBox, Matrix) for an XObject. The
@@ -162,8 +162,6 @@ function readNumberArray(value: unknown, length: number): number[] | null {
 }
 
 const IDENTITY_BBOX: BBox4 = [0, 0, 1, 1];
-const IDENTITY_MATRIX: Mat6 = [1, 0, 0, 1, 0, 0];
-
 /** Compute the page-space axis-aligned bounding rectangle a Form
  *  (or Image) XObject occupies when drawn with the given outer CTM.
  *  For Forms we apply the chain `BBox-corner × Matrix × CTM`; for
@@ -189,8 +187,7 @@ function transformedRect(
   let minY = Infinity;
   let maxY = -Infinity;
   for (const [x, y] of corners) {
-    const px = composed[0] * x + composed[2] * y + composed[4];
-    const py = composed[1] * x + composed[3] * y + composed[5];
+    const [px, py] = transformPoint(composed, x, y);
     if (px < minX) minX = px;
     if (px > maxX) maxX = px;
     if (py < minY) minY = py;
@@ -198,23 +195,6 @@ function transformedRect(
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
-
-/** 6-element affine A × B (PDF row-vector convention: P' = P × M). */
-function mulCm(
-  a: [number, number, number, number, number, number],
-  b: [number, number, number, number, number, number],
-): [number, number, number, number, number, number] {
-  return [
-    a[0] * b[0] + a[1] * b[2],
-    a[0] * b[1] + a[1] * b[3],
-    a[2] * b[0] + a[3] * b[2],
-    a[2] * b[1] + a[3] * b[3],
-    a[4] * b[0] + a[5] * b[2] + b[4],
-    a[4] * b[1] + a[5] * b[3] + b[5],
-  ];
-}
-
-const IDENTITY: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
 
 /** Walk ops with a q/Q stack tracking CTM, and emit one ImageInstance per
  *  Do op that references an Image / Form XObject. */
@@ -225,8 +205,8 @@ function findImagesInOps(
   pageNumber: number,
 ): ImageInstance[] {
   const out: ImageInstance[] = [];
-  const stack: [number, number, number, number, number, number][] = [];
-  let ctm: [number, number, number, number, number, number] = [...IDENTITY];
+  const stack: Mat6[] = [];
+  let ctm: Mat6 = [...IDENTITY_MATRIX] as Mat6;
   // For each open q-block, the index of the q op AND the index of
   // the first cm seen inside it. Save uses qIdx to insert a fresh
   // outermost translate cm; the firstCmIdx is mostly a diagnostic.
@@ -236,7 +216,7 @@ function findImagesInOps(
     const o = ops[i];
     switch (o.op) {
       case "q":
-        stack.push([...ctm]);
+        stack.push([...ctm] as Mat6);
         blockStack.push({ qIdx: i, firstCmIdx: null });
         break;
       case "Q": {
@@ -247,14 +227,7 @@ function findImagesInOps(
       }
       case "cm": {
         if (o.operands.length === 6 && o.operands.every((x) => x.kind === "number")) {
-          const m = o.operands.map((x) => (x as { value: number }).value) as [
-            number,
-            number,
-            number,
-            number,
-            number,
-            number,
-          ];
+          const m = o.operands.map((x) => (x as { value: number }).value) as Mat6;
           ctm = mulCm(m, ctm);
           const top = blockStack[blockStack.length - 1];
           if (top && top.firstCmIdx == null) top.firstCmIdx = i;
@@ -284,7 +257,7 @@ function findImagesInOps(
           doOpIndex: i,
           qOpIndex: block?.qIdx ?? null,
           cmOpIndex: block?.firstCmIdx ?? null,
-          ctm: [...ctm],
+          ctm: [...ctm] as Mat6,
           pdfX: rect.x,
           pdfY: rect.y,
           pdfWidth: rect.width,

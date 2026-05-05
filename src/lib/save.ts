@@ -52,7 +52,7 @@ import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "./sav
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
 import { DEFAULT_TEXT_COLOR } from "./color";
-import { type Redaction } from "./redactions";
+import { rectsOverlap, type Redaction } from "./redactions";
 import { planRedactionStrip } from "./redactGlyphs";
 
 export type EditStyle = {
@@ -1293,12 +1293,7 @@ async function applyStreamSurgeryForSource(
               pdfWidth: run.bounds.width / scale,
               pdfHeight: run.bounds.height / scale,
             };
-            const overlap =
-              r.pdfX < runRect.pdfX + runRect.pdfWidth &&
-              r.pdfX + r.pdfWidth > runRect.pdfX &&
-              r.pdfY < runRect.pdfY + runRect.pdfHeight &&
-              r.pdfY + r.pdfHeight > runRect.pdfY;
-            if (!overlap) continue;
+            if (!rectsOverlap(r, runRect)) continue;
             for (const opIdx of run.contentStreamOpIndices) indicesToRemove.add(opIdx);
           }
         }

@@ -1,9 +1,6 @@
-import { useRef } from "react";
-import { createPortal } from "react-dom";
 import type { AnnotationColor } from "../lib/annotations";
-import { useIsMobile } from "../lib/useMediaQuery";
-import { useVisualViewportFollow } from "../lib/useVisualViewport";
 import { ColorPickerPopover } from "./PdfPage/ColorPickerPopover";
+import { ToolOptionsBar } from "./ToolOptionsBar";
 
 /** Options bar for the ink tool. Renders in two shapes:
  *
@@ -29,21 +26,27 @@ export function InkToolbar({
   onColorChange: (next: AnnotationColor) => void;
   onThicknessChange: (next: number) => void;
 }) {
-  const isMobile = useIsMobile();
-  return isMobile ? (
-    <MobileInkBar
-      color={color}
-      thickness={thickness}
-      onColorChange={onColorChange}
-      onThicknessChange={onThicknessChange}
-    />
-  ) : (
-    <DesktopInkBar
-      color={color}
-      thickness={thickness}
-      onColorChange={onColorChange}
-      onThicknessChange={onThicknessChange}
-    />
+  return (
+    <ToolOptionsBar
+      label="Draw"
+      mobileChildren={
+        <InkControls
+          color={color}
+          thickness={thickness}
+          onColorChange={onColorChange}
+          onThicknessChange={onThicknessChange}
+          compact={false}
+        />
+      }
+    >
+      <InkControls
+        color={color}
+        thickness={thickness}
+        onColorChange={onColorChange}
+        onThicknessChange={onThicknessChange}
+        compact
+      />
+    </ToolOptionsBar>
   );
 }
 
@@ -53,81 +56,6 @@ type ControlProps = {
   onColorChange: (next: AnnotationColor) => void;
   onThicknessChange: (next: number) => void;
 };
-
-/** Desktop: an attached second row directly under the main header.
- *  Sits in the normal document flow (not fixed) so the page list
- *  shifts down by exactly the bar's height while the ink tool is
- *  active — same visual rhythm as the mobile two-row header. */
-function DesktopInkBar({ color, thickness, onColorChange, onThicknessChange }: ControlProps) {
-  return (
-    <div
-      data-edit-toolbar
-      className="flex items-center gap-4 px-4 py-2 bg-zinc-50 text-zinc-900 border-b border-zinc-200 dark:bg-zinc-850 dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-800"
-      // Same focus / pointer-stop discipline as the format toolbar so
-      // clicking these controls doesn't activate the page-level ink
-      // capture surface beneath.
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <span className="text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-        Draw
-      </span>
-      <InkControls
-        color={color}
-        thickness={thickness}
-        onColorChange={onColorChange}
-        onThicknessChange={onThicknessChange}
-        compact
-      />
-    </div>
-  );
-}
-
-/** Mobile: fixed strip at the bottom of the viewport. Mirrors the
- *  EditTextToolbar's mobile layout (visual viewport follow, safe-area
- *  padding) so it doesn't get covered by the keyboard. */
-function MobileInkBar({ color, thickness, onColorChange, onThicknessChange }: ControlProps) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useVisualViewportFollow(ref, "bottom", true);
-  // Portal to document.body — same rationale as HighlightToolbar /
-  // EditTextToolbar: `position: fixed` is layout-anchored to the
-  // nearest transformed ancestor, so an inline render inside any
-  // visualViewport-counterscaled subtree would land the toolbar mid-
-  // page rather than at the visual-viewport bottom.
-  const node = (
-    <div
-      ref={ref}
-      data-edit-toolbar
-      className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
-      style={{
-        position: "fixed",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 30,
-        display: "flex",
-        gap: 12,
-        padding: 8,
-        paddingBottom: `max(8px, var(--safe-bottom, 0px))`,
-        alignItems: "center",
-        justifyContent: "center",
-        pointerEvents: "auto",
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <InkControls
-        color={color}
-        thickness={thickness}
-        onColorChange={onColorChange}
-        onThicknessChange={onThicknessChange}
-        compact={false}
-      />
-    </div>
-  );
-  if (typeof document !== "undefined") {
-    return createPortal(node, document.body);
-  }
-  return node;
-}
 
 /** Shared color + thickness controls. `compact` shrinks the slider
  *  width on desktop where horizontal space is tighter alongside the

@@ -16,16 +16,13 @@
 // annotations. (pdfX, pdfY) is the BOTTOM-LEFT of the rect.
 
 import type { LineMarkupExtents } from "./annotations";
+import type { PdfRect } from "./pdfGeometry";
+export { rectsOverlap } from "./pdfGeometry";
 
-export type Redaction = {
+export type Redaction = PdfRect & {
   id: string;
   sourceKey: string;
   pageIndex: number;
-  /** Bottom-left in PDF user space (y-up). */
-  pdfX: number;
-  pdfY: number;
-  pdfWidth: number;
-  pdfHeight: number;
 };
 
 /** Generous-by-design extents for a click-to-redact rect over a text
@@ -39,20 +36,4 @@ let counter = 0;
 export function newRedactionId(): string {
   counter += 1;
   return `redact-${Date.now().toString(36)}-${counter.toString(36)}`;
-}
-
-/** Axis-aligned overlap test in PDF user space. Used at save time to
- *  decide which runs a redaction strips. Any non-zero overlap counts
- *  — partial-overlap stripping is the only safe option since you
- *  can't render half a Tj op (and leaving the un-overlapped half
- *  visible would defeat the redaction). */
-export function rectsOverlap(
-  a: { pdfX: number; pdfY: number; pdfWidth: number; pdfHeight: number },
-  b: { pdfX: number; pdfY: number; pdfWidth: number; pdfHeight: number },
-): boolean {
-  const ax2 = a.pdfX + a.pdfWidth;
-  const ay2 = a.pdfY + a.pdfHeight;
-  const bx2 = b.pdfX + b.pdfWidth;
-  const by2 = b.pdfY + b.pdfHeight;
-  return a.pdfX < bx2 && ax2 > b.pdfX && a.pdfY < by2 && ay2 > b.pdfY;
 }
