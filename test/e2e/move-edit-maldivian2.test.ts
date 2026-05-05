@@ -163,6 +163,15 @@ async function runScenario({
     await inp.fill(edit);
     await inp.press("Enter");
     await h.page.locator("input[data-editor]").first().waitFor({ state: "detached" });
+    await h.page.waitForFunction(
+      ({ selector, text }) =>
+        Array.from(document.querySelectorAll(selector)).some(
+          (el) => (el.textContent || "") === text,
+        ),
+      { selector: `[data-run-id="${titleRunId}"]:not(input)`, text: edit },
+      { timeout: 20_000 },
+    );
+    await waitForSaveEnabled();
   }
 
   const dlPromise = h.page.waitForEvent("download", { timeout: 20_000 });
@@ -261,4 +270,21 @@ async function waitForTitleRunId(): Promise<string | null> {
     }
     return null;
   }, TITLE_TEXT);
+}
+
+async function waitForSaveEnabled(): Promise<void> {
+  await h.page.waitForFunction(
+    () => {
+      const save = Array.from(document.querySelectorAll("button")).find((button) =>
+        /^Save/.test(button.textContent || ""),
+      );
+      return (
+        save instanceof HTMLButtonElement &&
+        !save.disabled &&
+        save.getAttribute("aria-disabled") !== "true"
+      );
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
 }

@@ -149,7 +149,31 @@ export async function loadFixture(
   // expected page count so multi-page fixtures get proportional time;
   // single/unknown-page fixtures keep the original 25s budget.
   const LOAD_DEADLINE_MS = Math.max(25_000, (expectedPages ?? 1) * 3_000);
+  const beforeLoadedKey = await page
+    .locator("[data-loaded-file-key]")
+    .first()
+    .getAttribute("data-loaded-file-key")
+    .then((v) => Number(v ?? 0))
+    .catch(() => 0);
+  const expectedFilename = path.basename(fixturePath);
   await page.locator('input[data-testid="open-pdf-input"]').setInputFiles(fixturePath);
+  try {
+    await page.waitForFunction(
+      ({ beforeLoadedKey, expectedFilename }) => {
+        const root = document.querySelector("[data-loaded-file-key]");
+        const loadedKey = Number(root?.getAttribute("data-loaded-file-key") ?? 0);
+        const loadedFilename = root?.getAttribute("data-loaded-filename") ?? "";
+        return loadedKey > beforeLoadedKey && loadedFilename === expectedFilename;
+      },
+      { beforeLoadedKey, expectedFilename },
+      { timeout: LOAD_DEADLINE_MS },
+    );
+  } catch (err) {
+    throw new Error(
+      `loadFixture(${fixturePath}): file load did not commit after ${LOAD_DEADLINE_MS}ms.${formatPageLog(pageLog)}`,
+      { cause: err },
+    );
+  }
   try {
     await page.waitForSelector("[data-page-index]", { timeout: LOAD_DEADLINE_MS });
   } catch (err) {

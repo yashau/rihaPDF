@@ -67,6 +67,7 @@ export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const isMobile = useIsMobile();
   const [primaryFilename, setPrimaryFilename] = useState<string | null>(null);
+  const [loadedFileKey, setLoadedFileKey] = useState(0);
   const { mobileHeaderRef, mobileHeaderH, mobileSidebarOpen, setMobileSidebarOpen } =
     useMobileChrome(isMobile);
   /** All loaded sources keyed by sourceKey. The primary file uses the
@@ -289,6 +290,7 @@ export default function App() {
         setInsertedImages(new Map());
         setTool("select");
         setPendingImage(null);
+        setLoadedFileKey((n) => n + 1);
       } finally {
         setBusy(false);
       }
@@ -981,7 +983,11 @@ export default function App() {
                 : null;
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+    <div
+      className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100"
+      data-loaded-file-key={loadedFileKey}
+      data-loaded-filename={primaryFilename ?? ""}
+    >
       {/* The hidden file inputs are rendered ONCE outside both header
           subtrees so the desktop / mobile layouts can target the same
           input ref via `.click()`. Two render paths sharing one input

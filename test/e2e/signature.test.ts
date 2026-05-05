@@ -76,7 +76,7 @@ describe("signature insertion", () => {
 
     await h.page.getByRole("button", { name: "Save", exact: true }).click();
     const savedSignature = h.page.locator('button[aria-label="Place saved signature"]').first();
-    expect(await savedSignature.isVisible()).toBe(true);
+    await savedSignature.waitFor({ state: "visible", timeout: 12_000 });
     await savedSignature.click();
     await h.page.getByRole("heading", { name: "Add Signature" }).waitFor({ state: "hidden" });
 
