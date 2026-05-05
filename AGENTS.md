@@ -210,13 +210,13 @@ Relevant tests include:
 
 The E2E suite is the main regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup.
 
-Common targeted test runs:
+Common targeted test runs use `pnpm test run <name-fragment>`. The repo's `test` script already runs `vitest run`; the extra `run` and name fragment are passed through as Vitest filters.
 
 ```bash
-pnpm test -- test/e2e/move-edit.test.ts
-pnpm test -- test/e2e/form-fill.test.ts
-pnpm test -- test/e2e/save-redactions.test.ts
-pnpm test -- test/e2e/mobile-layout.test.ts
+pnpm test run move-edit
+pnpm test run form-fill
+pnpm test run save-redactions
+pnpm test run signature
 ```
 
 If a synthetic PDF fixture changes, regenerate it with:

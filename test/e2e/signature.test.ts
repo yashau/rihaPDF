@@ -74,13 +74,11 @@ describe("signature insertion", () => {
     await h.page.mouse.move(startX + 260, startY - 20, { steps: 4 });
     await h.page.mouse.up();
 
-    await h.page
-      .locator("button")
-      .filter({ hasText: /^Save$/ })
-      .click();
+    await h.page.getByRole("button", { name: "Save", exact: true }).click();
     const savedSignature = h.page.locator('button[aria-label="Place saved signature"]').first();
     expect(await savedSignature.isVisible()).toBe(true);
     await savedSignature.click();
+    await h.page.getByRole("heading", { name: "Add Signature" }).waitFor({ state: "hidden" });
 
     const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
     expect(pageBox).not.toBeNull();
