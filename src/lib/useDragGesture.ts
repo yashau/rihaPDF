@@ -54,6 +54,14 @@ export type DragGestureCallbacks<C> = {
   onCancel?: (ctx: C) => void;
 };
 
+export type DragGestureOptions<C> = DragGestureCallbacks<C> & {
+  /** Touch gestures normally wait for a hold so scrollable surfaces
+   *  can keep native pan. Dedicated resize handles need to claim the
+   *  gesture immediately because a corner drag is never a page-scroll
+   *  intent. */
+  touchActivation?: "hold" | "immediate";
+};
+
 /** Per-pointer-type movement thresholds. Touch needs more slack than
  *  mouse because finger jitter on tap is significantly larger than a
  *  mouse click. Numbers picked to match Material / iOS UIKit defaults. */
@@ -105,7 +113,8 @@ export function useDragGesture<C>({
   onMove,
   onEnd,
   onCancel,
-}: DragGestureCallbacks<C>): (e: React.PointerEvent, ctx: C) => void {
+  touchActivation = "hold",
+}: DragGestureOptions<C>): (e: React.PointerEvent, ctx: C) => void {
   // Stash the latest callbacks in refs so the closure that runs the
   // gesture isn't dependent on render-stable identities. Call sites
   // can pass inline arrow functions without breaking the listener
@@ -123,10 +132,12 @@ export function useDragGesture<C>({
     const startY = e.clientY;
     const pointerType = e.pointerType || "mouse";
     const isTouch = pointerType === "touch";
+    const immediateTouch = isTouch && touchActivation === "immediate";
     const threshold = thresholdFor(pointerType);
     let moved = false;
-    // Mouse / pen activate immediately; touch waits for the hold timer.
-    let active = !isTouch;
+    // Mouse / pen activate immediately. Touch usually waits for the
+    // hold timer, except precision controls like resize handles.
+    let active = !isTouch || immediateTouch;
     let holdTimer: ReturnType<typeof setTimeout> | null = null;
     // Resolved at activation time so the lookup happens once, not every
     // animation frame.
@@ -145,9 +156,9 @@ export function useDragGesture<C>({
     let autoScrollAccumY = 0;
     let rafId: number | null = null;
 
-    if (!isTouch) {
-      // Same eager behaviour as before for desktop pointers — claim the
-      // gesture, suppress focus stealing, fire onStart.
+    if (!isTouch || immediateTouch) {
+      // Eager gestures claim the event immediately, suppress focus
+      // stealing / parent drags, and fire onStart.
       e.stopPropagation();
       e.preventDefault();
       callbacksRef.current.onStart?.(ctx, e);
@@ -291,10 +302,12 @@ export function useDragGesture<C>({
     window.addEventListener("pointercancel", handleCancel);
     if (isTouch) {
       window.addEventListener("touchmove", handleTouchMove, { passive: false });
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        activate(e);
-      }, TOUCH_HOLD_MS);
+      if (!immediateTouch) {
+        holdTimer = setTimeout(() => {
+          holdTimer = null;
+          activate(e);
+        }, TOUCH_HOLD_MS);
+      }
     }
   };
 }

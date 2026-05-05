@@ -61,6 +61,80 @@ async function findFirstNonEmptyRun(): Promise<{
   });
 }
 
+async function findWideRun(minWidth = 120): Promise<{
+  id: string;
+  cx: number;
+  cy: number;
+  text: string;
+} | null> {
+  return h.page.evaluate((width) => {
+    const overlays = document.querySelectorAll("[data-run-id]");
+    for (const el of overlays) {
+      const text = (el.textContent || "").trim();
+      if (!text) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < width || r.height < 8) continue;
+      return {
+        id: el.getAttribute("data-run-id") ?? "",
+        cx: r.x + r.width / 2,
+        cy: r.y + r.height / 2,
+        text,
+      };
+    }
+    return null;
+  }, minWidth);
+}
+
+async function dragLocatorByTouch(
+  locator: ReturnType<typeof h.page.locator>,
+  dx: number,
+  dy: number,
+): Promise<void> {
+  const box = await locator.boundingBox();
+  expect(box, "touch drag target should have a bounding box").not.toBeNull();
+  await locator.evaluate(
+    (el, { sx, sy, dragX, dragY }) => {
+      const pointer = {
+        pointerType: "touch",
+        pointerId: 1,
+        isPrimary: true,
+        bubbles: true,
+        cancelable: true,
+      };
+      el.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          ...pointer,
+          clientX: sx,
+          clientY: sy,
+        }),
+      );
+      const STEPS = 6;
+      for (let i = 1; i <= STEPS; i++) {
+        window.dispatchEvent(
+          new PointerEvent("pointermove", {
+            ...pointer,
+            clientX: sx + (dragX * i) / STEPS,
+            clientY: sy + (dragY * i) / STEPS,
+          }),
+        );
+      }
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          ...pointer,
+          clientX: sx + dragX,
+          clientY: sy + dragY,
+        }),
+      );
+    },
+    {
+      sx: box!.x + box!.width / 2,
+      sy: box!.y + box!.height / 2,
+      dragX: dx,
+      dragY: dy,
+    },
+  );
+}
+
 describe("mobile interaction (390×844, hasTouch)", () => {
   test("tap on a run opens the edit field", async () => {
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
@@ -193,5 +267,48 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     // fit-to-width is < 1 so we expect dxScreen ≈ DXV).
     expect(dxScreen).toBeGreaterThan(5);
     expect(dyScreen).toBeGreaterThan(2);
+  });
+
+  test("redaction and highlight resize handles react to immediate touch drags", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    const target = await findWideRun();
+    expect(target, "expected a wide run for resize-handle testing").not.toBeNull();
+
+    await h.page.locator('button[aria-label="Redact"]').click();
+    await h.page.touchscreen.tap(target!.cx, target!.cy);
+    await h.page.waitForTimeout(150);
+    const redaction = h.page.locator("[data-redaction-id]").first();
+    const redactionBox = await redaction.boundingBox();
+    expect(redactionBox, "redaction overlay should be created").not.toBeNull();
+    await h.page.touchscreen.tap(
+      redactionBox!.x + redactionBox!.width / 2,
+      redactionBox!.y + redactionBox!.height / 2,
+    );
+    await redaction.locator('[data-resize-handle="br"]').waitFor();
+    await dragLocatorByTouch(redaction.locator('[data-resize-handle="br"]'), -36, 0);
+    await h.page.waitForTimeout(150);
+    const shrunkRedactionBox = await redaction.boundingBox();
+    expect(shrunkRedactionBox!.width).toBeLessThan(redactionBox!.width - 12);
+    await h.page.keyboard.press("Delete");
+    await h.page.waitForTimeout(150);
+    expect(await h.page.locator("[data-redaction-id]").count()).toBe(0);
+
+    await h.page.locator('button[aria-label="Highlight"]').click();
+    await h.page.touchscreen.tap(target!.cx, target!.cy);
+    await h.page.waitForTimeout(150);
+    const highlight = h.page.locator("[data-highlight-id]").first();
+    const highlightBox = await highlight.boundingBox();
+    expect(highlightBox, "highlight overlay should be created").not.toBeNull();
+    await h.page.touchscreen.tap(
+      highlightBox!.x + highlightBox!.width / 2,
+      highlightBox!.y + highlightBox!.height / 2,
+    );
+    await highlight.locator('[data-resize-handle="br"]').waitFor();
+    await dragLocatorByTouch(highlight.locator('[data-resize-handle="br"]'), -36, 0);
+    await h.page.waitForTimeout(150);
+    const shrunkHighlightBox = await highlight.boundingBox();
+    expect(shrunkHighlightBox!.width).toBeLessThan(highlightBox!.width - 12);
   });
 });

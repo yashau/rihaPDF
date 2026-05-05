@@ -76,6 +76,7 @@ export function HighlightOverlay({
   };
   const MIN_PDF = 4;
   const beginResize = useDragGesture<ResizeCtx>({
+    touchActivation: "immediate",
     onMove: (ctx, info) => {
       const { corner, base } = ctx;
       const dxPdf = info.dxRaw / effectivePdfScale;

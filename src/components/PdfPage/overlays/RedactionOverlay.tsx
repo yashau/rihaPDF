@@ -59,6 +59,7 @@ export function RedactionOverlay({
   };
   const MIN_PDF = 4;
   const beginResize = useDragGesture<RedactResizeCtx>({
+    touchActivation: "immediate",
     onMove: (ctx, info) => {
       const { corner, base } = ctx;
       const dxPdf = info.dxRaw / effectivePdfScale;
