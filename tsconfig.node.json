@@ -25,6 +25,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "eslint.config.js",
+    "src/types/**/*.d.ts",
     "test/**/*.ts",
     "test/**/*.tsx",
     "test/**/*.mjs",

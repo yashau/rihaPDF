@@ -25,9 +25,11 @@ import {
   PDFFont,
   PDFName,
   PDFPage,
+  PDFRawStream,
   PDFRef,
   StandardFonts,
   concatTransformationMatrix,
+  decodePDFRawStream,
   drawObject,
   popGraphicsState,
   pushGraphicsState,
@@ -54,6 +56,7 @@ import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./sha
 import { DEFAULT_TEXT_COLOR } from "./color";
 import { rectsOverlap, type Redaction } from "./redactions";
 import { planRedactionStrip } from "./redactGlyphs";
+import { type Mat6, transformPoint } from "./pdfGeometry";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the
@@ -515,6 +518,320 @@ function lookupPageXObjectRef(doc: PDFDocument, pageNode: PDFDict, resName: stri
     }
   }
   return null;
+}
+
+function rectContains(
+  outer: Redaction,
+  inner: { pdfX: number; pdfY: number; pdfWidth: number; pdfHeight: number },
+): boolean {
+  const eps = 0.001;
+  return (
+    outer.pdfX <= inner.pdfX + eps &&
+    outer.pdfY <= inner.pdfY + eps &&
+    outer.pdfX + outer.pdfWidth >= inner.pdfX + inner.pdfWidth - eps &&
+    outer.pdfY + outer.pdfHeight >= inner.pdfY + inner.pdfHeight - eps
+  );
+}
+
+function opNumbers(op: ContentOp): number[] | null {
+  const out: number[] = [];
+  for (const t of op.operands) {
+    if (t.kind !== "number") return null;
+    out.push(t.value);
+  }
+  return out;
+}
+
+function inverseMat6(m: Mat6): Mat6 | null {
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Math.abs(det) < 1e-9) return null;
+  return [
+    m[3] / det,
+    -m[1] / det,
+    -m[2] / det,
+    m[0] / det,
+    (m[2] * m[5] - m[3] * m[4]) / det,
+    (m[1] * m[4] - m[0] * m[5]) / det,
+  ];
+}
+
+function readDictNumber(dict: PDFDict, key: string): number | null {
+  const value = dict.lookup(PDFName.of(key));
+  if (value && typeof value === "object" && "asNumber" in value) {
+    return (value as { asNumber(): number }).asNumber();
+  }
+  return typeof value === "number" ? value : null;
+}
+
+function pdfNameText(value: unknown): string | null {
+  if (value instanceof PDFName) return value.decodeText();
+  return null;
+}
+
+function imageComponents(dict: PDFDict): number | null {
+  const cs = dict.lookup(PDFName.of("ColorSpace"));
+  const name = pdfNameText(cs);
+  if (name === "DeviceGray") return 1;
+  if (name === "DeviceRGB") return 3;
+  if (name === "DeviceCMYK") return 4;
+  return null;
+}
+
+function decodedRawImageBytes(stream: PDFRawStream): Uint8Array | null {
+  try {
+    return decodePDFRawStream(stream).decode();
+  } catch {
+    return null;
+  }
+}
+
+function redactionToImagePixelBounds(
+  redaction: Redaction,
+  imageCtm: Mat6,
+  pixelWidth: number,
+  pixelHeight: number,
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  const inv = inverseMat6(imageCtm);
+  if (!inv) return null;
+  const x0 = redaction.pdfX;
+  const y0 = redaction.pdfY;
+  const x1 = redaction.pdfX + redaction.pdfWidth;
+  const y1 = redaction.pdfY + redaction.pdfHeight;
+  const pts = [
+    transformPoint(inv, x0, y0),
+    transformPoint(inv, x1, y0),
+    transformPoint(inv, x0, y1),
+    transformPoint(inv, x1, y1),
+  ];
+  let minUx = Infinity;
+  let maxUx = -Infinity;
+  let minUy = Infinity;
+  let maxUy = -Infinity;
+  for (const [ux, uy] of pts) {
+    minUx = Math.min(minUx, ux);
+    maxUx = Math.max(maxUx, ux);
+    minUy = Math.min(minUy, uy);
+    maxUy = Math.max(maxUy, uy);
+  }
+  minUx = Math.max(0, Math.min(1, minUx));
+  maxUx = Math.max(0, Math.min(1, maxUx));
+  minUy = Math.max(0, Math.min(1, minUy));
+  maxUy = Math.max(0, Math.min(1, maxUy));
+  if (maxUx <= minUx || maxUy <= minUy) return null;
+  return {
+    x0: Math.max(0, Math.floor(minUx * pixelWidth)),
+    x1: Math.min(pixelWidth, Math.ceil(maxUx * pixelWidth)),
+    y0: Math.max(0, Math.floor((1 - maxUy) * pixelHeight)),
+    y1: Math.min(pixelHeight, Math.ceil((1 - minUy) * pixelHeight)),
+  };
+}
+
+function makeRedactedImageXObject(
+  doc: PDFDocument,
+  pageNode: PDFDict,
+  resName: string,
+  imageCtm: Mat6,
+  redactions: Redaction[],
+): PDFRef | null {
+  const ref = lookupPageXObjectRef(doc, pageNode, resName);
+  if (!ref) return null;
+  const obj = doc.context.lookup(ref);
+  if (!(obj instanceof PDFRawStream)) return null;
+  const dict = obj.dict;
+  if (pdfNameText(dict.lookup(PDFName.of("Subtype"))) !== "Image") return null;
+  // Masks can carry the sensitive silhouette even when the color
+  // samples are blanked. Fall back to whole-draw stripping for those.
+  if (dict.lookup(PDFName.of("SMask")) || dict.lookup(PDFName.of("Mask"))) return null;
+
+  const width = readDictNumber(dict, "Width");
+  const height = readDictNumber(dict, "Height");
+  const bits = readDictNumber(dict, "BitsPerComponent");
+  const components = imageComponents(dict);
+  if (!width || !height || bits !== 8 || !components) return null;
+
+  const decoded = decodedRawImageBytes(obj);
+  if (!decoded) return null;
+  const rowStride = width * components;
+  if (decoded.length < rowStride * height) return null;
+
+  const redacted = new Uint8Array(decoded);
+  const fill = components === 4 ? [0, 0, 0, 255] : components === 3 ? [0, 0, 0] : [0];
+  let touched = false;
+  for (const r of redactions) {
+    const bounds = redactionToImagePixelBounds(r, imageCtm, width, height);
+    if (!bounds) continue;
+    touched = true;
+    for (let y = bounds.y0; y < bounds.y1; y++) {
+      for (let x = bounds.x0; x < bounds.x1; x++) {
+        const off = y * rowStride + x * components;
+        for (let c = 0; c < components; c++) redacted[off + c] = fill[c];
+      }
+    }
+  }
+  if (!touched) return null;
+
+  const imageDict = doc.context.obj({
+    Type: PDFName.of("XObject"),
+    Subtype: PDFName.of("Image"),
+    Width: width,
+    Height: height,
+    BitsPerComponent: bits,
+    ColorSpace: dict.lookup(PDFName.of("ColorSpace")) ?? PDFName.of("DeviceRGB"),
+  });
+  return doc.context.register(PDFRawStream.of(imageDict, redacted));
+}
+
+function markVectorPaintOpsForRedaction(
+  ops: ContentOp[],
+  redactions: Redaction[],
+  indicesToRemove: Set<number>,
+): void {
+  if (redactions.length === 0) return;
+  const PAINT_OPS = new Set(["S", "s", "f", "F", "f*", "B", "B*", "b", "b*"]);
+  const PATH_END_OPS = new Set([...PAINT_OPS, "n"]);
+  const ctmStack: Mat6[] = [];
+  let ctm: Mat6 = [1, 0, 0, 1, 0, 0];
+  let lineWidth = 1;
+  let pathOps: number[] = [];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  const resetPath = () => {
+    pathOps = [];
+    minX = Infinity;
+    minY = Infinity;
+    maxX = -Infinity;
+    maxY = -Infinity;
+  };
+  const includePoint = (x: number, y: number) => {
+    const [px, py] = transformPoint(ctm, x, y);
+    minX = Math.min(minX, px);
+    minY = Math.min(minY, py);
+    maxX = Math.max(maxX, px);
+    maxY = Math.max(maxY, py);
+  };
+  const currentPathRect = () => {
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+    const pad = Math.max(1, Math.abs(lineWidth) / 2);
+    return {
+      pdfX: minX - pad,
+      pdfY: minY - pad,
+      pdfWidth: maxX - minX + pad * 2,
+      pdfHeight: maxY - minY + pad * 2,
+    };
+  };
+
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i];
+    switch (o.op) {
+      case "q":
+        ctmStack.push([...ctm] as Mat6);
+        break;
+      case "Q": {
+        const popped = ctmStack.pop();
+        if (popped) ctm = popped;
+        resetPath();
+        break;
+      }
+      case "cm": {
+        const nums = opNumbers(o);
+        if (nums?.length === 6) {
+          const m = nums as Mat6;
+          ctm = [
+            m[0] * ctm[0] + m[1] * ctm[2],
+            m[0] * ctm[1] + m[1] * ctm[3],
+            m[2] * ctm[0] + m[3] * ctm[2],
+            m[2] * ctm[1] + m[3] * ctm[3],
+            m[4] * ctm[0] + m[5] * ctm[2] + ctm[4],
+            m[4] * ctm[1] + m[5] * ctm[3] + ctm[5],
+          ];
+        }
+        break;
+      }
+      case "w": {
+        const nums = opNumbers(o);
+        if (nums?.length === 1) lineWidth = nums[0];
+        break;
+      }
+      case "m":
+      case "l": {
+        const nums = opNumbers(o);
+        if (nums?.length === 2) {
+          pathOps.push(i);
+          includePoint(nums[0], nums[1]);
+        }
+        break;
+      }
+      case "c": {
+        const nums = opNumbers(o);
+        if (nums?.length === 6) {
+          pathOps.push(i);
+          includePoint(nums[0], nums[1]);
+          includePoint(nums[2], nums[3]);
+          includePoint(nums[4], nums[5]);
+        }
+        break;
+      }
+      case "v":
+      case "y": {
+        const nums = opNumbers(o);
+        if (nums?.length === 4) {
+          pathOps.push(i);
+          includePoint(nums[0], nums[1]);
+          includePoint(nums[2], nums[3]);
+        }
+        break;
+      }
+      case "re": {
+        const nums = opNumbers(o);
+        if (nums?.length === 4) {
+          pathOps.push(i);
+          const [x, y, w, h] = nums;
+          includePoint(x, y);
+          includePoint(x + w, y);
+          includePoint(x, y + h);
+          includePoint(x + w, y + h);
+        }
+        break;
+      }
+      case "h":
+        pathOps.push(i);
+        break;
+      default:
+        if (PATH_END_OPS.has(o.op)) {
+          if (PAINT_OPS.has(o.op)) {
+            const pathRect = currentPathRect();
+            if (pathRect && redactions.some((r) => rectsOverlap(r, pathRect))) {
+              for (const idx of pathOps) indicesToRemove.add(idx);
+              indicesToRemove.add(i);
+            }
+          }
+          resetPath();
+        }
+        break;
+    }
+  }
+}
+
+function pruneUnusedPageXObjects(pageNode: PDFDict, usedNames: Set<string>): void {
+  const resources = pageNode.lookup(PDFName.of("Resources"));
+  if (!(resources instanceof PDFDict)) return;
+  const oldXObjects = resources.lookup(PDFName.of("XObject"));
+  if (!(oldXObjects instanceof PDFDict)) return;
+  const nextResources = PDFDict.withContext(pageNode.context);
+  for (const [key, value] of resources.entries()) {
+    if (key.decodeText() !== "XObject") nextResources.set(key, value);
+  }
+  const nextXObjects = PDFDict.withContext(pageNode.context);
+  for (const [key, value] of oldXObjects.entries()) {
+    if (usedNames.has(key.decodeText())) nextXObjects.set(key, value);
+  }
+  if (nextXObjects.keys().length > 0) {
+    nextResources.set(PDFName.of("XObject"), nextXObjects);
+  }
+  pageNode.set(PDFName.of("Resources"), nextResources);
 }
 
 type LoadedSourceContext = {
@@ -1047,6 +1364,7 @@ async function applyStreamSurgeryForSource(
     const scale = rendered.scale;
 
     const indicesToRemove = new Set<number>();
+    const replaceWithOps = new Map<number, ContentOp>();
     const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> = [];
 
     for (const edit of pageEdits) {
@@ -1240,6 +1558,65 @@ async function applyStreamSurgeryForSource(
       insertAfterQ.set(img.qOpIndex, [sx, 0, 0, sy, ex, ey]);
     }
 
+    const pageRedactions = redactionsByPage.get(pageIndex) ?? [];
+    if (pageRedactions.length > 0) {
+      for (const img of rendered.images) {
+        const imageRect = {
+          pdfX: img.pdfX,
+          pdfY: img.pdfY,
+          pdfWidth: img.pdfWidth,
+          pdfHeight: img.pdfHeight,
+        };
+        const overlapping = pageRedactions.filter((r) => rectsOverlap(r, imageRect));
+        if (overlapping.length === 0) continue;
+        if (img.qOpIndex == null) {
+          // No balanced q...Q to isolate. Drop just the Do op so the
+          // pixels/Form content no longer paint; resource pruning below
+          // removes the XObject when no other Do still references it.
+          indicesToRemove.add(img.doOpIndex);
+          continue;
+        }
+        const matchingQ = findMatchingQ(ops, img.qOpIndex);
+        const fullyCovered = overlapping.some((r) => rectContains(r, imageRect));
+        if (img.subtype !== "Image" || fullyCovered) {
+          if (matchingQ != null) {
+            for (let k = img.qOpIndex; k <= matchingQ; k++) indicesToRemove.add(k);
+          } else {
+            indicesToRemove.add(img.doOpIndex);
+          }
+          continue;
+        }
+
+        const replacementRef = makeRedactedImageXObject(
+          doc,
+          page.node,
+          img.resourceName,
+          img.ctm,
+          overlapping,
+        );
+        if (!replacementRef) {
+          // Unsupported raster encoding/mask. The safe failure mode is
+          // removing the whole draw, because leaving the original XObject
+          // reachable would leak pixels outside the visual black box.
+          if (matchingQ != null) {
+            for (let k = img.qOpIndex; k <= matchingQ; k++) indicesToRemove.add(k);
+          } else {
+            indicesToRemove.add(img.doOpIndex);
+          }
+          continue;
+        }
+        const replacementName = (
+          page.node as unknown as {
+            newXObject: (tag: string, ref: PDFRef) => PDFName;
+          }
+        ).newXObject("RihaRedactedImg", replacementRef);
+        replaceWithOps.set(img.doOpIndex, {
+          op: "Do",
+          operands: [{ kind: "name", value: replacementName.decodeText() }],
+        });
+      }
+    }
+
     // Vector-shape deletes — strip each shape's q…Q range. The detector
     // already validated the block is pure vector (no nested text /
     // image), so removing it can't take down unrelated content.
@@ -1250,6 +1627,27 @@ async function applyStreamSurgeryForSource(
       for (let k = shape.qOpIndex; k <= shape.QOpIndex; k++) {
         indicesToRemove.add(k);
       }
+    }
+
+    // Redactions also destroy vector graphics underneath the rectangle.
+    // First use the source shape detector's q...Q ranges for grouped
+    // vector blocks; then run a lower-level path pass that catches
+    // unwrapped path paint operators and individual paths inside larger
+    // graphics-state blocks.
+    if (pageRedactions.length > 0) {
+      for (const shape of rendered.shapes) {
+        const shapeRect = {
+          pdfX: shape.pdfX,
+          pdfY: shape.pdfY,
+          pdfWidth: shape.pdfWidth,
+          pdfHeight: shape.pdfHeight,
+        };
+        if (!pageRedactions.some((r) => rectsOverlap(r, shapeRect))) continue;
+        for (let k = shape.qOpIndex; k <= shape.QOpIndex; k++) {
+          indicesToRemove.add(k);
+        }
+      }
+      markVectorPaintOpsForRedaction(ops, pageRedactions, indicesToRemove);
     }
 
     // Per-glyph redaction strip. Walks every Tj/TJ on the page,
@@ -1267,8 +1665,6 @@ async function applyStreamSurgeryForSource(
     // logic above so an op that's both being moved AND redacted ends
     // up dropped (the replacement-text-overlay model can't survive a
     // redaction over the same span anyway).
-    const replaceWithOps = new Map<number, ContentOp>();
-    const pageRedactions = redactionsByPage.get(pageIndex) ?? [];
     if (pageRedactions.length > 0) {
       const resources = page.node.Resources();
       if (resources) {
@@ -1338,6 +1734,15 @@ async function applyStreamSurgeryForSource(
           })),
         });
       }
+    }
+    if (pageRedactions.length > 0) {
+      const usedXObjects = new Set<string>();
+      for (const op of newOps) {
+        if (op.op !== "Do") continue;
+        const name = op.operands[0];
+        if (name?.kind === "name") usedXObjects.add(name.value);
+      }
+      pruneUnusedPageXObjects(page.node, usedXObjects);
     }
     setPageContentBytes(doc.context, page.node, serializeContentStream(newOps));
   }
