@@ -96,6 +96,42 @@ async function collectRuns(): Promise<RunInfo[]> {
   });
 }
 
+async function getRunRect(
+  id: string,
+): Promise<{ x: number; y: number; w: number; h: number } | null> {
+  return h.page.evaluate((rid) => {
+    const el = document.querySelector(`[data-run-id="${rid}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, id);
+}
+
+async function dragRun(id: string): Promise<boolean> {
+  const target = h.page.locator(`[data-run-id="${id}"]`);
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  if (!box) return false;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+
+  const saveBtn = h.page.locator("button").filter({ hasText: /^Save/ }).first();
+  await h.page.mouse.move(cx, cy);
+  await h.page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await h.page.mouse.move(cx + (200 * i) / 12, cy + (100 * i) / 12);
+    await h.page.waitForTimeout(20);
+  }
+  await h.page.mouse.up();
+
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (!(await saveBtn.isDisabled())) return true;
+    await h.page.waitForTimeout(100);
+  }
+  return false;
+}
+
 /** Drag the candidate run by (200, 100) viewport pixels and return
  *  null if its ORIGINAL position has zero ink samples afterwards, or
  *  a diagnostic string when stripping was incomplete. We freeze the
@@ -103,14 +139,9 @@ async function collectRuns(): Promise<RunInfo[]> {
  *  after the move would chase the ghost overlay and miss the
  *  not-actually-stripped original content sitting on the canvas. */
 async function stripCheck(target: RunInfo): Promise<string | null> {
-  const { id, cx, cy, text } = target;
+  const { id, text } = target;
 
-  const beforeRect = await h.page.evaluate((rid) => {
-    const el = document.querySelector(`[data-run-id="${rid}"]`);
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height };
-  }, id);
+  const beforeRect = await getRunRect(id);
   if (!beforeRect) return `[${id}] not in DOM at start of stripCheck`;
 
   // Threshold of 350 (i.e. average per channel < ~117) catches only
@@ -124,32 +155,21 @@ async function stripCheck(target: RunInfo): Promise<string | null> {
     return null;
   }
 
-  await h.page.mouse.move(cx, cy);
-  await h.page.mouse.down();
-  for (let i = 1; i <= 8; i++) {
-    await h.page.mouse.move(cx + (200 * i) / 8, cy + (100 * i) / 8);
-    await h.page.waitForTimeout(20);
-  }
-  await h.page.mouse.up();
-  await h.page.waitForTimeout(900);
-
-  // Always save a screenshot of the post-drag state so a human can
-  // eyeball whether the original glyphs really vanished — pixel
-  // sampling along the run rect can miss a residual ghost glyph that
-  // sits in the gaps between sample points.
-  const screenshot = path.join(SCREENSHOTS, `agenda6-drag-${id}.png`);
-  await h.page.locator('[data-page-index="1"]').screenshot({ path: screenshot });
-
   // Save button no longer carries the per-category count in its
   // visible label (kept fixed-width to stop toolbar jitter); use the
   // disabled bit instead — disabled iff there are no pending edits.
-  const saveBtn = h.page.locator("button").filter({ hasText: /^Save/ }).first();
-  const saveIsDisabled = await saveBtn.isDisabled();
-  if (saveIsDisabled) {
+  const committed = await dragRun(id);
+  if (!committed) {
+    const screenshot = path.join(SCREENSHOTS, `agenda6-drag-${id}.png`);
+    await h.page.locator('[data-page-index="1"]').screenshot({ path: screenshot });
     return `[${id}] drag did not commit an edit (Save button still disabled, text="${text.slice(0, 40)}", screenshot=${screenshot})`;
   }
 
-  const sampleAfter = await samplePixelsAt(beforeRect);
+  let sampleAfter = await samplePixelsAt(beforeRect);
+  for (let i = 0; i < 20 && sampleAfter.filter(isInk).length / Math.max(1, inkBefore) > 0.25; i++) {
+    await h.page.waitForTimeout(250);
+    sampleAfter = await samplePixelsAt(beforeRect);
+  }
   const inkAfter = sampleAfter.filter(isInk).length;
   // The strip is allowed to leave ≤ 25% of original "ink" as
   // residual. Most runs are well below 5%, but Word's section-
@@ -158,6 +178,8 @@ async function stripCheck(target: RunInfo): Promise<string | null> {
   // no text — those should never be stripped.
   const inkRatio = inkAfter / Math.max(1, inkBefore);
   if (inkRatio > 0.25) {
+    const screenshot = path.join(SCREENSHOTS, `agenda6-drag-${id}.png`);
+    await h.page.locator('[data-page-index="1"]').screenshot({ path: screenshot });
     const opIdx = await h.page.evaluate((rid) => {
       const w = window as unknown as {
         __runOpIndices?: Map<string, number[]>;
