@@ -143,7 +143,7 @@ export function AboutModal({
 
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Features</h3>
-                <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
+                <ul className="list-disc list-outside ml-6 space-y-0.5 text-zinc-700 dark:text-zinc-300">
                   <li>
                     Edit text — RTL/LTR, <strong>B</strong>/<em>I</em>/
                     <span className="underline">U</span>/<span className="line-through">S</span>/
@@ -165,7 +165,7 @@ export function AboutModal({
 
               <section>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Built with</h3>
-                <ul className="list-disc list-inside space-y-0.5 text-zinc-700 dark:text-zinc-300">
+                <ul className="list-disc list-outside ml-6 space-y-0.5 text-zinc-700 dark:text-zinc-300">
                   <li>React 19 + TypeScript + Vite</li>
                   <li>Tailwind CSS + HeroUI + lucide-react</li>
                   <li>pdf-lib (write) and pdfjs-dist (render)</li>
