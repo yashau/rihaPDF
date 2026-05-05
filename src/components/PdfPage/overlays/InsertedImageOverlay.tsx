@@ -106,6 +106,7 @@ export function InsertedImageOverlay({
   };
   const MIN_PDF = 10;
   const beginInsImageResize = useDragGesture<InsImageResizeCtx>({
+    touchActivation: "immediate",
     onMove: (ctx, info) => {
       const { corner, base } = ctx;
       const dxPdf = info.dxRaw / effectivePdfScale;

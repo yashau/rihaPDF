@@ -135,6 +135,39 @@ async function dragLocatorByTouch(
   );
 }
 
+async function seedSignatureStorage(): Promise<void> {
+  await h.page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.deleteDatabase("rihaPDF.signatures");
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error ?? new Error("Failed to clear signature storage"));
+      req.onblocked = () => resolve();
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
+    const sig = (await importer(
+      "/src/lib/signatures.ts",
+    )) as typeof import("../../src/lib/signatures");
+    const canvas = document.createElement("canvas");
+    canvas.width = 260;
+    canvas.height = 120;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Failed to create signature canvas");
+    ctx.strokeStyle = "rgb(20, 24, 32)";
+    ctx.lineWidth = 8;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(42, 70);
+    ctx.bezierCurveTo(82, 18, 126, 104, 176, 48);
+    ctx.lineTo(220, 66);
+    ctx.stroke();
+    const processed = await sig.processDrawnSignature(canvas, [0, 0, 0]);
+    if (!processed) throw new Error("Failed to process signature");
+    await sig.saveSignatureAsset(processed);
+  });
+}
+
 describe("mobile interaction (390×844, hasTouch)", () => {
   test("tap on a run opens the edit field", async () => {
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
@@ -310,5 +343,51 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     await h.page.waitForTimeout(150);
     const shrunkHighlightBox = await highlight.boundingBox();
     expect(shrunkHighlightBox!.width).toBeLessThan(highlightBox!.width - 12);
+  });
+
+  test("signature resize handle reacts to an immediate touch drag", async () => {
+    await loadFixture(h.page, FIXTURE.withImages);
+    await seedSignatureStorage();
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    await h.page.getByRole("button", { name: "Signature" }).click();
+    const savedSignature = h.page.locator('button[aria-label="Place saved signature"]').first();
+    await savedSignature.waitFor({ state: "visible", timeout: 12_000 });
+    await savedSignature.click();
+    await h.page.getByRole("heading", { name: "Add Signature" }).waitFor({ state: "hidden" });
+
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.touchscreen.tap(
+      pageBox!.x + pageBox!.width * 0.55,
+      pageBox!.y + pageBox!.height * 0.55,
+    );
+    await h.page.waitForTimeout(150);
+
+    const signature = h.page.locator("[data-image-insert-id]").first();
+    const signatureBox = await signature.boundingBox();
+    expect(signatureBox, "signature overlay should be created").not.toBeNull();
+    await dragLocatorByTouch(signature.locator('[data-resize-handle="br"]'), -36, 0);
+    await h.page.waitForTimeout(150);
+
+    const resizedBox = await signature.boundingBox();
+    expect(resizedBox!.width).toBeLessThan(signatureBox!.width - 12);
+  });
+
+  test("source image resize handle reacts to an immediate touch drag", async () => {
+    await loadFixture(h.page, FIXTURE.withImages);
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    const image = h.page.locator("[data-image-id]").first();
+    const imageBox = await image.boundingBox();
+    expect(imageBox, "source image overlay should be visible").not.toBeNull();
+
+    await dragLocatorByTouch(image.locator('[data-resize-handle="br"]'), -36, 0);
+    await h.page.waitForTimeout(150);
+
+    const resizedBox = await image.boundingBox();
+    expect(resizedBox!.width).toBeLessThan(imageBox!.width - 12);
   });
 });

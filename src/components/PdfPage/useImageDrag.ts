@@ -268,6 +268,7 @@ export function useImageDrag({
     latest: { dx: number; dy: number; dw: number; dh: number };
   };
   const beginImageResize = useDragGesture<ImageResizeCtx>({
+    touchActivation: "immediate",
     onStart: (ctx) => {
       // Resize gestures don't trigger the body-portal preview — the
       // image stays on its origin page while a corner is dragged. The
