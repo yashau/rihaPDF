@@ -4,7 +4,8 @@
 //   - HighlightLayer : interactive translucent rect per quad — select,
 //                      drag to move, corner-resize, Del to remove.
 //   - InkLayer       : SVG <path> per stroke + the pointer-event
-//                      capture surface for drawing new strokes.
+//                      capture surface for drawing new strokes, plus
+//                      select / drag / Del for existing strokes.
 //   - CommentLayer   : HTML comment boxes with inline editor + the
 //                      cross-page drag (body-portal preview escapes
 //                      the page wrapper's overflow:hidden).
@@ -39,10 +40,13 @@ type Props = {
   inkThickness: number;
   /** ID of the highlight currently selected on this page (null = none). */
   selectedHighlightId: string | null;
+  /** ID of the ink annotation currently selected on this page (null = none). */
+  selectedInkId: string | null;
   onAnnotationAdd: (annotation: Annotation) => void;
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onSelectHighlight: (id: string) => void;
+  onSelectInk: (id: string) => void;
 };
 
 export function AnnotationLayer({
@@ -56,10 +60,12 @@ export function AnnotationLayer({
   inkColor,
   inkThickness,
   selectedHighlightId,
+  selectedInkId,
   onAnnotationAdd,
   onAnnotationChange,
   onAnnotationDelete,
   onSelectHighlight,
+  onSelectInk,
 }: Props) {
   return (
     <>
@@ -81,8 +87,11 @@ export function AnnotationLayer({
         tool={tool}
         color={inkColor}
         thickness={inkThickness}
+        selectedInkId={selectedInkId}
         onAnnotationAdd={onAnnotationAdd}
+        onAnnotationChange={onAnnotationChange}
         onAnnotationDelete={onAnnotationDelete}
+        onSelectInk={onSelectInk}
       />
       <CommentLayer
         annotations={annotations}

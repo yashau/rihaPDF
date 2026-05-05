@@ -99,6 +99,8 @@ type Props = {
   selectedRedactionId: string | null;
   /** ID of the highlight currently selected on this page. */
   selectedHighlightId: string | null;
+  /** ID of the ink annotation currently selected on this page. */
+  selectedInkId: string | null;
   /** Set of shape ids on this page already flagged for delete — their
    *  overlays are hidden so the user can't re-grab them. */
   deletedShapeIds: Set<string>;
@@ -114,6 +116,7 @@ type Props = {
   onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (id: string) => void;
   onSelectHighlight: (id: string) => void;
+  onSelectInk: (id: string) => void;
   /** Source-page text runs that have been moved cross-page and now
    *  visually live on THIS slot. Built by PageList from the source-
    *  side `edits` map. Rendered as non-interactive styled spans at
@@ -169,6 +172,7 @@ export function PdfPage({
   selectedShapeId,
   selectedRedactionId,
   selectedHighlightId,
+  selectedInkId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -188,6 +192,7 @@ export function PdfPage({
   onRedactionChange,
   onSelectRedaction,
   onSelectHighlight,
+  onSelectInk,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -634,10 +639,12 @@ export function PdfPage({
             inkColor={inkColor}
             inkThickness={inkThickness}
             selectedHighlightId={selectedHighlightId}
+            selectedInkId={selectedInkId}
             onAnnotationAdd={onAnnotationAdd}
             onAnnotationChange={onAnnotationChange}
             onAnnotationDelete={onAnnotationDelete}
             onSelectHighlight={onSelectHighlight}
+            onSelectInk={onSelectInk}
           />
           {/* AcroForm fill overlays. Sits below the placement-mode
               capture layer (which has zIndex: 50) so addText / addImage

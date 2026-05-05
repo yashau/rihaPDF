@@ -45,6 +45,9 @@ export function useSelection({
   const onSelectHighlight = useCallback((slotId: string, id: string) => {
     setSelection({ kind: "highlight", slotId, id });
   }, []);
+  const onSelectInk = useCallback((slotId: string, id: string) => {
+    setSelection({ kind: "ink", slotId, id });
+  }, []);
 
   const onDeleteSelection = useCallback(() => {
     if (!selection) return;
@@ -82,9 +85,9 @@ export function useSelection({
         next.set(selection.slotId, arr);
         return next;
       });
-    } else if (selection.kind === "highlight") {
-      // Highlights live in the same per-slot annotations array as
-      // comments and ink — drop the matching id.
+    } else if (selection.kind === "highlight" || selection.kind === "ink") {
+      // Highlights and ink live in the same per-slot annotations array
+      // as comments — drop the matching id.
       setAnnotations((prev) => {
         const next = new Map(prev);
         const arr = (next.get(selection.slotId) ?? []).filter((a) => a.id !== selection.id);
@@ -130,7 +133,11 @@ export function useSelection({
 
   useEffect(() => {
     if (!selection) return;
-    const onClick = () => setSelection(null);
+    const onClick = (e: MouseEvent) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest("[data-ink-id]")) return;
+      setSelection(null);
+    };
     window.addEventListener("click", onClick);
     return () => window.removeEventListener("click", onClick);
   }, [selection]);
@@ -143,6 +150,7 @@ export function useSelection({
     onSelectShape,
     onSelectRedaction,
     onSelectHighlight,
+    onSelectInk,
     onDeleteSelection,
   };
 }

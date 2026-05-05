@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-87%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-88%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -155,7 +155,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 
 | File                                          | What it covers                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| `annotations.test.ts`                         | highlight / comment / ink → save → parse native `/Annots`                    |
+| `annotations.test.ts`                         | highlight / comment / ink save, ink cross-page move, ink delete              |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages   |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line        |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable     |

@@ -244,6 +244,7 @@ export default function App() {
     onSelectShape,
     onSelectRedaction,
     onSelectHighlight,
+    onSelectInk,
   } = useSelection({
     recordHistory,
     setImageMoves,
@@ -679,6 +680,17 @@ export default function App() {
   const onAnnotationChange = useCallback(
     (sourceSlotId: string, id: string, patch: Partial<Annotation>) => {
       recordHistory(`annotation:${sourceSlotId}:${id}`);
+      const patchedDestSlot =
+        patch.pageIndex !== undefined && patch.sourceKey !== undefined
+          ? slotsRef.current[patch.pageIndex]
+          : undefined;
+      if (patchedDestSlot?.kind === "page" && patchedDestSlot.id !== sourceSlotId) {
+        setSelection((prev) =>
+          prev?.kind === "ink" && prev.slotId === sourceSlotId && prev.id === id
+            ? { kind: "ink", slotId: patchedDestSlot.id, id }
+            : prev,
+        );
+      }
       setAnnotations((prev) => {
         const next = new Map(prev);
         const fromArr = next.get(sourceSlotId) ?? [];
@@ -729,7 +741,7 @@ export default function App() {
         return next;
       });
     },
-    [recordHistory],
+    [recordHistory, setSelection],
   );
   const onAnnotationDelete = useCallback(
     (slotId: string, id: string) => {
@@ -1160,6 +1172,7 @@ export default function App() {
               onRedactionChange={onRedactionChange}
               onSelectRedaction={onSelectRedaction}
               onSelectHighlight={onSelectHighlight}
+              onSelectInk={onSelectInk}
               formValues={formValues}
               onFormFieldChange={onFormFieldChange}
             />

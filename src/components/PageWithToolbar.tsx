@@ -29,6 +29,7 @@ export function PageWithToolbar({
   selectedShapeId,
   selectedRedactionId,
   selectedHighlightId,
+  selectedInkId,
   deletedShapeIds,
   onEdit,
   onImageMove,
@@ -48,6 +49,7 @@ export function PageWithToolbar({
   onRedactionChange,
   onSelectRedaction,
   onSelectHighlight,
+  onSelectInk,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -77,6 +79,7 @@ export function PageWithToolbar({
   selectedShapeId: string | null;
   selectedRedactionId: string | null;
   selectedHighlightId: string | null;
+  selectedInkId: string | null;
   deletedShapeIds: Set<string>;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
@@ -96,6 +99,7 @@ export function PageWithToolbar({
   onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (id: string) => void;
   onSelectHighlight: (id: string) => void;
+  onSelectInk: (id: string) => void;
   crossPageArrivals: CrossPageArrival[];
   crossPageImageArrivals: CrossPageImageArrival[];
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
@@ -130,6 +134,7 @@ export function PageWithToolbar({
         selectedShapeId={selectedShapeId}
         selectedRedactionId={selectedRedactionId}
         selectedHighlightId={selectedHighlightId}
+        selectedInkId={selectedInkId}
         deletedShapeIds={deletedShapeIds}
         onEdit={onEdit}
         onImageMove={onImageMove}
@@ -149,6 +154,7 @@ export function PageWithToolbar({
         onRedactionChange={onRedactionChange}
         onSelectRedaction={onSelectRedaction}
         onSelectHighlight={onSelectHighlight}
+        onSelectInk={onSelectInk}
         crossPageArrivals={crossPageArrivals}
         crossPageImageArrivals={crossPageImageArrivals}
         onSourceEdit={onSourceEdit}

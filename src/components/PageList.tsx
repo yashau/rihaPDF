@@ -16,6 +16,7 @@ export type Selection =
   | { kind: "shape"; slotId: string; shapeId: string }
   | { kind: "redaction"; slotId: string; id: string }
   | { kind: "highlight"; slotId: string; id: string }
+  | { kind: "ink"; slotId: string; id: string }
   | null;
 
 export function PageList({
@@ -55,6 +56,7 @@ export function PageList({
   onRedactionChange,
   onSelectRedaction,
   onSelectHighlight,
+  onSelectInk,
   onFormFieldChange,
 }: {
   slots: PageSlot[];
@@ -100,6 +102,7 @@ export function PageList({
   onRedactionChange: (slotId: string, id: string, patch: Partial<Redaction>) => void;
   onSelectRedaction: (slotId: string, id: string) => void;
   onSelectHighlight: (slotId: string, id: string) => void;
+  onSelectInk: (slotId: string, id: string) => void;
   onFormFieldChange: (sourceKey: string, fullName: string, value: FormValue) => void;
 }) {
   // Group cross-page-targeted edits by their target slot so each
@@ -300,6 +303,8 @@ export function PageList({
           selection?.kind === "redaction" && selection.slotId === slot.id ? selection.id : null;
         const selectedHighlightId =
           selection?.kind === "highlight" && selection.slotId === slot.id ? selection.id : null;
+        const selectedInkId =
+          selection?.kind === "ink" && selection.slotId === slot.id ? selection.id : null;
         const deletedShapeIds = shapeDeletes.get(slot.id) ?? new Set<string>();
         return (
           <PageWithToolbar
@@ -325,6 +330,7 @@ export function PageList({
             selectedShapeId={selectedShapeId}
             selectedRedactionId={selectedRedactionId}
             selectedHighlightId={selectedHighlightId}
+            selectedInkId={selectedInkId}
             deletedShapeIds={deletedShapeIds}
             onEdit={(runId, value) => onEdit(slot.id, runId, value)}
             onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
@@ -344,6 +350,7 @@ export function PageList({
             onRedactionChange={(id, patch) => onRedactionChange(slot.id, id, patch)}
             onSelectRedaction={(id) => onSelectRedaction(slot.id, id)}
             onSelectHighlight={(id) => onSelectHighlight(slot.id, id)}
+            onSelectInk={(id) => onSelectInk(slot.id, id)}
             crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
             crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
             onSourceEdit={onEdit}

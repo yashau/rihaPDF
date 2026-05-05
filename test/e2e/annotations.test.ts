@@ -36,7 +36,7 @@ let h: Harness;
 
 beforeAll(async () => {
   fs.mkdirSync(SCREENSHOTS, { recursive: true });
-  h = await setupBrowser();
+  h = await setupBrowser({ viewport: { width: 1400, height: 2900 } });
 });
 
 afterAll(async () => {
@@ -233,6 +233,56 @@ describe("annotation round-trip", () => {
       "stroke needs ≥ 4 numbers (2 points) to draw a line",
     ).toBeGreaterThanOrEqual(4);
     expect(ink.borderWidth, "/BS /W is the stroke thickness").toBeGreaterThan(0);
+  }, 60_000);
+
+  test("select, drag, and delete an ink stroke", async () => {
+    await loadFixture(h, FIXTURE.withImagesMultipage, { expectedPages: 2 });
+
+    await h.page.locator('[data-testid="tool-ink"]').click();
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    const startX = pageBox!.x + pageBox!.width * 0.28;
+    const startY = pageBox!.y + pageBox!.height * 0.62;
+    await h.page.mouse.move(startX, startY);
+    await h.page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await h.page.mouse.move(startX + i * 14, startY + i * 7, { steps: 2 });
+    }
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(150);
+
+    await h.page.locator('[data-testid="tool-ink"]').click();
+    const beforeSaved = await saveAndDownload("annotation-ink-move-before.pdf");
+    const beforeInks = (await readAnnotations(beforeSaved)).filter((a) => a.subtype === "Ink");
+    expect(beforeInks).toHaveLength(1);
+    expect(beforeInks[0].pageIndex, "ink should start on page 1").toBe(0);
+
+    const inkPath = h.page.locator("[data-ink-id]").first();
+    const inkBox = await inkPath.boundingBox();
+    expect(inkBox).not.toBeNull();
+    const dragStartX = inkBox!.x + inkBox!.width / 2;
+    const dragStartY = inkBox!.y + inkBox!.height / 2;
+    const page2Box = await h.page.locator('[data-page-index="1"]').boundingBox();
+    expect(page2Box).not.toBeNull();
+    const dragEndX = page2Box!.x + page2Box!.width * 0.35;
+    const dragEndY = page2Box!.y + page2Box!.height * 0.2;
+    await h.page.mouse.move(dragStartX, dragStartY);
+    await h.page.mouse.down();
+    await h.page.mouse.move(dragEndX, dragEndY, { steps: 16 });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(200);
+
+    const afterMoveSaved = await saveAndDownload("annotation-ink-move-after.pdf");
+    const afterMoveInks = (await readAnnotations(afterMoveSaved)).filter(
+      (a) => a.subtype === "Ink",
+    );
+    expect(afterMoveInks).toHaveLength(1);
+    expect(afterMoveInks[0].pageIndex, "ink should move into page 2's /Annots").toBe(1);
+
+    await h.page.locator("[data-ink-id]").first().click();
+    await h.page.keyboard.press("Delete");
+    await h.page.waitForTimeout(150);
+    expect(await h.page.locator("[data-ink-id]").count()).toBe(0);
   }, 60_000);
 
   test("drag a comment → saved /Rect reflects the new position", async () => {
