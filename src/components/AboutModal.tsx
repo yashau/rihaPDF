@@ -153,7 +153,8 @@ export function AboutModal({
                     <span className="text-green-500">o</span>
                     <span className="text-blue-500">r</span>
                   </li>
-                  <li>Insert and move text or images; delete any object</li>
+                  <li>Insert and move text, images, or saved visual signatures</li>
+                  <li>Draw or import signatures with local reuse and background cleanup</li>
                   <li>Highlight, comment, and ink annotations</li>
                   <li>Redact — no recoverable text under the rect</li>
                   <li>Fill AcroForm fields — Thaana, checkboxes, dropdowns</li>

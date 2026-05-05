@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-82%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-83%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -28,7 +28,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 
 - **Edit text runs.** Click → input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
 - **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
-- **Insert text and images.** Click-to-place tools that share the edit toolbar.
+- **Insert text, images, and signatures.** Click-to-place tools that share the edit toolbar. Signatures can be drawn with signing colour presets or imported from an image; imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse.
 - **Resize images.** 4 corner handles on source and inserted images, anchored opposite corner.
 - **Delete anything.** `Del`/`Backspace` on selected images; trash button on the text toolbar.
 - **Undo / redo.** Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y. Coalesces typing and drags into single steps.
@@ -164,6 +164,7 @@ pnpm test         # another
 | `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                         |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line        |
 | `insert.test.ts`                              | drop text + image → both persist after save                                  |
+| `signature.test.ts`                           | draw/import signatures → local library, cleanup, insert, save                |
 | `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                 |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages   |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable     |
