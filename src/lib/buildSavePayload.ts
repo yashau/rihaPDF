@@ -4,7 +4,7 @@ import {
   type ImageMove,
   type ShapeDelete,
   type TextInsert,
-} from "./save";
+} from "./save/types";
 import type { Annotation } from "./annotations";
 import { blankSourceKey } from "./blankSource";
 import type { FormValue } from "./formFields";

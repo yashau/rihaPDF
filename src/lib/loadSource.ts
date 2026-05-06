@@ -18,6 +18,7 @@ import { extractPageShapes } from "./sourceShapes";
 import type { ShapeInstance } from "./sourceShapes";
 import { pairDecorationsWithRuns } from "./runDecorations";
 import { extractFormFields, type FormField } from "./formFields";
+export { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./sourceKeys";
 
 export type LoadedSource = {
   /** Stable id used everywhere as the source identity. The primary uses
@@ -43,8 +44,6 @@ export type LoadedSource = {
    *  paint overlays without touching the doc again. */
   formFields: FormField[];
 };
-
-export const PRIMARY_SOURCE_KEY = "primary";
 
 /** Load a PDF file into a fully-extracted `LoadedSource`. Used by both
  *  the primary "Open PDF" flow and the "+ From PDF" external-import
@@ -104,14 +103,4 @@ export async function loadSource(
     pages,
     formFields,
   };
-}
-
-let externalNonce = 0;
-/** Build a stable per-session sourceKey for an external file: name +
- *  size + a monotonic nonce so re-uploading the same file in the same
- *  session always produces a fresh key (no cross-talk if its bytes
- *  drifted between picks). */
-export function nextExternalSourceKey(file: File): string {
-  externalNonce += 1;
-  return `ext:${file.name}:${file.size}:${externalNonce.toString(36)}`;
 }

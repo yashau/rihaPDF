@@ -57,6 +57,7 @@ async function dragHandle(
   dxView: number,
   dyView: number,
 ) {
+  await h.page.locator(`[data-image-id="${imageId}"]`).click();
   const handle = h.page.locator(`[data-image-id="${imageId}"] [data-resize-handle="${corner}"]`);
   const box = await handle.boundingBox();
   expect(box, `${corner} handle for ${imageId} not in DOM`).not.toBeNull();

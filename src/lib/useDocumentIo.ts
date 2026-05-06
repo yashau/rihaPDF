@@ -3,14 +3,9 @@ import type { Annotation } from "./annotations";
 import { buildSavePayload } from "./buildSavePayload";
 import type { FormValue } from "./formFields";
 import { readImageFile, type ImageInsertion, type TextInsertion } from "./insertions";
-import {
-  loadSource,
-  nextExternalSourceKey,
-  PRIMARY_SOURCE_KEY,
-  type LoadedSource,
-} from "./loadSource";
+import type { LoadedSource } from "./loadSource";
 import type { Redaction } from "./redactions";
-import { applyEditsAndSave, downloadBlob } from "./save";
+import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./sourceKeys";
 import { pageSlot, slotsFromSource, type PageSlot } from "./slots";
 import type { PendingImage, ToolMode } from "./toolMode";
 import { MIN_DOCUMENT_ZOOM } from "./useMobileDocumentZoom";
@@ -83,6 +78,7 @@ export function useDocumentIo({
     async (file: File) => {
       setBusy(true);
       try {
+        const { loadSource } = await import("./loadSource");
         const source = await loadSource(file, renderScale, PRIMARY_SOURCE_KEY);
         setPrimaryFilename(file.name);
         setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
@@ -138,6 +134,7 @@ export function useDocumentIo({
       if (files.length === 0) return;
       setBusy(true);
       try {
+        const { loadSource } = await import("./loadSource");
         recordHistory(null);
         for (const file of files) {
           const sourceKey = nextExternalSourceKey(file);
@@ -173,6 +170,7 @@ export function useDocumentIo({
     if (sources.size === 0 || !primaryFilename) return;
     setBusy(true);
     try {
+      const { applyEditsAndSave, downloadBlob } = await import("./save");
       const {
         flatEdits,
         flatImageMoves,
