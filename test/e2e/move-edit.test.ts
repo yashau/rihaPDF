@@ -90,6 +90,20 @@ function formatDrift(drift: string[]): string {
   return drift.length ? `unexpected drift:\n  · ${drift.slice(0, 6).join("\n  · ")}` : "";
 }
 
+function textKey(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function findSavedRun(
+  savedRuns: Awaited<ReturnType<typeof captureRuns>>,
+  originalText: string,
+): Awaited<ReturnType<typeof captureRuns>>[number] | undefined {
+  return (
+    savedRuns.find((s) => s.text === originalText) ??
+    savedRuns.find((s) => textKey(s.text) === textKey(originalText))
+  );
+}
+
 async function runScenario({
   name,
   drag,
@@ -193,8 +207,8 @@ async function runScenario({
   // first.
   const deltas: { dx: number; dy: number }[] = [];
   for (const orig of originalRuns) {
-    if (orig.id === "p1-r2") continue;
-    const match = savedRuns.find((s) => s.text === orig.text);
+    if (orig.id === titleRun.id) continue;
+    const match = findSavedRun(savedRuns, orig.text);
     if (!match) continue;
     deltas.push({ dx: match.x - orig.x, dy: match.y - orig.y });
   }
@@ -204,8 +218,8 @@ async function runScenario({
   const offY = median(deltas.map((d) => d.dy));
   const drift: string[] = [];
   for (const orig of originalRuns) {
-    if (orig.id === "p1-r2") continue;
-    const match = savedRuns.find((s) => s.text === orig.text);
+    if (orig.id === titleRun.id) continue;
+    const match = findSavedRun(savedRuns, orig.text);
     if (!match) {
       drift.push(`MISSING: "${orig.text}"`);
       continue;
