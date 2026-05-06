@@ -29,7 +29,61 @@ afterAll(async () => {
 });
 
 describe("paragraph edit boxes carry adjacent punctuation", () => {
-  test("opening the 6.1 line-2 run shows the parens, slash, and digits", async () => {
+  test("opening page-2 list lines preserves marker spacing, parens, slash, and digits", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    for (const marker of ["6.1", "6.2"]) {
+      const listLine = await h.page.evaluate((marker) => {
+        const host = document.querySelector('[data-page-index="1"]');
+        if (!host) return null;
+        for (const el of host.querySelectorAll("[data-run-id]")) {
+          const text = el.textContent || "";
+          if (text.startsWith(marker) && /[\u0780-\u07bf]/u.test(text)) {
+            return {
+              id: el.getAttribute("data-run-id")!,
+              text,
+            };
+          }
+        }
+        return null;
+      }, marker);
+      expect(listLine, `couldn't find the ${marker} list line on page 2`).not.toBeNull();
+
+      await h.page.locator(`[data-run-id="${listLine!.id}"]`).click();
+      await h.page.waitForTimeout(300);
+      const listEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+      expect(listEditorValue, `edit box content: "${listEditorValue}"`).toMatch(
+        new RegExp(`^${marker.replace(".", "\\.")} {2,}[\\u0780-\\u07bf]`, "u"),
+      );
+    }
+
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 3 });
+    await h.page.locator('[data-page-index="2"]').scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    const sevenOne = await h.page.evaluate(() => {
+      const host = document.querySelector('[data-page-index="2"]');
+      if (!host) return null;
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const text = el.textContent || "";
+        if (text.startsWith("7.1") && /[\u0780-\u07bf]/u.test(text)) {
+          return {
+            id: el.getAttribute("data-run-id")!,
+            text,
+          };
+        }
+      }
+      return null;
+    });
+    expect(sevenOne, "couldn't find the 7.1 list line on page 3").not.toBeNull();
+    await h.page.locator(`[data-run-id="${sevenOne!.id}"]`).click();
+    await h.page.waitForTimeout(300);
+    const sevenOneEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    expect(sevenOneEditorValue, `edit box content: "${sevenOneEditorValue}"`).toMatch(
+      /^7\.1 {2,}[\u0780-\u07bf]/u,
+    );
+
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
     await h.page.waitForTimeout(200);

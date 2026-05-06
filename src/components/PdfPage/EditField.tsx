@@ -9,6 +9,8 @@ import { EditTextToolbar } from "./EditTextToolbar";
 import { chooseToolbarTop, cssTextDecoration, hasStyle, isFocusMovingToToolbar } from "./helpers";
 import type { EditValue, ToolbarBlocker } from "./types";
 
+const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
+
 export function EditField({
   run,
   pageScale,
@@ -40,7 +42,7 @@ export function EditField({
   const dx = initial.dx ?? 0;
   const dy = initial.dy ?? 0;
   const [style, setStyle] = useState<EditStyle>(initial.style ?? {});
-  const [width, setWidth] = useState<number>(Math.max(run.bounds.width + 24, 80));
+  const [width, setWidth] = useState<number>(Math.max(run.bounds.width, 80));
   // Mobile DV/EN toggle — DV transliterates Latin keystrokes to Thaana,
   // EN passes through. Default DV since most mobile users hit a Latin
   // keyboard and are editing a Thaana run; the toolbar exposes the flip.
@@ -54,6 +56,12 @@ export function EditField({
   const effectiveItalic = style.italic ?? run.italic;
   const effectiveUnderline = style.underline ?? run.underline ?? false;
   const effectiveStrikethrough = style.strikethrough ?? run.strikethrough ?? false;
+  const isRtlEditor = style.dir === "rtl" || (style.dir !== "ltr" && RTL_TEXT_RE.test(text));
+  const editorLeft = isRtlEditor
+    ? run.bounds.left + run.bounds.width + dx - width
+    : run.bounds.left + dx;
+  const editorTop = run.bounds.top + run.height * 0.25 + dy;
+  const editorBottom = editorTop + run.bounds.height;
   // The source-PDF run's color isn't yet captured by buildTextRuns —
   // we only have the toolbar override. Undefined falls back to black,
   // matching the prior hardcoded behavior.
@@ -68,7 +76,7 @@ export function EditField({
   const remeasure = () => {
     const node = measureRef.current;
     if (!node) return;
-    setWidth(Math.max(run.bounds.width, node.offsetWidth) + 24);
+    setWidth(Math.max(run.bounds.width, node.offsetWidth, 80));
   };
 
   // Mobile-only Latin → Thaana phonetic transliteration so users without
@@ -142,11 +150,11 @@ export function EditField({
         }}
       />
       <EditTextToolbar
-        left={run.bounds.left - 2 + dx}
+        left={editorLeft}
         top={chooseToolbarTop({
-          editorLeft: run.bounds.left - 2 + dx,
-          editorTop: run.bounds.top - 2 + dy,
-          editorBottom: run.bounds.top + run.bounds.height + 2 + dy,
+          editorLeft,
+          editorTop,
+          editorBottom,
           blockers: toolbarBlockers,
           selfId: run.id,
         })}
@@ -200,17 +208,19 @@ export function EditField({
         spellCheck={isMobile && thaanaInput ? false : undefined}
         style={{
           position: "absolute",
-          left: run.bounds.left - 2 + dx,
-          top: run.bounds.top - 2 + dy,
+          left: editorLeft,
+          top: editorTop,
           width,
-          height: run.bounds.height + 4,
+          height: run.bounds.height,
           fontFamily: fontFamilyCss,
           fontSize: `${fontSizePx}px`,
           lineHeight: `${run.bounds.height}px`,
           fontWeight: effectiveBold ? 700 : 400,
           fontStyle: effectiveItalic ? "italic" : "normal",
           textDecoration: cssTextDecoration(effectiveUnderline, effectiveStrikethrough),
-          padding: "0 4px",
+          padding: 0,
+          margin: 0,
+          appearance: "none",
           border: "none",
           outline: "2px solid rgb(59, 130, 246)",
           background: "white",

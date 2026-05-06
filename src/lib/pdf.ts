@@ -38,6 +38,9 @@ export type TextItem = {
   transform: number[];
   /** Width in viewport pixels (already scaled). */
   width: number;
+  /** Optional glyph span used only for inter-word gap detection. */
+  gapLeft?: number;
+  gapRight?: number;
   /** Line height in viewport pixels (= |scaleY|). */
   height: number;
   /** pdf.js font ID (looked up from page.commonObjs / objs). */
@@ -388,11 +391,17 @@ function applyShowDecodes(
     // decoded text covers the whole line.
     let claimedLeft = Infinity;
     let claimedRight = -Infinity;
+    let gapLeft = Infinity;
+    let gapRight = -Infinity;
     for (const it of claimed) {
       const left = it.transform[4];
       const right = left + (it.width || 0);
       if (left < claimedLeft) claimedLeft = left;
       if (right > claimedRight) claimedRight = right;
+      if (it.str.trim().length > 0 && scriptOf(it.str) === scriptOf(ds.text)) {
+        if (left < gapLeft) gapLeft = left;
+        if (right > gapRight) gapRight = right;
+      }
     }
     if (Number.isFinite(claimedLeft) && Number.isFinite(claimedRight)) {
       // transform is shared/by-reference; clone before mutating tx so we
@@ -401,6 +410,10 @@ function applyShowDecodes(
       main.transform = main.transform.slice();
       main.transform[4] = claimedLeft;
       main.width = Math.max(claimedRight - claimedLeft, main.width);
+      if (Number.isFinite(gapLeft) && Number.isFinite(gapRight)) {
+        main.gapLeft = gapLeft;
+        main.gapRight = gapRight;
+      }
     }
     main.str = ds.text;
     // Stamp the show's content-stream op index onto `main` (the
@@ -498,6 +511,25 @@ function scriptOf(text: string): "rtl" | "ltr" | "unknown" {
   if (hasRtl) return "rtl";
   if (hasLtr) return "ltr";
   return "unknown";
+}
+
+function isListMarkerText(text: string): boolean {
+  return /^[\d.()[\]/-]+$/.test(text.trim());
+}
+
+function cssSpaceWidth(
+  fontFamily: string,
+  fontSizePx: number,
+  bold: boolean,
+  italic: boolean,
+): number {
+  if (typeof document === "undefined") return fontSizePx * 0.25;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return fontSizePx * 0.25;
+  ctx.font = `${italic ? "italic " : ""}${bold ? "700" : "400"} ${fontSizePx}px "${fontFamily}"`;
+  const width = ctx.measureText(" ").width;
+  return width > 0 ? width : fontSizePx * 0.25;
 }
 
 /** Decode a content-stream Tj operand using the font's CID → Unicode
@@ -608,10 +640,10 @@ function buildTextRuns(
   if (visible.length === 0) return [];
 
   const horizontalGap = (a: TextItem, b: TextItem) => {
-    const aLeft = a.transform[4];
-    const aRight = aLeft + (a.width || a.height * 0.3);
-    const bLeft = b.transform[4];
-    const bRight = bLeft + (b.width || b.height * 0.3);
+    const aLeft = a.gapLeft ?? a.transform[4];
+    const aRight = a.gapRight ?? aLeft + (a.width || a.height * 0.3);
+    const bLeft = b.gapLeft ?? b.transform[4];
+    const bRight = b.gapRight ?? bLeft + (b.width || b.height * 0.3);
     if (aRight >= bLeft && bRight >= aLeft) return 0;
     return Math.min(Math.abs(bLeft - aRight), Math.abs(aLeft - bRight));
   };
@@ -624,6 +656,7 @@ function buildTextRuns(
     if (bucket.length === 0) return;
     const rtl = bucket.some((it) => isRtlText(it.str));
     const ordered = sortItemsLogical(bucket, rtl);
+    const gapPlaceholders = new Map<string, number>();
 
     let minLeft = Infinity;
     let maxRight = -Infinity;
@@ -654,7 +687,17 @@ function buildTextRuns(
       if (prevItem && it.str.length > 0) {
         const wordGap = horizontalGap(prevItem, it);
         if (wordGap > h * 0.12 && !text.endsWith(" ") && !it.str.startsWith(" ")) {
-          text += " ";
+          const tabLikeListGap =
+            scriptOf(prevItem.str) === "ltr" &&
+            scriptOf(it.str) === "rtl" &&
+            isListMarkerText(text);
+          if (tabLikeListGap) {
+            const marker = `\u{e000}${gapPlaceholders.size}\u{e001}`;
+            gapPlaceholders.set(marker, wordGap);
+            text += marker;
+          } else {
+            text += " ";
+          }
         }
       }
       text += it.str;
@@ -715,6 +758,18 @@ function buildTextRuns(
     // appropriate default (Faruma for Thaana, Arial for Latin) when the
     // BaseFont hint matches nothing in the registry.
     const fontFamily = resolveFamilyFromHint(baseName, text);
+    if (gapPlaceholders.size > 0) {
+      const spaceWidth = cssSpaceWidth(
+        fontFamily,
+        maxHeight,
+        bestShow?.bold ?? false,
+        bestShow?.italic ?? false,
+      );
+      for (const [marker, gapPx] of gapPlaceholders) {
+        const spaces = Math.max(1, Math.round(gapPx / spaceWidth));
+        text = text.replace(marker, " ".repeat(spaces));
+      }
+    }
 
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
@@ -758,7 +813,17 @@ function buildTextRuns(
     // we can be generous on the horizontal axis without crossing
     // line boundaries.
     const mergeThreshold = Math.max(item.height, prev.height) * 1.5;
-    if (gap < mergeThreshold) {
+    const mixedListMarkerGap =
+      scriptOf(prev.str) !== scriptOf(item.str) && gap < Math.max(item.height, prev.height) * 2;
+    const leadingListMarkerLine =
+      bucket.length === 1 && isListMarkerText(bucket[0].str) && scriptOf(item.str) === "rtl";
+    const activeListMarkerLine = bucket.length > 1 && isListMarkerText(bucket[0].str);
+    if (
+      gap < mergeThreshold ||
+      mixedListMarkerGap ||
+      leadingListMarkerLine ||
+      activeListMarkerLine
+    ) {
       bucket.push(item);
     } else {
       flush();
