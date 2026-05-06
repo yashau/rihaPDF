@@ -1,6 +1,7 @@
 import { Button } from "@heroui/react";
 import {
   Check,
+  Download,
   FolderOpen,
   Highlighter,
   Image as ImageIcon,
@@ -47,6 +48,8 @@ type CommonProps = {
   imageFileInputRef: React.RefObject<HTMLInputElement | null>;
   onAboutOpen: () => void;
   onSignatureOpen: () => void;
+  canInstall: boolean;
+  onInstall: () => void;
   hasSources: boolean;
   toolTip: string | null;
 };
@@ -123,6 +126,8 @@ function DesktopHeader({
   imageFileInputRef,
   onAboutOpen,
   onSignatureOpen,
+  canInstall,
+  onInstall,
   hasSources,
   toolTip,
 }: CommonProps) {
@@ -147,6 +152,12 @@ function DesktopHeader({
         <FolderOpen size={16} aria-hidden />
         Open PDF
       </Button>
+      {canInstall ? (
+        <Button variant="ghost" isDisabled={busy} onPress={onInstall} aria-label="Install app">
+          <Download size={16} aria-hidden />
+          Install
+        </Button>
+      ) : null}
       <Button
         variant="secondary"
         isDisabled={saveDisabled}
@@ -329,6 +340,8 @@ function MobileHeader({
   imageFileInputRef,
   onAboutOpen,
   onSignatureOpen,
+  canInstall,
+  onInstall,
   hasSources,
   mobileSidebarOpen,
   setMobileSidebarOpen,
@@ -453,6 +466,18 @@ function MobileHeader({
             </Button>
           </>
         )}
+        {canInstall ? (
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            isDisabled={busy}
+            onPress={onInstall}
+            aria-label="Install app"
+          >
+            <Download size={14} aria-hidden />
+          </Button>
+        ) : null}
         <div className="shrink-0">
           <ThemeToggle mode={themeMode} onChange={setThemeMode} cycle />
         </div>
