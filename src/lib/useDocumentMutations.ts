@@ -191,6 +191,7 @@ export function useDocumentMutations({
           next.set(slotId, arr);
           return next;
         });
+        setSelection({ kind: "insertedImage", slotId, id });
         setPendingImage(null);
         setTool("select");
         return;
@@ -236,6 +237,7 @@ export function useDocumentMutations({
       setInsertedImages,
       setInsertedTexts,
       setPendingImage,
+      setSelection,
       setTool,
       slotsRef,
       tool,

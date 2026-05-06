@@ -368,6 +368,7 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     const signature = h.page.locator("[data-image-insert-id]").first();
     const signatureBox = await signature.boundingBox();
     expect(signatureBox, "signature overlay should be created").not.toBeNull();
+    await signature.locator('[data-resize-handle="br"]').waitFor();
     await dragLocatorByTouch(signature.locator('[data-resize-handle="br"]'), -36, 0);
     await h.page.waitForTimeout(150);
 
@@ -384,6 +385,11 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     const imageBox = await image.boundingBox();
     expect(imageBox, "source image overlay should be visible").not.toBeNull();
 
+    await h.page.touchscreen.tap(
+      imageBox!.x + imageBox!.width / 2,
+      imageBox!.y + imageBox!.height / 2,
+    );
+    await image.locator('[data-resize-handle="br"]').waitFor();
     await dragLocatorByTouch(image.locator('[data-resize-handle="br"]'), -36, 0);
     await h.page.waitForTimeout(150);
 
