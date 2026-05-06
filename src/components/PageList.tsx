@@ -8,7 +8,7 @@ import type { LoadedSource } from "../lib/loadSource";
 import type { RenderedPage } from "../lib/pdf";
 import type { Redaction } from "../lib/redactions";
 import type { PageSlot } from "../lib/slots";
-import type { ToolMode } from "../App";
+import type { ToolMode } from "../lib/toolMode";
 
 export type Selection =
   | { kind: "image"; slotId: string; imageId: string }

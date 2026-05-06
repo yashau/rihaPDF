@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@heroui/react";
 import { createPortal } from "react-dom";
 import type { Annotation, AnnotationColor } from "../../../lib/annotations";
-import type { ToolMode } from "../../../App";
+import type { ToolMode } from "../../../lib/toolMode";
 import { useDragGesture } from "../../../lib/useDragGesture";
 import { isRtlScript } from "../../../lib/fonts";
 import { useIsMobile } from "../../../lib/useMediaQuery";

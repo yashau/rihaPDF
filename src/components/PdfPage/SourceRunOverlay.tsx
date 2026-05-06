@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { colorToCss } from "../../lib/color";
 import type { RenderedPage, TextRun } from "../../lib/pdf";
-import type { ToolMode } from "../../App";
+import type { ToolMode } from "../../lib/toolMode";
 import { EditField } from "./EditField";
 import { cssTextDecoration } from "./helpers";
 import type { EditValue, InitialCaretPoint, ToolbarBlocker } from "./types";

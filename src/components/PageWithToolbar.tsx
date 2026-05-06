@@ -5,7 +5,7 @@ import type { FormField } from "../lib/formFields";
 import type { ImageInsertion, TextInsertion } from "../lib/insertions";
 import type { RenderedPage } from "../lib/pdf";
 import type { Redaction } from "../lib/redactions";
-import type { ToolMode } from "../App";
+import type { ToolMode } from "../lib/toolMode";
 
 export function PageWithToolbar({
   slotId,

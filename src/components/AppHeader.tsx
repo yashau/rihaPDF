@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import type { ThemeMode } from "../lib/theme";
-import type { ToolMode } from "../App";
+import type { ToolMode } from "../lib/toolMode";
 
 type PendingImage = {
   kind: "image" | "signature";

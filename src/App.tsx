@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { applyEditsAndSave, downloadBlob } from "./lib/save";
-import { buildSavePayload } from "./lib/buildSavePayload";
 import { usePreviewCanvases } from "./lib/usePreviewCanvases";
 import { useSelection } from "./lib/useSelection";
-import { useUndoRedo } from "./lib/useUndoRedo";
-import { readImageFile, type ImageInsertion, type TextInsertion } from "./lib/insertions";
+import type { ImageInsertion, TextInsertion } from "./lib/insertions";
 import {
   type Annotation,
   type AnnotationColor,
@@ -22,48 +19,24 @@ import { CommentToolbar } from "./components/CommentToolbar";
 import { HighlightToolbar } from "./components/HighlightToolbar";
 import { InkToolbar } from "./components/InkToolbar";
 import { PageSidebar } from "./components/PageSidebar";
-import { pageSlot, slotsFromSource, type PageSlot } from "./lib/slots";
+import type { PageSlot } from "./lib/slots";
 import { blankSourceKey } from "./lib/blankSource";
-import { loadSource, nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./lib/loadSource";
 import type { LoadedSource } from "./lib/loadSource";
 import { useTheme } from "./lib/theme";
 import { useIsMobile } from "./lib/useMediaQuery";
 import { useMobileChrome } from "./lib/useMobileChrome";
 import { MIN_DOCUMENT_ZOOM, useMobileDocumentZoom } from "./lib/useMobileDocumentZoom";
 import { useInstallPrompt } from "./lib/useInstallPrompt";
+import { useAppUndo } from "./lib/useAppUndo";
+import { useDocumentIo } from "./lib/useDocumentIo";
+import { useSaveStatus } from "./lib/useSaveStatus";
+import type { PendingImage, ToolMode } from "./lib/toolMode";
 import { AboutModal } from "./components/AboutModal";
 import { AppHeader, AppFileInputs } from "./components/AppHeader";
 import { PageList } from "./components/PageList";
 import { SignatureModal } from "./components/SignatureModal";
 
-export type ToolMode =
-  | "select"
-  | "addText"
-  | "addImage"
-  | "highlight"
-  | "redact"
-  | "comment"
-  | "ink";
-
 const RENDER_SCALE = 1.5;
-
-/** One undoable point-in-time of all document-mutating state.
- *  Selection / tool / pendingImage / editingByPage are excluded
- *  — they're UI state, not document state, and rolling them back
- *  would feel surprising. Sources is included so undoing an
- *  external-PDF add removes the just-added source as well. */
-type UndoSnapshot = {
-  edits: Map<string, Map<string, EditValue>>;
-  imageMoves: Map<string, Map<string, ImageMoveValue>>;
-  insertedTexts: Map<string, TextInsertion[]>;
-  insertedImages: Map<string, ImageInsertion[]>;
-  shapeDeletes: Map<string, Set<string>>;
-  annotations: Map<string, Annotation[]>;
-  redactions: Map<string, Redaction[]>;
-  formValues: Map<string, Map<string, FormValue>>;
-  slots: PageSlot[];
-  sources: Map<string, LoadedSource>;
-};
 
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -158,95 +131,32 @@ export default function App() {
   const [formValues, setFormValues] = useState<Map<string, Map<string, FormValue>>>(new Map());
   /** When the user picks an image file, we hold its bytes here until
    *  they click on a page to place it. Cleared on placement / cancel. */
-  const [pendingImage, setPendingImage] = useState<{
-    kind: "image" | "signature";
-    bytes: Uint8Array;
-    format: "png" | "jpeg";
-    naturalWidth: number;
-    naturalHeight: number;
-  } | null>(null);
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Mirror refs so `captureSnapshot` can read current state without
-  // taking every state slice as a useCallback dep (which would
-  // re-create every callback on every keystroke). slotsRef already
-  // exists above; the rest are added here.
-  const editsRef = useRef(edits);
-  const imageMovesRef = useRef(imageMoves);
-  const insertedTextsRef = useRef(insertedTexts);
-  const insertedImagesRef = useRef(insertedImages);
-  const shapeDeletesRef = useRef(shapeDeletes);
-  const annotationsRef = useRef(annotations);
-  const redactionsRef = useRef(redactions);
-  const formValuesRef = useRef(formValues);
-  const sourcesRef = useRef(sources);
-  useEffect(() => {
-    editsRef.current = edits;
-  }, [edits]);
-  useEffect(() => {
-    imageMovesRef.current = imageMoves;
-  }, [imageMoves]);
-  useEffect(() => {
-    insertedTextsRef.current = insertedTexts;
-  }, [insertedTexts]);
-  useEffect(() => {
-    insertedImagesRef.current = insertedImages;
-  }, [insertedImages]);
-  useEffect(() => {
-    shapeDeletesRef.current = shapeDeletes;
-  }, [shapeDeletes]);
-  useEffect(() => {
-    annotationsRef.current = annotations;
-  }, [annotations]);
-  useEffect(() => {
-    redactionsRef.current = redactions;
-  }, [redactions]);
-  useEffect(() => {
-    formValuesRef.current = formValues;
-  }, [formValues]);
-  useEffect(() => {
-    sourcesRef.current = sources;
-  }, [sources]);
-
-  const captureSnapshot = useCallback(
-    (): UndoSnapshot => ({
-      edits: editsRef.current,
-      imageMoves: imageMovesRef.current,
-      insertedTexts: insertedTextsRef.current,
-      insertedImages: insertedImagesRef.current,
-      shapeDeletes: shapeDeletesRef.current,
-      annotations: annotationsRef.current,
-      redactions: redactionsRef.current,
-      formValues: formValuesRef.current,
-      slots: slotsRef.current,
-      sources: sourcesRef.current,
-    }),
-    [],
-  );
-
-  // Forward declaration of `setSelection` via ref so `restoreSnapshot`
-  // (passed into `useUndoRedo`) can clear selection on undo/redo
-  // without taking a hard dep on the (later-declared) `useSelection`
-  // return value. The ref is bound right after `useSelection` runs.
-  const setSelectionRef = useRef<(s: null) => void>(() => {});
-  const restoreSnapshot = useCallback((s: UndoSnapshot) => {
-    setEdits(s.edits);
-    setImageMoves(s.imageMoves);
-    setInsertedTexts(s.insertedTexts);
-    setInsertedImages(s.insertedImages);
-    setShapeDeletes(s.shapeDeletes);
-    setAnnotations(s.annotations);
-    setRedactions(s.redactions);
-    setFormValues(s.formValues);
-    setSlots(s.slots);
-    setSources(s.sources);
-    setSelectionRef.current(null);
-  }, []);
-
-  const { recordHistory, undo, redo, clearHistory, canUndo, canRedo } = useUndoRedo({
-    captureSnapshot,
-    restoreSnapshot,
-  });
+  const { recordHistory, undo, redo, clearHistory, canUndo, canRedo, bindSelectionSetter } =
+    useAppUndo({
+      edits,
+      imageMoves,
+      insertedTexts,
+      insertedImages,
+      shapeDeletes,
+      annotations,
+      redactions,
+      formValues,
+      sources,
+      slotsRef,
+      setEdits,
+      setImageMoves,
+      setInsertedTexts,
+      setInsertedImages,
+      setShapeDeletes,
+      setAnnotations,
+      setRedactions,
+      setFormValues,
+      setSlots,
+      setSources,
+    });
 
   const {
     selection,
@@ -266,51 +176,41 @@ export default function App() {
     setAnnotations,
   });
   useEffect(() => {
-    setSelectionRef.current = setSelection;
-  }, [setSelection]);
+    bindSelectionSetter(setSelection);
+  }, [bindSelectionSetter, setSelection]);
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      setBusy(true);
-      try {
-        const source = await loadSource(file, RENDER_SCALE, PRIMARY_SOURCE_KEY);
-        setPrimaryFilename(file.name);
-        setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
-        setSlots(slotsFromSource(source));
-        setDocumentZoom(MIN_DOCUMENT_ZOOM);
-        // Opening a new primary file is a fresh start, not an
-        // undoable mutation — drop any history from the previous
-        // document so Ctrl+Z can't accidentally resurrect it.
-        clearHistory();
-        // Dev-only: expose run.contentStreamOpIndices to E2E tests so a
-        // probe can inspect what the strip pipeline thinks each run owns
-        // without re-running the whole extractor in the browser.
-        (
-          window as unknown as {
-            __runOpIndices?: Map<string, number[]>;
-          }
-        ).__runOpIndices = new Map(
-          source.pages.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
-        );
-        setEdits(new Map());
-        setImageMoves(new Map());
-        setShapeDeletes(new Map());
-        setAnnotations(new Map());
-        setRedactions(new Map());
-        setFormValues(new Map());
-        // previewCanvases auto-clears via usePreviewCanvases when the
-        // inputs reset to empty, so no explicit reset needed here.
-        setInsertedTexts(new Map());
-        setInsertedImages(new Map());
-        setTool("select");
-        setPendingImage(null);
-        setLoadedFileKey((n) => n + 1);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [clearHistory],
-  );
+  const { handleFile, onAddExternalPdfs, onPickImageFile, onSave } = useDocumentIo({
+    renderScale: RENDER_SCALE,
+    sources,
+    slots,
+    primaryFilename,
+    edits,
+    imageMoves,
+    insertedTexts,
+    insertedImages,
+    shapeDeletes,
+    annotations,
+    redactions,
+    formValues,
+    setPrimaryFilename,
+    setLoadedFileKey,
+    setDocumentZoom,
+    setSources,
+    setSlots,
+    setEdits,
+    setImageMoves,
+    setInsertedTexts,
+    setInsertedImages,
+    setShapeDeletes,
+    setAnnotations,
+    setRedactions,
+    setFormValues,
+    setTool,
+    setPendingImage,
+    setBusy,
+    recordHistory,
+    clearHistory,
+  });
 
   const onEdit = useCallback(
     (slotId: string, runId: string, value: EditValue) => {
@@ -819,47 +719,6 @@ export default function App() {
     [recordHistory],
   );
 
-  /** "+ From PDF" handler: load one or more external PDFs and append
-   *  their pages as full first-class slots. Each external goes through
-   *  `loadSource` so its pages get the same font / glyph-map / image
-   *  extraction as the primary — the user can edit, drag, insert,
-   *  delete on them just like primary pages. */
-  const onAddExternalPdfs = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return;
-      setBusy(true);
-      try {
-        // Record once before the whole batch — undo removes all
-        // pages added by this single "+ From PDF" action together,
-        // not one external file at a time.
-        recordHistory(null);
-        for (const file of files) {
-          const sourceKey = nextExternalSourceKey(file);
-          const source = await loadSource(file, RENDER_SCALE, sourceKey);
-          setSources((prev) => {
-            const next = new Map(prev);
-            next.set(sourceKey, source);
-            return next;
-          });
-          setSlots((prev) => [...prev, ...source.pages.map((_, i) => pageSlot(sourceKey, i))]);
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [recordHistory],
-  );
-
-  const onPickImageFile = useCallback(async (file: File) => {
-    const parsed = await readImageFile(file);
-    if (!parsed) {
-      console.warn("Unsupported image format (PNG/JPEG only):", file.name);
-      return;
-    }
-    setPendingImage({ ...parsed, kind: "image" });
-    setTool("addImage");
-  }, []);
-
   // Wrap setSlots for PageSidebar so reorder / blank-insert /
   // remove-page actions all push a snapshot before mutating.
   // PageSidebar always passes an array (no functional updater),
@@ -872,140 +731,21 @@ export default function App() {
     [recordHistory],
   );
 
-  const onSave = useCallback(async () => {
-    if (sources.size === 0 || !primaryFilename) return;
-    setBusy(true);
-    try {
-      const {
-        flatEdits,
-        flatImageMoves,
-        flatTextInserts,
-        flatImageInserts,
-        flatShapeDeletes,
-        flatAnnotations,
-        flatRedactions,
-        flatFormFills,
-      } = buildSavePayload({
-        slots,
-        edits,
-        imageMoves,
-        insertedTexts,
-        insertedImages,
-        shapeDeletes,
-        annotations,
-        redactions,
-        formValues,
-      });
-      const out = await applyEditsAndSave(
-        sources,
-        slots,
-        flatEdits,
-        flatImageMoves,
-        flatTextInserts,
-        flatImageInserts,
-        flatShapeDeletes,
-        flatAnnotations,
-        flatRedactions,
-        flatFormFills,
-      );
-      const baseName = primaryFilename.replace(/\.pdf$/i, "");
-      downloadBlob(out, `${baseName}.edited.pdf`);
-    } finally {
-      setBusy(false);
-    }
-  }, [
+  const { totalChangeCount, saveDisabled, toolTip } = useSaveStatus({
     sources,
-    primaryFilename,
     slots,
     edits,
     imageMoves,
-    shapeDeletes,
     insertedTexts,
     insertedImages,
+    shapeDeletes,
     annotations,
     redactions,
     formValues,
-  ]);
-
-  const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
-  const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
-  const totalInsertedTexts = Array.from(insertedTexts.values()).reduce(
-    (sum, arr) => sum + arr.length,
-    0,
-  );
-  const totalInsertedImages = Array.from(insertedImages.values()).reduce(
-    (sum, arr) => sum + arr.length,
-    0,
-  );
-  const totalShapeDeletes = Array.from(shapeDeletes.values()).reduce(
-    (sum, set) => sum + set.size,
-    0,
-  );
-  const totalAnnotations = Array.from(annotations.values()).reduce(
-    (sum, arr) => sum + arr.length,
-    0,
-  );
-  const totalRedactions = Array.from(redactions.values()).reduce((sum, arr) => sum + arr.length, 0);
-  const totalFormFills = Array.from(formValues.values()).reduce((sum, m) => sum + m.size, 0);
-  // Count structural changes vs the initial slots-from-primary state:
-  // missing primary pages are deletions; "blank" slots are inserts;
-  // page slots from non-primary sources are external inserts.
-  const primarySource = sources.get(PRIMARY_SOURCE_KEY);
-  const primaryPageCount = primarySource?.pages.length ?? 0;
-  const slotPrimaryPageCount = slots.reduce(
-    (n, s) => n + (s.kind === "page" && s.sourceKey === PRIMARY_SOURCE_KEY ? 1 : 0),
-    0,
-  );
-  const blankSlotCount = slots.reduce((n, s) => n + (s.kind === "blank" ? 1 : 0), 0);
-  const externalSlotCount = slots.reduce(
-    (n, s) => n + (s.kind === "page" && s.sourceKey !== PRIMARY_SOURCE_KEY ? 1 : 0),
-    0,
-  );
-  const removedSourceCount = Math.max(0, primaryPageCount - slotPrimaryPageCount);
-  const primarySourceOrder: number[] = [];
-  for (const s of slots) {
-    if (s.kind === "page" && s.sourceKey === PRIMARY_SOURCE_KEY) {
-      primarySourceOrder.push(s.sourcePageIndex);
-    }
-  }
-  const slotsReordered = primarySourceOrder.some(
-    (si, i) => i > 0 && si < primarySourceOrder[i - 1],
-  );
-  const structuralOpCount =
-    removedSourceCount + blankSlotCount + externalSlotCount + (slotsReordered ? 1 : 0);
-
-  // Compact "save badge" content shared between desktop and mobile —
-  // desktop shows the verbose breakdown, mobile shows just the
-  // per-category counts as short tokens. Op count is the same source
-  // of truth (`structuralOpCount + …`). The boolean below drives the
-  // disabled state in both layouts.
-  const totalChangeCount =
-    totalEdits +
-    totalImageMoves +
-    structuralOpCount +
-    totalInsertedTexts +
-    totalInsertedImages +
-    totalShapeDeletes +
-    totalAnnotations +
-    totalRedactions +
-    totalFormFills;
-  const saveDisabled = sources.size === 0 || busy || totalChangeCount === 0;
-  const toolTip =
-    tool === "addText"
-      ? "Tap a page to drop a text box"
-      : tool === "addImage" && pendingImage
-        ? pendingImage.kind === "signature"
-          ? "Tap a page to place the signature"
-          : "Tap a page to place the image"
-        : tool === "highlight"
-          ? "Tap a text run to highlight"
-          : tool === "redact"
-            ? "Tap a text run to redact (drag corners to resize)"
-            : tool === "comment"
-              ? "Tap a page to drop a comment"
-              : tool === "ink"
-                ? "Drag on a page to draw"
-                : null;
+    busy,
+    tool,
+    pendingImage,
+  });
 
   return (
     <div

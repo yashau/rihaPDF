@@ -6,7 +6,7 @@ import {
   type InkAnnotation,
   newAnnotationId,
 } from "../../../lib/annotations";
-import type { ToolMode } from "../../../App";
+import type { ToolMode } from "../../../lib/toolMode";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
 import { findPageAtPoint } from "../helpers";
 import { rgba, vpY } from "./helpers";

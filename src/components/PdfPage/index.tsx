@@ -12,7 +12,7 @@ import {
   newAnnotationId,
 } from "../../lib/annotations";
 import { newRedactionId, REDACTION_LINE_PAD, type Redaction } from "../../lib/redactions";
-import type { ToolMode } from "../../App";
+import type { ToolMode } from "../../lib/toolMode";
 import {
   ImageOverlay,
   InsertedImageOverlay,
