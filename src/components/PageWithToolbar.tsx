@@ -31,6 +31,7 @@ export function PageWithToolbar({
   selectedHighlightId,
   selectedInkId,
   deletedShapeIds,
+  documentZoom,
   onEdit,
   onImageMove,
   onEditingChange,
@@ -81,6 +82,7 @@ export function PageWithToolbar({
   selectedHighlightId: string | null;
   selectedInkId: string | null;
   deletedShapeIds: Set<string>;
+  documentZoom: number;
   onEdit: (runId: string, value: EditValue) => void;
   onImageMove: (imageId: string, value: ImageMoveValue) => void;
   onEditingChange: (runId: string | null) => void;
@@ -109,7 +111,12 @@ export function PageWithToolbar({
   onFormFieldChange: (fullName: string, value: FormValue) => void;
 }) {
   return (
-    <div id={`page-slot-${slotId}`} className="flex flex-col items-center gap-2 scroll-mt-6 w-full">
+    <div
+      id={`page-slot-${slotId}`}
+      className={`flex flex-col gap-2 scroll-mt-6 w-full ${
+        documentZoom > 1.001 ? "items-start" : "items-center"
+      }`}
+    >
       <div className="flex gap-2 items-center text-sm">
         <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>
@@ -161,6 +168,7 @@ export function PageWithToolbar({
         onSourceImageMove={onSourceImageMove}
         formFields={formFields}
         formValues={formValues}
+        documentZoom={documentZoom}
         onFormFieldChange={onFormFieldChange}
       />
     </div>

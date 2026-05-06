@@ -146,6 +146,10 @@ type Props = {
   /** Per-source map of fullName → user-set value. Falls back to the
    *  FormField's pre-parsed initial value when a name has no entry. */
   formValues: Map<string, FormValue>;
+  /** Mobile app-owned zoom multiplier. 1 means fit-to-width, values
+   *  above 1 enlarge the document surface inside the scroll container
+   *  without using browser viewport zoom. */
+  documentZoom: number;
   /** Commit a form-field fill. The FormFieldLayer hands the field's
    *  fullName + a typed FormValue; App buckets it by source. */
   onFormFieldChange: (fullName: string, value: FormValue) => void;
@@ -199,6 +203,7 @@ export function PdfPage({
   onSourceImageMove,
   formFields,
   formValues,
+  documentZoom,
   onFormFieldChange,
 }: Props) {
   /** Outer layout wrapper. Reserves display-pixel space for the page
@@ -210,10 +215,11 @@ export function PdfPage({
    *  (cursor / finger) is wrapped through `displayScale`. */
   const fitRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  /** Scale applied to the inner natural-size container so the page
-   *  fits the available scroll-container width. 1 on desktop where
-   *  the page already fits; <1 on mobile where it doesn't. */
-  const [displayScale, setDisplayScale] = useState(1);
+  /** Fit-to-width scale applied before the user-controlled mobile
+   *  document zoom. 1 on desktop where the page already fits; <1 on
+   *  mobile where it doesn't. */
+  const [fitScale, setFitScale] = useState(1);
+  const displayScale = fitScale * documentZoom;
 
   // Compute displayScale synchronously before paint via
   // useLayoutEffect so the first frame already shows the page at the
@@ -257,7 +263,7 @@ export function PdfPage({
       const available = host.clientWidth - padX;
       if (available <= 0 || !page.viewWidth) return;
       const next = Math.min(1, available / page.viewWidth);
-      setDisplayScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+      setFitScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
     };
     compute();
     const ro = new ResizeObserver(compute);
@@ -409,7 +415,6 @@ export function PdfPage({
       style={{
         width: page.viewWidth * displayScale,
         height: page.viewHeight * displayScale,
-        maxWidth: "100%",
         position: "relative",
         overflow: "hidden",
       }}

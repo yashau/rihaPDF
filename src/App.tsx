@@ -29,6 +29,7 @@ import type { LoadedSource } from "./lib/loadSource";
 import { useTheme } from "./lib/theme";
 import { useIsMobile } from "./lib/useMediaQuery";
 import { useMobileChrome } from "./lib/useMobileChrome";
+import { MIN_DOCUMENT_ZOOM, useMobileDocumentZoom } from "./lib/useMobileDocumentZoom";
 import { AboutModal } from "./components/AboutModal";
 import { AppHeader, AppFileInputs } from "./components/AppHeader";
 import { PageList } from "./components/PageList";
@@ -70,6 +71,7 @@ export default function App() {
   const [loadedFileKey, setLoadedFileKey] = useState(0);
   const { mobileHeaderRef, mobileHeaderH, mobileSidebarOpen, setMobileSidebarOpen } =
     useMobileChrome(isMobile);
+  const [documentZoom, setDocumentZoom] = useState(MIN_DOCUMENT_ZOOM);
   /** All loaded sources keyed by sourceKey. The primary file uses the
    *  fixed key from `PRIMARY_SOURCE_KEY`; externals use per-pick keys
    *  from `nextExternalSourceKey`. Promoting external pages to first-
@@ -97,6 +99,12 @@ export default function App() {
   useEffect(() => {
     slotsRef.current = slots;
   }, [slots]);
+  const effectiveDocumentZoom = isMobile && slots.length > 0 ? documentZoom : MIN_DOCUMENT_ZOOM;
+  const documentZoomHandlers = useMobileDocumentZoom({
+    enabled: isMobile && slots.length > 0,
+    zoom: effectiveDocumentZoom,
+    onZoomChange: setDocumentZoom,
+  });
   /** Map<slotId, currently-open runId> — populated by PdfPage's
    *  onEditingChange. Folded into the preview-strip spec so an open
    *  editor immediately hides the original glyph behind it. */
@@ -265,6 +273,7 @@ export default function App() {
         setPrimaryFilename(file.name);
         setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
         setSlots(slotsFromSource(source));
+        setDocumentZoom(MIN_DOCUMENT_ZOOM);
         // Opening a new primary file is a fresh start, not an
         // undoable mutation — drop any history from the previous
         // document so Ctrl+Z can't accidentally resurrect it.
@@ -1120,7 +1129,19 @@ export default function App() {
           // Mobile header is `position: fixed` (out of flow), so push
           // page content down by its measured height. `mobileHeaderH`
           // is 0 on desktop, where the header is back in the flex flow.
-          style={isMobile ? { paddingTop: mobileHeaderH + 12 } : undefined}
+          style={
+            isMobile
+              ? {
+                  paddingTop: mobileHeaderH + 12,
+                  // The PDF surface owns two-finger zoom. Keep native
+                  // one-finger panning, but exclude browser pinch zoom
+                  // so fixed app chrome no longer has to chase
+                  // visualViewport scale events.
+                  touchAction: "pan-x pan-y",
+                }
+              : undefined
+          }
+          {...documentZoomHandlers}
           onPointerDown={(e) => {
             // Tap on empty `<main>` (no overlay child consumed the
             // event) cancels a pending image placement so the user
@@ -1154,6 +1175,7 @@ export default function App() {
               highlightColor={highlightColor}
               selection={selection}
               renderScale={RENDER_SCALE}
+              documentZoom={effectiveDocumentZoom}
               onEdit={onEdit}
               onImageMove={onImageMove}
               onEditingChange={onEditingChange}

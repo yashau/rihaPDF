@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-88%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-90%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -40,7 +40,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 - **Fill AcroForm fields.** Open a form PDF — Maldivian gov applications, etc. — and the existing widgets become interactive overlays: text inputs (single-line, multiline, password), checkboxes, radio groups, combo / list boxes. Type Thaana via the same DV/EN phonetic keyboard the rest of the editor uses; saved PDFs write `/V` (UTF-16BE for Thaana, ASCII otherwise) and rebuild `/Root /AcroForm /Fields` after copyPages so the output stays interactive in Acrobat / Preview / Chrome / pdf.js. Reopening in rihaPDF re-extracts the same values. XFA, JS actions, `/AA`, and digital-signature creation are out of scope.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
-- **Mobile layout.** Fit-to-width pages, 400ms touch hold before drag, edge-band auto-scroll, drawer sidebar, visual-viewport-anchored chrome.
+- **Mobile layout.** Fit-to-width pages, app-owned two-finger document zoom, 400ms touch hold before drag, edge-band auto-scroll, drawer sidebar, visual-viewport-anchored chrome for keyboard-aware controls.
 - **Multi-page docs** with per-page preview canvases that strip-and-re-render on every edit.
 
 ## Stack
@@ -153,40 +153,40 @@ pnpm test         # another
 
 The suite includes visual-signature coverage for the local saved-signature library, draw/import cleanup, click-to-place insertion, and PDF image persistence.
 
-| File                                          | What it covers                                                               |
-| --------------------------------------------- | ---------------------------------------------------------------------------- |
-| `annotations.test.ts`                         | highlight / comment / ink save, ink cross-page move, ink delete              |
-| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages   |
-| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line        |
-| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable     |
-| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                      |
-| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                      |
-| `drag-autoscroll.test.ts`                     | edge auto-scroll uses the visual viewport during drags                       |
-| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates         |
-| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                        |
-| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                    |
-| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                                 |
-| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip    |
-| `form-fill.test.ts`                           | AcroForm `/V` values round-trip and reopen with the same fills               |
-| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                                |
-| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload            |
-| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                 |
-| `insert.test.ts`                              | drop text + image → both persist after save                                  |
-| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                         |
-| `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint           |
-| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                      |
-| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed                      |
-| `mobile-positioning.test.ts`                  | mobile insert/drag positions persist in PDF coordinates                      |
-| `move-edit-maldivian2.test.ts`                | move/edit flow against the second Maldivian fixture                          |
-| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                       |
-| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                       |
-| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                |
-| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                             |
-| `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes |
-| `save-redactions.test.ts`                     | partial image pixels sanitized; full image resource pruned; vector stripped  |
-| `signature.test.ts`                           | visual signature draw/import → local library, cleanup, insert, save          |
-| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                     |
-| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                        |
+| File                                          | What it covers                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------- |
+| `annotations.test.ts`                         | highlight / comment / ink save, ink cross-page move, ink delete               |
+| `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
+| `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line         |
+| `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable      |
+| `delete-shape.test.ts`                        | click-select a vector rect, Del flags it, save drops it                       |
+| `delete-source-text-maldivian2.test.ts`       | source-text trash button strips the run                                       |
+| `drag-autoscroll.test.ts`                     | edge auto-scroll uses the visual viewport during drags                        |
+| `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates          |
+| `edit-format.test.ts`                         | bold OFF override persists across editor close/reopen                         |
+| `edit-text-includes-punct-maldivian2.test.ts` | punctuation-clustering against maldivian2                                     |
+| `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                                  |
+| `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip     |
+| `form-fill.test.ts`                           | AcroForm `/V` values round-trip and reopen with the same fills                |
+| `image-move.test.ts`                          | drag image → cm rewrite, neighbours untouched                                 |
+| `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload             |
+| `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                  |
+| `insert.test.ts`                              | drop text + image → both persist after save                                   |
+| `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                          |
+| `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint            |
+| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag                       |
+| `mobile-layout.test.ts`                       | 390×844 viewport: no horizontal overflow, drawer closed, app-owned pinch zoom |
+| `mobile-positioning.test.ts`                  | mobile insert/drag positions persist in PDF coordinates                       |
+| `move-edit-maldivian2.test.ts`                | move/edit flow against the second Maldivian fixture                           |
+| `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                        |
+| `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                        |
+| `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                 |
+| `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                              |
+| `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes  |
+| `save-redactions.test.ts`                     | partial image pixels sanitized; full image resource pruned; vector stripped   |
+| `signature.test.ts`                           | visual signature draw/import → local library, cleanup, insert, save           |
+| `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                      |
+| `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                         |
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 

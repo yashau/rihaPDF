@@ -119,4 +119,94 @@ describe("mobile layout (390×844)", () => {
     expect(naturalW).toBeGreaterThan(390);
     expect(pageRect!.width).toBeLessThan(naturalW);
   });
+
+  test("two-finger pinch zooms the document surface without hiding mobile chrome", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();
+    expect(beforeRect, "page slot 0 should be in DOM").not.toBeNull();
+
+    await h.page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) throw new Error("missing main scroll surface");
+      const rect = main.getBoundingClientRect();
+      const y = rect.top + Math.min(260, rect.height / 2);
+      const fire = (type: string, pointerId: number, clientX: number) => {
+        main.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId,
+            pointerType: "touch",
+            isPrimary: pointerId === 1,
+            clientX,
+            clientY: y,
+          }),
+        );
+      };
+      fire("pointerdown", 1, rect.left + 160);
+      fire("pointerdown", 2, rect.left + 230);
+      fire("pointermove", 1, rect.left + 100);
+      fire("pointermove", 2, rect.left + 290);
+      fire("pointerup", 1, rect.left + 100);
+      fire("pointerup", 2, rect.left + 290);
+    });
+
+    await expect
+      .poll(async () => {
+        const rect = await h.page.locator("[data-page-index='0']").boundingBox();
+        return rect?.width ?? 0;
+      })
+      .toBeGreaterThan(beforeRect!.width * 1.5);
+
+    const chrome = await h.page.locator("header").evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return { opacity: cs.opacity, visible: cs.visibility, top: rect.top };
+    });
+    expect(chrome.opacity).toBe("1");
+    expect(chrome.visible).toBe("visible");
+    expect(chrome.top).toBeGreaterThanOrEqual(0);
+
+    const scrollState = await h.page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) throw new Error("missing main scroll surface");
+      return {
+        mainScrollW: main.scrollWidth,
+        mainClientW: main.clientWidth,
+        bodyW: document.body.scrollWidth,
+        viewportW: window.innerWidth,
+      };
+    });
+    expect(scrollState.mainScrollW).toBeGreaterThan(scrollState.mainClientW);
+    expect(scrollState.bodyW).toBeLessThanOrEqual(scrollState.viewportW + 1);
+  });
+
+  test("DevTools-style ctrl+wheel pinch zooms the document surface", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();
+    expect(beforeRect, "page slot 0 should be in DOM").not.toBeNull();
+
+    await h.page.evaluate(() => {
+      const main = document.querySelector("main");
+      if (!main) throw new Error("missing main scroll surface");
+      const rect = main.getBoundingClientRect();
+      main.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          deltaY: -300,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + Math.min(260, rect.height / 2),
+        }),
+      );
+    });
+
+    await expect
+      .poll(async () => {
+        const rect = await h.page.locator("[data-page-index='0']").boundingBox();
+        return rect?.width ?? 0;
+      })
+      .toBeGreaterThan(beforeRect!.width * 1.5);
+  });
 });

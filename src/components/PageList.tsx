@@ -37,6 +37,7 @@ export function PageList({
   highlightColor,
   selection,
   renderScale,
+  documentZoom,
   formValues,
   onEdit,
   onImageMove,
@@ -81,6 +82,7 @@ export function PageList({
   highlightColor: AnnotationColor;
   selection: Selection;
   renderScale: number;
+  documentZoom: number;
   /** Per-source map of fullName → user-set fill, keyed by sourceKey.
    *  Lookup at render time so a slot reorder doesn't restate fills. */
   formValues: Map<string, Map<string, FormValue>>;
@@ -202,7 +204,11 @@ export function PageList({
     // wrapper. Without it, the column auto-sizes to its
     // widest child (= the natural page width on first
     // render), breaking fit-to-width on mobile.
-    <div className="flex flex-col items-center gap-6 w-full">
+    <div
+      className={`flex flex-col gap-6 w-full ${
+        documentZoom > 1.001 ? "items-start" : "items-center"
+      }`}
+    >
       {slots.map((slot, idx) => {
         // Resolve the page object + sourceKey we'll hand to
         // PageWithToolbar. Blank slots get a synthetic RenderedPage
@@ -332,6 +338,7 @@ export function PageList({
             selectedHighlightId={selectedHighlightId}
             selectedInkId={selectedInkId}
             deletedShapeIds={deletedShapeIds}
+            documentZoom={documentZoom}
             onEdit={(runId, value) => onEdit(slot.id, runId, value)}
             onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
             onEditingChange={(runId) => onEditingChange(slot.id, runId)}
