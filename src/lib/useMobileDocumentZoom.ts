@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  type RefObject,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -21,6 +22,18 @@ type PinchState = {
   anchorContentY: number;
   anchorViewportX: number;
   anchorViewportY: number;
+  anchorTargetX: number;
+  anchorTargetY: number;
+};
+
+type ZoomAnchor = {
+  zoom: number;
+  contentX: number;
+  contentY: number;
+  viewportX: number;
+  viewportY: number;
+  targetX: number;
+  targetY: number;
 };
 
 function clampZoom(value: number): number {
@@ -57,23 +70,21 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function useMobileDocumentZoom({
   enabled,
   zoom,
+  targetRef,
   onZoomChange,
 }: {
   enabled: boolean;
   zoom: number;
+  targetRef: RefObject<HTMLElement | null>;
   onZoomChange: (next: number) => void;
 }) {
   const zoomRef = useRef(zoom);
   const pointsRef = useRef<Map<number, TouchPoint>>(new Map());
   const pinchRef = useRef<PinchState | null>(null);
   const rafRef = useRef<number | null>(null);
-  const wheelAnchorRef = useRef<{
-    zoom: number;
-    contentX: number;
-    contentY: number;
-    viewportX: number;
-    viewportY: number;
-  } | null>(null);
+  const liveZoomRef = useRef<number | null>(null);
+  const liveAnchorRef = useRef<ZoomAnchor | null>(null);
+  const wheelAnchorRef = useRef<ZoomAnchor | null>(null);
   const wheelResetRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -84,79 +95,108 @@ export function useMobileDocumentZoom({
     if (!enabled) {
       pointsRef.current.clear();
       pinchRef.current = null;
+      liveZoomRef.current = null;
+      liveAnchorRef.current = null;
+      const target = targetRef.current;
+      if (target) clearLiveTransform(target);
     }
-  }, [enabled]);
+  }, [enabled, targetRef]);
 
   useEffect(
     () => () => {
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
       if (wheelResetRef.current !== null) window.clearTimeout(wheelResetRef.current);
+      const target = targetRef.current;
+      if (target) clearLiveTransform(target);
     },
-    [],
+    [targetRef],
   );
 
-  const applyAnchoredZoom = useCallback(
-    (
-      el: HTMLElement,
-      nextZoom: number,
-      anchor: {
-        zoom: number;
-        contentX: number;
-        contentY: number;
-        viewportX: number;
-        viewportY: number;
-      },
-    ): void => {
+  const applyLiveZoom = useCallback(
+    (nextZoom: number, anchor: ZoomAnchor): void => {
+      liveZoomRef.current = nextZoom;
+      liveAnchorRef.current = anchor;
+      const target = targetRef.current;
+      if (!target) return;
+      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = window.requestAnimationFrame(() => {
+        rafRef.current = null;
+        const committedZoom = zoomRef.current;
+        const ratio = nextZoom / committedZoom;
+        target.style.transformOrigin = `${anchor.targetX}px ${anchor.targetY}px`;
+        target.style.transform = ratio === 1 ? "" : `scale(${ratio})`;
+        target.style.willChange = ratio === 1 ? "" : "transform";
+      });
+    },
+    [targetRef],
+  );
+
+  const commitLiveZoom = useCallback(
+    (el: HTMLElement): void => {
+      const nextZoom = liveZoomRef.current;
+      const anchor = liveAnchorRef.current;
+      const target = targetRef.current;
+      if (nextZoom === null || !anchor) return;
+
+      liveZoomRef.current = null;
+      liveAnchorRef.current = null;
       onZoomChange(nextZoom);
+
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = window.requestAnimationFrame(() => {
         rafRef.current = null;
         const ratio = nextZoom / anchor.zoom;
         el.scrollLeft = anchor.contentX * ratio - anchor.viewportX;
         el.scrollTop = anchor.contentY * ratio - anchor.viewportY;
+        if (target) clearLiveTransform(target);
       });
     },
-    [onZoomChange],
+    [onZoomChange, targetRef],
   );
 
-  const startPinch = useCallback((el: HTMLElement): void => {
-    const points = [...pointsRef.current.values()];
-    if (points.length < 2) return;
-    const [a, b] = points;
-    const startDistance = distance(a, b);
-    if (startDistance <= 0) return;
-    const mid = midpoint(a, b);
-    const rect = el.getBoundingClientRect();
-    const anchorViewportX = mid.clientX - rect.left;
-    const anchorViewportY = mid.clientY - rect.top;
-    pinchRef.current = {
-      startDistance,
-      startZoom: zoomRef.current,
-      anchorContentX: el.scrollLeft + anchorViewportX,
-      anchorContentY: el.scrollTop + anchorViewportY,
-      anchorViewportX,
-      anchorViewportY,
-    };
-  }, []);
-
-  const updatePinch = useCallback(
+  const startPinch = useCallback(
     (el: HTMLElement): void => {
-      const pinch = pinchRef.current;
-      if (!pinch) return;
       const points = [...pointsRef.current.values()];
       if (points.length < 2) return;
       const [a, b] = points;
-      const nextZoom = clampZoom((pinch.startZoom * distance(a, b)) / pinch.startDistance);
-      applyAnchoredZoom(el, nextZoom, {
-        zoom: pinch.startZoom,
-        contentX: pinch.anchorContentX,
-        contentY: pinch.anchorContentY,
-        viewportX: pinch.anchorViewportX,
-        viewportY: pinch.anchorViewportY,
-      });
+      const startDistance = distance(a, b);
+      if (startDistance <= 0) return;
+      const mid = midpoint(a, b);
+      const rect = el.getBoundingClientRect();
+      const targetRect = targetRef.current?.getBoundingClientRect() ?? rect;
+      const anchorViewportX = mid.clientX - rect.left;
+      const anchorViewportY = mid.clientY - rect.top;
+      pinchRef.current = {
+        startDistance,
+        startZoom: zoomRef.current,
+        anchorContentX: el.scrollLeft + anchorViewportX,
+        anchorContentY: el.scrollTop + anchorViewportY,
+        anchorViewportX,
+        anchorViewportY,
+        anchorTargetX: mid.clientX - targetRect.left,
+        anchorTargetY: mid.clientY - targetRect.top,
+      };
     },
-    [applyAnchoredZoom],
+    [targetRef],
   );
+
+  const updatePinch = useCallback((): void => {
+    const pinch = pinchRef.current;
+    if (!pinch) return;
+    const points = [...pointsRef.current.values()];
+    if (points.length < 2) return;
+    const [a, b] = points;
+    const nextZoom = clampZoom((pinch.startZoom * distance(a, b)) / pinch.startDistance);
+    applyLiveZoom(nextZoom, {
+      zoom: pinch.startZoom,
+      contentX: pinch.anchorContentX,
+      contentY: pinch.anchorContentY,
+      viewportX: pinch.anchorViewportX,
+      viewportY: pinch.anchorViewportY,
+      targetX: pinch.anchorTargetX,
+      targetY: pinch.anchorTargetY,
+    });
+  }, [applyLiveZoom]);
 
   const onPointerDownCapture = useCallback(
     (e: ReactPointerEvent<HTMLElement>): void => {
@@ -184,7 +224,7 @@ export function useMobileDocumentZoom({
       pointsRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
       if (pointsRef.current.size >= 2) {
         if (!pinchRef.current) startPinch(e.currentTarget);
-        updatePinch(e.currentTarget);
+        updatePinch();
         e.preventDefault();
         e.stopPropagation();
       }
@@ -192,17 +232,23 @@ export function useMobileDocumentZoom({
     [enabled, startPinch, updatePinch],
   );
 
-  const endPointer = useCallback((e: ReactPointerEvent<HTMLElement>): void => {
-    pointsRef.current.delete(e.pointerId);
-    if (pointsRef.current.size < 2) pinchRef.current = null;
-    try {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
+  const endPointer = useCallback(
+    (e: ReactPointerEvent<HTMLElement>): void => {
+      pointsRef.current.delete(e.pointerId);
+      if (pointsRef.current.size < 2) {
+        pinchRef.current = null;
+        commitLiveZoom(e.currentTarget);
       }
-    } catch {
-      // See setPointerCapture note above.
-    }
-  }, []);
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // See setPointerCapture note above.
+      }
+    },
+    [commitLiveZoom],
+  );
 
   const onWheelCapture = useCallback(
     (e: ReactWheelEvent<HTMLElement>): void => {
@@ -212,15 +258,18 @@ export function useMobileDocumentZoom({
 
       const el = e.currentTarget;
       const rect = el.getBoundingClientRect();
+      const targetRect = targetRef.current?.getBoundingClientRect() ?? rect;
       const viewportX = e.clientX - rect.left;
       const viewportY = e.clientY - rect.top;
-      const currentZoom = zoomRef.current;
+      const currentZoom = liveZoomRef.current ?? zoomRef.current;
       const anchor = wheelAnchorRef.current ?? {
-        zoom: currentZoom,
+        zoom: zoomRef.current,
         contentX: el.scrollLeft + viewportX,
         contentY: el.scrollTop + viewportY,
         viewportX,
         viewportY,
+        targetX: e.clientX - targetRect.left,
+        targetY: e.clientY - targetRect.top,
       };
       wheelAnchorRef.current = anchor;
 
@@ -228,15 +277,16 @@ export function useMobileDocumentZoom({
       // ctrl+wheel deltas. Exponential scaling keeps the gesture smooth
       // and symmetric for zoom-in vs zoom-out.
       const nextZoom = clampZoom(currentZoom * Math.exp(-e.deltaY / 300));
-      applyAnchoredZoom(el, nextZoom, anchor);
+      applyLiveZoom(nextZoom, anchor);
 
       if (wheelResetRef.current !== null) window.clearTimeout(wheelResetRef.current);
       wheelResetRef.current = window.setTimeout(() => {
+        commitLiveZoom(el);
         wheelAnchorRef.current = null;
         wheelResetRef.current = null;
       }, 120);
     },
-    [applyAnchoredZoom, enabled],
+    [applyLiveZoom, commitLiveZoom, enabled, targetRef],
   );
 
   return {
@@ -249,3 +299,9 @@ export function useMobileDocumentZoom({
 }
 
 export { MAX_DOCUMENT_ZOOM, MIN_DOCUMENT_ZOOM };
+
+function clearLiveTransform(target: HTMLElement): void {
+  target.style.transform = "";
+  target.style.transformOrigin = "";
+  target.style.willChange = "";
+}

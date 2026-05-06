@@ -92,6 +92,7 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const documentZoomTargetRef = useRef<HTMLDivElement | null>(null);
   /** Mirror of `slots` so callbacks that need slotIndex→slotId lookups
    *  (cross-page insertion drags land via slot index from PdfPage's
    *  hit-test) don't re-create on every slot mutation. */
@@ -103,6 +104,7 @@ export default function App() {
   const documentZoomHandlers = useMobileDocumentZoom({
     enabled: isMobile && slots.length > 0,
     zoom: effectiveDocumentZoom,
+    targetRef: documentZoomTargetRef,
     onZoomChange: setDocumentZoom,
   });
   /** Map<slotId, currently-open runId> — populated by PdfPage's
@@ -1157,47 +1159,49 @@ export default function App() {
               Open a PDF to begin. Double-click any text fragment to edit it.
             </div>
           ) : (
-            <PageList
-              slots={slots}
-              sources={sources}
-              edits={edits}
-              imageMoves={imageMoves}
-              insertedTexts={insertedTexts}
-              insertedImages={insertedImages}
-              annotations={annotations}
-              redactions={redactions}
-              shapeDeletes={shapeDeletes}
-              previewCanvases={previewCanvases}
-              editingByPage={editingByPage}
-              tool={tool}
-              inkColor={inkColor}
-              inkThickness={inkThickness}
-              highlightColor={highlightColor}
-              selection={selection}
-              renderScale={RENDER_SCALE}
-              documentZoom={effectiveDocumentZoom}
-              onEdit={onEdit}
-              onImageMove={onImageMove}
-              onEditingChange={onEditingChange}
-              onCanvasClick={onCanvasClick}
-              onTextInsertChange={onTextInsertChange}
-              onTextInsertDelete={onTextInsertDelete}
-              onImageInsertChange={onImageInsertChange}
-              onImageInsertDelete={onImageInsertDelete}
-              onSelectImage={onSelectImage}
-              onSelectInsertedImage={onSelectInsertedImage}
-              onSelectShape={onSelectShape}
-              onAnnotationAdd={onAnnotationAdd}
-              onAnnotationChange={onAnnotationChange}
-              onAnnotationDelete={onAnnotationDelete}
-              onRedactionAdd={onRedactionAdd}
-              onRedactionChange={onRedactionChange}
-              onSelectRedaction={onSelectRedaction}
-              onSelectHighlight={onSelectHighlight}
-              onSelectInk={onSelectInk}
-              formValues={formValues}
-              onFormFieldChange={onFormFieldChange}
-            />
+            <div ref={documentZoomTargetRef} className="w-full">
+              <PageList
+                slots={slots}
+                sources={sources}
+                edits={edits}
+                imageMoves={imageMoves}
+                insertedTexts={insertedTexts}
+                insertedImages={insertedImages}
+                annotations={annotations}
+                redactions={redactions}
+                shapeDeletes={shapeDeletes}
+                previewCanvases={previewCanvases}
+                editingByPage={editingByPage}
+                tool={tool}
+                inkColor={inkColor}
+                inkThickness={inkThickness}
+                highlightColor={highlightColor}
+                selection={selection}
+                renderScale={RENDER_SCALE}
+                documentZoom={effectiveDocumentZoom}
+                onEdit={onEdit}
+                onImageMove={onImageMove}
+                onEditingChange={onEditingChange}
+                onCanvasClick={onCanvasClick}
+                onTextInsertChange={onTextInsertChange}
+                onTextInsertDelete={onTextInsertDelete}
+                onImageInsertChange={onImageInsertChange}
+                onImageInsertDelete={onImageInsertDelete}
+                onSelectImage={onSelectImage}
+                onSelectInsertedImage={onSelectInsertedImage}
+                onSelectShape={onSelectShape}
+                onAnnotationAdd={onAnnotationAdd}
+                onAnnotationChange={onAnnotationChange}
+                onAnnotationDelete={onAnnotationDelete}
+                onRedactionAdd={onRedactionAdd}
+                onRedactionChange={onRedactionChange}
+                onSelectRedaction={onSelectRedaction}
+                onSelectHighlight={onSelectHighlight}
+                onSelectInk={onSelectInk}
+                formValues={formValues}
+                onFormFieldChange={onFormFieldChange}
+              />
+            </div>
           )}
         </main>
       </div>
