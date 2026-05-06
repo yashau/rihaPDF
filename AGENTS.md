@@ -285,6 +285,7 @@ Before finishing, report:
 - Which verification commands ran and whether they passed.
 - Any verification that was skipped and why.
 - Any remaining risk, especially for save/redaction/form/text-shaping changes.
-- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or E2E coverage changes. Keep the feature list, test inventory table, and E2E test-count badge accurate; the badge should count actual `test(...)` / `it(...)` declarations, not helper `.test(...)` calls.
+- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or E2E coverage changes. Keep the feature list, root test inventory table, and E2E test-count badge accurate; the badge should count actual `test(...)` / `it(...)` declarations, not helper `.test(...)` calls.
+- When E2E coverage changes, also update `test/e2e/README.md` so its coverage table and test count stay in sync with the root README.
 
 For code changes, prefer ending with a concise status rather than a long explanation. For documentation-only changes, `pnpm check` is usually optional unless formatting or lint rules include the touched files.
