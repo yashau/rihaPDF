@@ -1,6 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
-import { resolveFamilyFromHint } from "./fonts";
+import { FONTS, resolveFamilyFromHint } from "./fonts";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -529,9 +529,21 @@ function decodeViaMap(bytes: Uint8Array, map: import("./glyphMap").GlyphMap): st
 // Strong-RTL Unicode ranges: Hebrew, Arabic, Thaana, Syriac, plus the
 // Arabic Presentation Forms blocks. Used to detect run direction.
 const RTL_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE\u{10800}-\u{10FFF}]/u;
+const THAANA_REGEX = /[\u0780-\u07bf]/u;
+const THAANA_FONT_FAMILIES = new Set(
+  FONTS.filter((f) => f.script === "thaana").map((f) => f.family),
+);
 
 function isRtlText(text: string): boolean {
   return RTL_REGEX.test(text);
+}
+
+function isThaanaText(text: string): boolean {
+  return THAANA_REGEX.test(text);
+}
+
+function baseFontTargetsThaana(baseName: string | null | undefined): boolean {
+  return THAANA_FONT_FAMILIES.has(resolveFamilyFromHint(baseName, null));
 }
 
 /**
@@ -665,16 +677,37 @@ function buildTextRuns(
     // shows.
     const runPdfX = minLeft / scale;
     const runPdfY = (viewportHeight - baselineY) / scale;
-    let bestShow: import("./sourceFonts").FontShow | null = null;
-    let bestDist = Infinity;
+    const showCandidates: Array<{
+      show: import("./sourceFonts").FontShow;
+      dist: number;
+      owned: boolean;
+    }> = [];
     for (const s of fontShows) {
       const dy = Math.abs(s.y - runPdfY);
       if (dy > 4) continue; // different line — skip
       const dx = Math.abs(s.x - runPdfX);
       const dist = dx + dy * 10;
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestShow = s;
+      showCandidates.push({ show: s, dist, owned: opIndexSet.has(s.opIndex) });
+    }
+    const ownedCandidates = showCandidates.filter((c) => c.owned);
+    let preferredCandidates = ownedCandidates.length > 0 ? ownedCandidates : showCandidates;
+    if (isThaanaText(text)) {
+      const thaanaCandidates = preferredCandidates.filter((c) =>
+        baseFontTargetsThaana(c.show.baseFont),
+      );
+      if (thaanaCandidates.length > 0) preferredCandidates = thaanaCandidates;
+    }
+    let bestShow: import("./sourceFonts").FontShow | null = null;
+    let bestDist = Infinity;
+    for (const c of preferredCandidates) {
+      if (
+        ownedCandidates.length > 0
+          ? c.show.bytes.length > (bestShow?.bytes.length ?? -1) ||
+            (c.show.bytes.length === (bestShow?.bytes.length ?? -1) && c.dist < bestDist)
+          : c.dist < bestDist
+      ) {
+        bestDist = c.dist;
+        bestShow = c.show;
       }
     }
     const baseName = bestShow?.baseFont ?? null;

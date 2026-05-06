@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-96%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-97%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -185,6 +185,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes  |
 | `save-redactions.test.ts`                     | image/vector/annotation/form content under redactions is sanitized            |
 | `signature.test.ts`                           | visual signature draw/import → local library, cleanup, insert, save           |
+| `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font         |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                      |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                         |
 
