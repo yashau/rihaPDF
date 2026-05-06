@@ -106,7 +106,7 @@ export function ImageOverlay({
         width: boxW,
         height: boxH,
         outline: isSelected
-          ? "2px solid rgba(220, 50, 50, 0.85)"
+          ? "1.5px dotted rgba(24, 24, 27, 0.78)"
           : movable
             ? isDragging
               ? "1px dashed rgba(60, 130, 255, 0.85)"
@@ -154,7 +154,7 @@ export function ImageOverlay({
         }
       }}
     >
-      {movable ? (
+      {movable && isSelected ? (
         <>
           <ResizeHandle
             position="tl"

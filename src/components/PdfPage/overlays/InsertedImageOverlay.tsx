@@ -165,8 +165,8 @@ export function InsertedImageOverlay({
           backgroundSize: "100% 100%",
           backgroundRepeat: "no-repeat",
           outline: isSelected
-            ? "2px solid rgba(220, 50, 50, 0.85)"
-            : "1px dashed rgba(40, 130, 255, 0.6)",
+            ? "1.5px dotted rgba(24, 24, 27, 0.78)"
+            : "1px dashed rgba(40, 130, 255, 0)",
           cursor: "grab",
           pointerEvents: "auto",
           zIndex: 20,
@@ -198,10 +198,14 @@ export function InsertedImageOverlay({
           }
         }}
       >
-        <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
-        <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
-        <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
-        <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
+        {isSelected ? (
+          <>
+            <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
+            <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
+            <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
+            <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
+          </>
+        ) : null}
       </div>
       {renderPortal({
         backgroundImage: `url(${dataUrl})`,
