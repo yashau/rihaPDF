@@ -76,7 +76,7 @@ export function CrossPageTextArrivalOverlay({
           display: "flex",
           alignItems: "center",
           pointerEvents: "auto",
-          cursor: dragLive?.moved ? "grabbing" : "grab",
+          cursor: dragLive?.moved ? "grabbing" : "text",
           whiteSpace: "pre",
           zIndex: 15,
           // Hide the in-place version once the user actually moves —

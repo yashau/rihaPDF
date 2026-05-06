@@ -4,7 +4,7 @@ import type { RenderedPage, TextRun } from "../../lib/pdf";
 import type { ToolMode } from "../../App";
 import { EditField } from "./EditField";
 import { cssTextDecoration } from "./helpers";
-import type { EditValue, ToolbarBlocker } from "./types";
+import type { EditValue, InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
 
 /** One source-page text run as an interactive overlay. Renders one of
@@ -32,6 +32,7 @@ export function SourceRunOverlay({
   startDrag,
   justDraggedRef,
   toolbarBlockers,
+  initialCaretPoint,
   onEdit,
   onEditingChange,
   addHighlightForRun,
@@ -53,8 +54,9 @@ export function SourceRunOverlay({
    *  the editor right after a drag-to-move. */
   justDraggedRef: RefObject<string | null>;
   toolbarBlockers: readonly ToolbarBlocker[];
+  initialCaretPoint?: InitialCaretPoint;
   onEdit: (runId: string, value: EditValue) => void;
-  onEditingChange: (next: string | null) => void;
+  onEditingChange: (next: string | null, initialCaretPoint?: InitialCaretPoint) => void;
   addHighlightForRun: (run: TextRun) => void;
   addRedactionForRun: (run: TextRun) => void;
 }) {
@@ -85,6 +87,7 @@ export function SourceRunOverlay({
         pageScale={page.scale}
         toolbarBlockers={toolbarBlockers}
         initial={editedValue ?? { text: run.text, style: undefined }}
+        initialCaretPoint={initialCaretPoint}
         onCommit={(value) => {
           // Preserve any existing move offset (dx/dy) — the EditField
           // only owns text + style, so we layer back the persisted
@@ -150,11 +153,7 @@ export function SourceRunOverlay({
             ? "1px dashed rgba(255, 180, 30, 0.9)"
             : "1px solid rgba(255, 200, 60, 0.5)",
           pointerEvents: "auto",
-          cursor: isDragging
-            ? "grabbing"
-            : tool === "highlight" || tool === "redact"
-              ? "text"
-              : "grab",
+          cursor: isDragging ? "grabbing" : "text",
           display: "flex",
           alignItems: "center",
           overflow: "visible",
@@ -199,7 +198,7 @@ export function SourceRunOverlay({
             addRedactionForRun(run);
             return;
           }
-          onEditingChange(run.id);
+          onEditingChange(run.id, { clientX: e.clientX, clientY: e.clientY });
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -278,11 +277,7 @@ export function SourceRunOverlay({
         // wrapper's overflow:hidden clip. Gesture-start alone keeps
         // the span visible so a no-motion click reaches it.
         visibility: isDragging && drag?.moved ? "hidden" : "visible",
-        cursor: isDragging
-          ? "grabbing"
-          : tool === "highlight" || tool === "redact"
-            ? "text"
-            : "grab",
+        cursor: isDragging ? "grabbing" : "text",
         // `pan-y pinch-zoom` so the page scrolls on a quick finger
         // swipe; the run is only claimed after the 400ms touch-hold
         // gate in useDragGesture.
@@ -306,7 +301,7 @@ export function SourceRunOverlay({
           addRedactionForRun(run);
           return;
         }
-        onEditingChange(run.id);
+        onEditingChange(run.id, { clientX: e.clientX, clientY: e.clientY });
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

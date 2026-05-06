@@ -32,6 +32,7 @@ import type {
   CrossPageImageArrival,
   EditValue,
   ImageMoveValue,
+  InitialCaretPoint,
   ToolbarBlocker,
 } from "./types";
 
@@ -220,6 +221,10 @@ export function PdfPage({
    *  mobile where it doesn't. */
   const [fitScale, setFitScale] = useState(1);
   const displayScale = fitScale * documentZoom;
+  const [initialCaret, setInitialCaret] = useState<{
+    id: string;
+    point: InitialCaretPoint;
+  } | null>(null);
 
   // Compute displayScale synchronously before paint via
   // useLayoutEffect so the first frame already shows the page at the
@@ -271,7 +276,8 @@ export function PdfPage({
     return () => ro.disconnect();
   }, [page.viewWidth]);
 
-  const setEditingId = (next: string | null) => {
+  const setEditingId = (next: string | null, initialCaretPoint?: InitialCaretPoint) => {
+    setInitialCaret(next && initialCaretPoint ? { id: next, point: initialCaretPoint } : null);
     onEditingChange(next);
   };
 
@@ -513,6 +519,9 @@ export function PdfPage({
               tool={tool}
               isEditing={editingId === run.id}
               editedValue={edits.get(run.id)}
+              initialCaretPoint={
+                editingId === run.id && initialCaret?.id === run.id ? initialCaret.point : undefined
+              }
               drag={drag}
               startDrag={startDrag}
               justDraggedRef={justDraggedRef}
@@ -562,12 +571,15 @@ export function PdfPage({
               displayScale={displayScale}
               toolbarBlockers={toolbarBlockers}
               isEditing={editingId === ins.id}
+              initialCaretPoint={
+                editingId === ins.id && initialCaret?.id === ins.id ? initialCaret.point : undefined
+              }
               onChange={(patch) => onTextInsertChange(ins.id, patch)}
               onDelete={() => {
                 if (editingId === ins.id) setEditingId(null);
                 onTextInsertDelete(ins.id);
               }}
-              onOpen={() => setEditingId(ins.id)}
+              onOpen={(point) => setEditingId(ins.id, point)}
               onClose={() => setEditingId(null)}
             />
           ))}

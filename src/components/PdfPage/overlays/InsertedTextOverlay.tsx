@@ -11,9 +11,10 @@ import {
   chooseToolbarTop,
   cssTextDecoration,
   findPageAtPoint,
+  focusInputAtInitialCaret,
   isFocusMovingToToolbar,
 } from "../helpers";
-import type { ToolbarBlocker } from "../types";
+import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
 
 /** Net-new text the user typed at a fresh position on the page (not
@@ -29,6 +30,7 @@ export function InsertedTextOverlay({
   displayScale,
   toolbarBlockers,
   isEditing,
+  initialCaretPoint,
   onChange,
   onDelete,
   onOpen,
@@ -46,9 +48,10 @@ export function InsertedTextOverlay({
   displayScale: number;
   toolbarBlockers: readonly ToolbarBlocker[];
   isEditing: boolean;
+  initialCaretPoint?: InitialCaretPoint;
   onChange: (patch: Partial<TextInsertion>) => void;
   onDelete: () => void;
-  onOpen: () => void;
+  onOpen: (initialCaretPoint?: InitialCaretPoint) => void;
   onClose: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -89,10 +92,9 @@ export function InsertedTextOverlay({
   const height = lineHeight * page.scale;
   useEffect(() => {
     if (isEditing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      if (inputRef.current) focusInputAtInitialCaret(inputRef.current, initialCaretPoint);
     }
-  }, [isEditing]);
+  }, [isEditing, initialCaretPoint]);
 
   // Click-outside-to-close. Same reason as EditField: the input's
   // onBlur fires once when focus first moves to the toolbar (suppressed
@@ -250,7 +252,7 @@ export function InsertedTextOverlay({
             ? "1px solid rgba(40, 130, 255, 0.85)"
             : "1px dashed rgba(40, 130, 255, 0.5)",
           background: isEditing ? "rgba(255, 255, 255, 0.9)" : "transparent",
-          cursor: isEditing ? "text" : "grab",
+          cursor: isEditing || !dragLive?.moved ? "text" : "grabbing",
           pointerEvents: "auto",
           display: "flex",
           alignItems: "center",
@@ -276,7 +278,7 @@ export function InsertedTextOverlay({
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (!isEditing) onOpen();
+          if (!isEditing) onOpen({ clientX: e.clientX, clientY: e.clientY });
         }}
         onKeyDown={(e) => {
           if (isEditing) return;

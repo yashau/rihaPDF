@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-97%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-105%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -16,7 +16,7 @@
 ![Playwright](https://img.shields.io/badge/Playwright-e2e-2ead33?logo=playwright&logoColor=white)
 ![pnpm](https://img.shields.io/badge/pnpm-11-f69220?logo=pnpm&logoColor=white)
 
-Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, type a replacement, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
+Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edit in place, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
 
 **100% client-side.** Your PDF is parsed, edited, and saved entirely in your browser. Nothing is uploaded; no server ever sees your file.
 
@@ -26,7 +26,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 
 ## Features
 
-- **Edit text runs.** Click → input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
+- **Edit text runs.** Click → caret-positioned input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
 - **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
 - **Insert text and images.** Click-to-place tools that share the edit toolbar.
 - **Visual signatures.** Draw a signature with signing colour presets or import one from an image. Imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse. These are visual PDF image inserts only, not cryptographic PDF signatures.
@@ -156,6 +156,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
+| `caret-at-click.test.ts`                      | click opens a collapsed caret inside a source run for partial edits           |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line         |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable      |
@@ -196,7 +197,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Editing
 
 - [ ] **Multi-line paragraph editing.** A wrapped paragraph is N separate runs today; needs cross-line merging keyed on indent + line-spacing plus a multi-line `EditField`.
-- [ ] **Caret-at-click instead of full select.** Land the caret at the click position so long lines can be partial-edited.
+- [x] **Caret-at-click instead of full select.** Land the caret at the click position so long lines can be partial-edited.
 - [ ] **Marquee select / multi-move.** Drag-rectangle multi-select.
 
 ### Save pipeline

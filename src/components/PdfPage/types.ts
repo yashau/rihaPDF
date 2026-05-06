@@ -1,5 +1,10 @@
 import type { EditStyle } from "../../lib/save";
 
+export type InitialCaretPoint = {
+  clientX: number;
+  clientY: number;
+};
+
 export type EditValue = {
   text: string;
   style?: EditStyle;

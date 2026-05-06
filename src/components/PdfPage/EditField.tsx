@@ -6,8 +6,14 @@ import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
 import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
 import { useIsMobile } from "../../lib/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
-import { chooseToolbarTop, cssTextDecoration, hasStyle, isFocusMovingToToolbar } from "./helpers";
-import type { EditValue, ToolbarBlocker } from "./types";
+import {
+  chooseToolbarTop,
+  cssTextDecoration,
+  focusInputAtInitialCaret,
+  hasStyle,
+  isFocusMovingToToolbar,
+} from "./helpers";
+import type { EditValue, InitialCaretPoint, ToolbarBlocker } from "./types";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 
@@ -16,6 +22,7 @@ export function EditField({
   pageScale,
   toolbarBlockers,
   initial,
+  initialCaretPoint,
   onCommit,
   onDelete,
 }: {
@@ -29,6 +36,7 @@ export function EditField({
    *  filters it out via `selfId`. */
   toolbarBlockers: readonly ToolbarBlocker[];
   initial: EditValue;
+  initialCaretPoint?: InitialCaretPoint;
   onCommit: (value: EditValue) => void;
   onDelete?: () => void;
 }) {
@@ -93,8 +101,7 @@ export function EditField({
 
   useEffect(() => {
     if (measureRef.current) measureRef.current.textContent = text || " ";
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    if (inputRef.current) focusInputAtInitialCaret(inputRef.current, initialCaretPoint);
     remeasure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,5 +1,40 @@
 import type { EditStyle } from "../../lib/save";
-import type { ToolbarBlocker } from "./types";
+import type { InitialCaretPoint, ToolbarBlocker } from "./types";
+
+type CaretPositionDocument = Document & {
+  caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+};
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(Math.max(n, min), max);
+}
+
+/** Focus an inline editor and, when it was opened by a pointer click,
+ *  collapse the caret at the clicked horizontal position instead of
+ *  selecting the whole run. The y-coordinate is taken from the mounted
+ *  input's centre so padded source-run overlays still hit-test inside
+ *  the native input box. */
+export function focusInputAtInitialCaret(
+  input: HTMLInputElement,
+  point: InitialCaretPoint | undefined,
+): void {
+  input.focus();
+  if (!point) {
+    input.select();
+    return;
+  }
+  const rect = input.getBoundingClientRect();
+  const x = clamp(point.clientX, rect.left + 1, rect.right - 1);
+  const y = rect.top + rect.height / 2;
+  const pos = (document as CaretPositionDocument).caretPositionFromPoint?.(x, y);
+  if (pos?.offsetNode === input) {
+    const offset = clamp(pos.offset, 0, input.value.length);
+    input.setSelectionRange(offset, offset);
+    return;
+  }
+  const fallback = point.clientX < rect.left + rect.width / 2 ? 0 : input.value.length;
+  input.setSelectionRange(fallback, fallback);
+}
 
 /** Cross-page hit-test: given a viewport (clientX, clientY) point, find
  *  which page container is under it and return its index/scale/size.
