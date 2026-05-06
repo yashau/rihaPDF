@@ -1,4 +1,5 @@
-// Copy this file to `wrangler.jsonc` and edit values to match your account.
+// Copy this file to `wrangler.jsonc` and edit values to match your account,
+// or run `pnpm cf:config` to generate it from environment variables.
 // `wrangler.jsonc` is gitignored so personal/per-environment values (worker name,
 // custom routes, account_id) stay out of source control.
 {

@@ -122,6 +122,7 @@ pnpm lint           # eslint .
 pnpm format         # prettier --write .
 pnpm test           # vitest E2E suite (needs dev server up)
 pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
+pnpm cf:config      # generate wrangler.jsonc from env vars
 pnpm cf:dev         # wrangler dev — local Workers preview of dist/
 pnpm cf:deploy      # build + wrangler deploy → Cloudflare Workers
 ```
@@ -136,6 +137,17 @@ cp wrangler.jsonc.template wrangler.jsonc
 pnpm exec wrangler login   # first time only
 pnpm cf:deploy
 ```
+
+CI deploys from GitHub Actions after checks, build, fixture generation, and E2E tests pass on `main`. It generates `wrangler.jsonc` first with:
+
+- Secret `CLOUDFLARE_API_TOKEN`: Cloudflare API token used by `wrangler deploy`.
+- Secret `CLOUDFLARE_ACCOUNT_ID`: account ID written into `wrangler.jsonc`.
+- Variable `WRANGLER_NAME`: optional Worker name, defaults to `rihapdf`.
+- Variable `WRANGLER_COMPATIBILITY_DATE`: optional compatibility date, defaults to `2026-04-01`.
+- Variable `WRANGLER_ROUTE`: optional custom-domain route pattern, written as `{ "pattern": "...", "custom_domain": true }`.
+- Variable `WRANGLER_ROUTES_JSON`: optional full routes JSON array. Use this instead of `WRANGLER_ROUTE` for multiple or advanced routes.
+
+Do not run `wrangler login` in CI. GitHub Actions authenticates Wrangler with `CLOUDFLARE_API_TOKEN` instead.
 
 ## Debugging on devices without devtools
 
