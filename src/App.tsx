@@ -21,7 +21,6 @@ import { useTheme } from "./lib/theme";
 import { useIsMobile } from "./lib/useMediaQuery";
 import { useMobileChrome } from "./lib/useMobileChrome";
 import { MIN_DOCUMENT_ZOOM, useMobileDocumentZoom } from "./lib/useMobileDocumentZoom";
-import { useInstallPrompt } from "./lib/useInstallPrompt";
 import { useAppUndo } from "./lib/useAppUndo";
 import { useDocumentIo } from "./lib/useDocumentIo";
 import { useDocumentMutations } from "./lib/useDocumentMutations";
@@ -36,7 +35,6 @@ const RENDER_SCALE = 1.5;
 
 export default function App() {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
-  const { canInstall, promptInstall } = useInstallPrompt();
   const isMobile = useIsMobile();
   const [primaryFilename, setPrimaryFilename] = useState<string | null>(null);
   const [loadedFileKey, setLoadedFileKey] = useState(0);
@@ -326,8 +324,6 @@ export default function App() {
         imageFileInputRef={imageFileInputRef}
         onAboutOpen={() => setAboutOpen(true)}
         onSignatureOpen={() => setSignatureOpen(true)}
-        canInstall={canInstall}
-        onInstall={() => void promptInstall()}
         hasSources={sources.size > 0}
         toolTip={toolTip}
         mobileSidebarOpen={mobileSidebarOpen}

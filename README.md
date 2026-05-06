@@ -40,7 +40,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Fill AcroForm fields.** Open a form PDF — Maldivian gov applications, etc. — and the existing widgets become interactive overlays: text inputs (single-line, multiline, password), checkboxes, radio groups, combo / list boxes. Type Thaana via the same DV/EN phonetic keyboard the rest of the editor uses; saved PDFs write `/V` (UTF-16BE for Thaana, ASCII otherwise) and rebuild `/Root /AcroForm /Fields` after copyPages so the output stays interactive in Acrobat / Preview / Chrome / pdf.js. Reopening in rihaPDF re-extracts the same values. XFA, JS actions, `/AA`, and digital-signature creation are out of scope.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
-- **Installable app.** Chrome / Edge can install rihaPDF as a standalone PWA when served from HTTPS; supporting browsers expose the native install affordance and rihaPDF shows a compact install button when the browser permits it.
+- **Installable app.** Chrome / Edge can install rihaPDF as a standalone PWA when served from HTTPS; supporting browsers expose the native install affordance in the browser UI.
 - **Mobile layout.** Fit-to-width pages, app-owned two-finger document zoom, 400ms touch hold before drag, edge-band auto-scroll, drawer sidebar, visual-viewport-anchored chrome for keyboard-aware controls.
 - **Multi-page docs** with per-page preview canvases that strip-and-re-render on every edit.
 
