@@ -25,6 +25,7 @@ import {
 } from "pdf-lib";
 import {
   FIXTURE,
+  RENDER_SCALE,
   SCREENSHOTS,
   loadFixture,
   setupBrowser,
@@ -346,5 +347,54 @@ describe("annotation round-trip", () => {
     // The text content must survive the drag — we're moving the
     // annotation, not recreating it.
     expect(afterAnnots[0].contents).toBe(SENTINEL);
+  }, 60_000);
+
+  test("same-session redaction clips newly drawn ink in the saved PDF", async () => {
+    await loadFixture(h, FIXTURE.maldivian);
+
+    const targetRun = h.page.locator('[data-page-index="0"] [data-run-id]').first();
+    const runBox = await targetRun.boundingBox();
+    expect(runBox, "target text run should be visible").not.toBeNull();
+
+    await h.page.locator('[data-testid="tool-ink"]').click();
+    const inkTargetBox = await targetRun.boundingBox();
+    expect(
+      inkTargetBox,
+      "target text run should still be visible after ink toolbar",
+    ).not.toBeNull();
+    const y = inkTargetBox!.y + inkTargetBox!.height / 2;
+    await h.page.mouse.move(inkTargetBox!.x - 80, y);
+    await h.page.mouse.down();
+    await h.page.mouse.move(inkTargetBox!.x + inkTargetBox!.width + 80, y, {
+      steps: 16,
+    });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(150);
+
+    await h.page.locator('[data-testid="tool-redact"]').click();
+    await targetRun.click();
+    await h.page.waitForTimeout(150);
+    const redactionBox = await h.page.locator("[data-redaction-id]").first().boundingBox();
+    expect(redactionBox, "redaction overlay should be created").not.toBeNull();
+
+    const saved = await saveAndDownload("annotation-ink-redacted-same-session.pdf");
+    const inks = (await readAnnotations(saved)).filter((a) => a.subtype === "Ink");
+    expect(inks).toHaveLength(1);
+    expect(inks[0].inkList, "/InkList should survive with outside segments only").not.toBeNull();
+
+    const redLeft = redactionBox!.x;
+    const redRight = redactionBox!.x + redactionBox!.width;
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+
+    for (const stroke of inks[0].inkList!) {
+      for (let i = 0; i + 1 < stroke.length; i += 2) {
+        const xScreen = pageBox!.x + stroke[i] * RENDER_SCALE;
+        expect(
+          xScreen <= redLeft + 1 || xScreen >= redRight - 1,
+          `ink point ${xScreen} should not remain inside saved redaction span ${redLeft}..${redRight}`,
+        ).toBe(true);
+      }
+    }
   }, 60_000);
 });

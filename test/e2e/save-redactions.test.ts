@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
 import fs from "fs";
 import {
+  PDFArray,
   PDFDocument,
   PDFDict,
   PDFName,
+  PDFNumber,
   PDFRawStream,
+  PDFRef,
+  PDFString,
   concatTransformationMatrix,
   decodePDFRawStream,
   drawObject,
@@ -16,6 +20,7 @@ import { applyEditsAndSave } from "../../src/lib/save";
 import type { LoadedSource } from "../../src/lib/loadSource";
 import { extractPageImages } from "../../src/lib/sourceImages";
 import { extractPageShapes } from "../../src/lib/sourceShapes";
+import type { Annotation } from "../../src/lib/annotations";
 import { FIXTURE } from "../helpers/browser";
 
 const PRIMARY_SOURCE_KEY = "primary";
@@ -40,6 +45,10 @@ function uint8ToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 async function makeSource(fixturePath: string): Promise<LoadedSource> {
   const bytes = exactArrayBuffer(fs.readFileSync(fixturePath));
+  return makeSourceFromBytes(bytes, fixturePath);
+}
+
+async function makeSourceFromBytes(bytes: ArrayBuffer, filename: string): Promise<LoadedSource> {
   const [doc, glyphsDoc, imagesByPage, shapesByPage] = await Promise.all([
     PDFDocument.load(bytes),
     PDFDocument.load(bytes),
@@ -49,7 +58,7 @@ async function makeSource(fixturePath: string): Promise<LoadedSource> {
   const pages = doc.getPages();
   return {
     sourceKey: PRIMARY_SOURCE_KEY,
-    filename: fixturePath,
+    filename,
     bytes,
     glyphsDoc,
     fontShowsByPage: [],
@@ -70,6 +79,84 @@ async function makeSource(fixturePath: string): Promise<LoadedSource> {
       shapes: shapesByPage[i] ?? [],
     })),
   };
+}
+
+async function makeNativeAnnotationSource(): Promise<LoadedSource> {
+  const doc = await PDFDocument.create();
+  const ctx = doc.context;
+  const page = doc.addPage([400, 200]);
+  page.drawText("keep", { x: 10, y: 10, size: 10, color: rgb(0, 0, 0) });
+
+  const highlight = ctx.register(
+    ctx.obj({
+      Type: PDFName.of("Annot"),
+      Subtype: PDFName.of("Highlight"),
+      Rect: [100, 100, 200, 120],
+      QuadPoints: [100, 120, 200, 120, 100, 100, 200, 100],
+      C: [1, 0.92, 0.23],
+      Contents: PDFString.of("SOURCE_HIGHLIGHT_SECRET"),
+    }),
+  );
+  const ink = ctx.register(
+    ctx.obj({
+      Type: PDFName.of("Annot"),
+      Subtype: PDFName.of("Ink"),
+      Rect: [95, 84, 205, 96],
+      InkList: [[100, 89, 200, 89]],
+      C: [0.93, 0.27, 0.27],
+      BS: { Type: PDFName.of("Border"), W: 10, S: PDFName.of("S") },
+    }),
+  );
+  const freeText = ctx.register(
+    ctx.obj({
+      Type: PDFName.of("Annot"),
+      Subtype: PDFName.of("FreeText"),
+      Rect: [100, 95, 220, 130],
+      Contents: PDFString.of("SOURCE_COMMENT_SECRET"),
+      DA: PDFString.of("/Helv 12 Tf 0 0 0 rg"),
+    }),
+  );
+  page.node.set(PDFName.of("Annots"), ctx.obj([highlight, ink, freeText]));
+
+  const bytes = uint8ToArrayBuffer(await doc.save());
+  return makeSourceFromBytes(bytes, "native-annotations.pdf");
+}
+
+async function makeAcroFormSource(): Promise<LoadedSource> {
+  const doc = await PDFDocument.create();
+  const ctx = doc.context;
+  const page = doc.addPage([400, 200]);
+  page.drawText("keep", { x: 10, y: 10, size: 10, color: rgb(0, 0, 0) });
+
+  const appearance = ctx.register(
+    PDFRawStream.of(
+      ctx.obj({
+        Type: PDFName.of("XObject"),
+        Subtype: PDFName.of("Form"),
+        BBox: [0, 0, 120, 30],
+      }),
+      new Uint8Array(Buffer.from("FORM_AP_SECRET")),
+    ),
+  );
+  const ap = ctx.obj({ N: appearance });
+  const field = ctx.register(
+    ctx.obj({
+      Type: PDFName.of("Annot"),
+      Subtype: PDFName.of("Widget"),
+      FT: PDFName.of("Tx"),
+      T: PDFString.of("secretField"),
+      V: PDFString.of("SOURCE_FORM_SECRET"),
+      DV: PDFString.of("SOURCE_FORM_DEFAULT_SECRET"),
+      Rect: [100, 95, 220, 130],
+      DA: PDFString.of("/Helv 12 Tf 0 0 0 rg"),
+      AP: ap,
+    }),
+  );
+  page.node.set(PDFName.of("Annots"), ctx.obj([field]));
+  doc.catalog.set(PDFName.of("AcroForm"), ctx.obj({ Fields: [field] }));
+
+  const bytes = uint8ToArrayBuffer(await doc.save());
+  return makeSourceFromBytes(bytes, "acroform-redaction.pdf");
 }
 
 async function pageXObjectNames(pdfBytes: Uint8Array): Promise<string[]> {
@@ -121,6 +208,77 @@ async function decodedImageStreams(pdfBytes: Uint8Array): Promise<
     });
   }
   return out;
+}
+
+async function savedAnnotations(pdfBytes: Uint8Array): Promise<
+  Array<{
+    subtype: string;
+    rect: number[] | null;
+    quadPoints: number[] | null;
+    inkList: number[][] | null;
+  }>
+> {
+  const doc = await PDFDocument.load(pdfBytes);
+  const annots = doc.getPages()[0].node.lookup(PDFName.of("Annots"));
+  if (!(annots instanceof PDFArray)) return [];
+  const out = [];
+  for (let i = 0; i < annots.size(); i++) {
+    const raw = annots.get(i);
+    const dict = raw instanceof PDFRef ? doc.context.lookup(raw) : raw;
+    if (!(dict instanceof PDFDict)) continue;
+    const subtype = readName(dict.lookup(PDFName.of("Subtype")));
+    const rect = dict.lookup(PDFName.of("Rect"));
+    const quadPoints = dict.lookup(PDFName.of("QuadPoints"));
+    const inkObj = dict.lookup(PDFName.of("InkList"));
+    let inkList: number[][] | null = null;
+    if (inkObj instanceof PDFArray) {
+      inkList = [];
+      for (let j = 0; j < inkObj.size(); j++) {
+        const stroke = inkObj.lookup(j);
+        if (stroke instanceof PDFArray) inkList.push(readPdfNumberArray(stroke));
+      }
+    }
+    if (!subtype) continue;
+    out.push({
+      subtype,
+      rect: rect instanceof PDFArray ? readPdfNumberArray(rect) : null,
+      quadPoints: quadPoints instanceof PDFArray ? readPdfNumberArray(quadPoints) : null,
+      inkList,
+    });
+  }
+  return out;
+}
+
+function readPdfNumberArray(arr: PDFArray): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < arr.size(); i++) {
+    const value = arr.lookup(i);
+    if (value instanceof PDFNumber) out.push(value.asNumber());
+  }
+  return out;
+}
+
+async function savedWidgetCount(pdfBytes: Uint8Array): Promise<number> {
+  const doc = await PDFDocument.load(pdfBytes);
+  let count = 0;
+  for (const page of doc.getPages()) {
+    const annots = page.node.lookup(PDFName.of("Annots"));
+    if (!(annots instanceof PDFArray)) continue;
+    for (let i = 0; i < annots.size(); i++) {
+      const annot = annots.lookup(i);
+      if (!(annot instanceof PDFDict)) continue;
+      if (readName(annot.lookup(PDFName.of("Subtype"))) === "Widget") count += 1;
+    }
+  }
+  return count;
+}
+
+async function savedAcroFormFieldCount(pdfBytes: Uint8Array): Promise<number> {
+  const doc = await PDFDocument.load(pdfBytes);
+  const acroForm = doc.catalog.lookup(PDFName.of("AcroForm"));
+  if (!(acroForm instanceof PDFDict)) return 0;
+  const fields = acroForm.lookup(PDFName.of("Fields"));
+  return fields instanceof PDFArray ? fields.size() : 0;
 }
 
 function getRgbPixel(
@@ -296,4 +454,265 @@ describe("save redactions for non-text content", () => {
     const shapes = await extractPageShapes(uint8ToArrayBuffer(saved));
     expect(shapes[0]).toHaveLength(source.pages[0].shapes.length - 1);
   });
+
+  test("a redaction over a highlight annotation clips only the covered quad area", async () => {
+    const source = await makeSource(FIXTURE.withImages);
+    const annotations: Annotation[] = [
+      {
+        kind: "highlight",
+        id: "highlight-redaction-probe",
+        sourceKey: PRIMARY_SOURCE_KEY,
+        pageIndex: 0,
+        quads: [
+          {
+            x1: 100,
+            y1: 120,
+            x2: 200,
+            y2: 120,
+            x3: 100,
+            y3: 100,
+            x4: 200,
+            y4: 100,
+          },
+        ],
+        color: [1, 0.92, 0.23],
+      },
+    ];
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      annotations,
+      [
+        {
+          id: "redact-highlight-middle",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 140,
+          pdfY: 90,
+          pdfWidth: 20,
+          pdfHeight: 40,
+        },
+      ],
+    );
+
+    const highlights = (await savedAnnotations(saved)).filter((a) => a.subtype === "Highlight");
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0].quadPoints).toHaveLength(16);
+    const xs = highlights[0].quadPoints!.filter((_, i) => i % 2 === 0);
+    expect(xs.some((x) => x > 140 && x < 160)).toBe(false);
+    expect(Math.min(...xs)).toBe(100);
+    expect(Math.max(...xs)).toBe(200);
+  });
+
+  test("a redaction over ink annotation strokes keeps only segments outside the rect", async () => {
+    const source = await makeSource(FIXTURE.withImages);
+    const annotations: Annotation[] = [
+      {
+        kind: "ink",
+        id: "ink-redaction-probe",
+        sourceKey: PRIMARY_SOURCE_KEY,
+        pageIndex: 0,
+        // Centerline sits just below the redaction, but a 10pt stroke
+        // still paints into it. Sanitizing only the centerline would
+        // leave visible / recoverable ink over the black rectangle.
+        strokes: [
+          [
+            { x: 100, y: 89 },
+            { x: 200, y: 89 },
+          ],
+        ],
+        color: [0.93, 0.27, 0.27],
+        thickness: 10,
+      },
+    ];
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      annotations,
+      [
+        {
+          id: "redact-ink-middle",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 140,
+          pdfY: 90,
+          pdfWidth: 20,
+          pdfHeight: 20,
+        },
+      ],
+    );
+
+    const inks = (await savedAnnotations(saved)).filter((a) => a.subtype === "Ink");
+    expect(inks).toHaveLength(1);
+    expect(inks[0].inkList).toEqual([
+      [100, 89, 135, 89],
+      [165, 89, 200, 89],
+    ]);
+  });
+
+  test("a redaction over a FreeText annotation removes the text-bearing annotation", async () => {
+    const source = await makeSource(FIXTURE.withImages);
+    const sentinel = "ANNOTATION_REDACTION_SECRET_17";
+    const annotations: Annotation[] = [
+      {
+        kind: "comment",
+        id: "comment-redaction-probe",
+        sourceKey: PRIMARY_SOURCE_KEY,
+        pageIndex: 0,
+        pdfX: 100,
+        pdfY: 100,
+        pdfWidth: 180,
+        pdfHeight: 40,
+        color: [1, 0.96, 0.62],
+        text: sentinel,
+        fontSize: 12,
+      },
+    ];
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      annotations,
+      [
+        {
+          id: "redact-comment",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 110,
+          pdfY: 95,
+          pdfWidth: 40,
+          pdfHeight: 50,
+        },
+      ],
+    );
+
+    expect((await savedAnnotations(saved)).filter((a) => a.subtype === "FreeText")).toHaveLength(0);
+    const bytes = Buffer.from(saved);
+    expect(bytes.indexOf(Buffer.from(sentinel, "utf-8"))).toBe(-1);
+    expect(bytes.indexOf(Buffer.from(toUtf16BEHexWithBom(sentinel), "utf-8"))).toBe(-1);
+  });
+
+  test("a redaction sanitizes native annotations already present in the source PDF", async () => {
+    const source = await makeNativeAnnotationSource();
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: "redact-source-annots",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 140,
+          pdfY: 90,
+          pdfWidth: 20,
+          pdfHeight: 40,
+        },
+      ],
+    );
+
+    const annots = await savedAnnotations(saved);
+    const highlights = annots.filter((a) => a.subtype === "Highlight");
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0].quadPoints).toHaveLength(16);
+    const highlightXs = highlights[0].quadPoints!.filter((_, i) => i % 2 === 0);
+    expect(highlightXs.some((x) => x > 140 && x < 160)).toBe(false);
+
+    const inks = annots.filter((a) => a.subtype === "Ink");
+    expect(inks).toHaveLength(1);
+    expect(inks[0].inkList).toEqual([
+      [100, 89, 135, 89],
+      [165, 89, 200, 89],
+    ]);
+
+    expect(annots.filter((a) => a.subtype === "FreeText")).toHaveLength(0);
+    const bytes = Buffer.from(saved);
+    expect(bytes.indexOf(Buffer.from("SOURCE_COMMENT_SECRET", "utf-8"))).toBe(-1);
+    expect(bytes.indexOf(Buffer.from("SOURCE_HIGHLIGHT_SECRET", "utf-8"))).toBe(-1);
+  });
+
+  test("a redaction over an AcroForm widget removes field values and appearances", async () => {
+    const source = await makeAcroFormSource();
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: "redact-form-widget",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 110,
+          pdfY: 100,
+          pdfWidth: 40,
+          pdfHeight: 20,
+        },
+      ],
+      [
+        {
+          sourceKey: PRIMARY_SOURCE_KEY,
+          fullName: "secretField",
+          value: { kind: "text", value: "FILLED_FORM_SECRET" },
+        },
+      ],
+    );
+
+    expect(await savedWidgetCount(saved)).toBe(0);
+    expect(await savedAcroFormFieldCount(saved)).toBe(0);
+    const bytes = Buffer.from(saved);
+    for (const secret of [
+      "SOURCE_FORM_SECRET",
+      "SOURCE_FORM_DEFAULT_SECRET",
+      "FILLED_FORM_SECRET",
+      "FORM_AP_SECRET",
+    ]) {
+      expect(bytes.indexOf(Buffer.from(secret, "utf-8")), `${secret} should be removed`).toBe(-1);
+    }
+  });
 });
+
+function toUtf16BEHexWithBom(s: string): string {
+  const parts = ["feff"];
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (cp <= 0xffff) {
+      parts.push(cp.toString(16).padStart(4, "0"));
+    } else {
+      const off = cp - 0x10000;
+      const hi = 0xd800 + (off >> 10);
+      const lo = 0xdc00 + (off & 0x3ff);
+      parts.push(hi.toString(16).padStart(4, "0"));
+      parts.push(lo.toString(16).padStart(4, "0"));
+    }
+  }
+  return parts.join("");
+}

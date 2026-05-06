@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-90%20e2e-2ea44f)
+![Tests](https://img.shields.io/badge/tests-96%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
@@ -36,7 +36,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, typ
 - **Page sidebar.** Thumbnail per page; reorder, delete, insert blank, or insert pages from another PDF. External pages are first-class — every editing affordance works on them.
 - **230 bundled Thaana fonts.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`. Sources, attributions, and per-file credits in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
-- **Redact.** Click a text run to drop an opaque black rectangle; drag corners to resize. On save the rect paints into the content stream AND the underlying content is destroyed: glyphs are stripped per-bbox, supported raster image XObjects are rewritten with covered pixels blacked out, fully covered / unsupported image or Form XObject draws are removed, and vector paint ops under the rect are stripped. The saved file has no recoverable text or page-level image/vector draw data under the rect.
+- **Redact.** Click a text run to drop an opaque black rectangle; drag corners to resize. On save the rect paints into the content stream AND the underlying content is destroyed: glyphs are stripped per-bbox, supported raster image XObjects are rewritten with covered pixels blacked out, fully covered / unsupported image or Form XObject draws are removed, vector paint ops under the rect are stripped, native annotations are clipped or removed on overlap, and overlapped AcroForm widgets are removed with their field values and appearances. The saved file has no recoverable text, page-level image/vector draw data, annotation content, or form-widget value data under the rect for supported layers.
 - **Fill AcroForm fields.** Open a form PDF — Maldivian gov applications, etc. — and the existing widgets become interactive overlays: text inputs (single-line, multiline, password), checkboxes, radio groups, combo / list boxes. Type Thaana via the same DV/EN phonetic keyboard the rest of the editor uses; saved PDFs write `/V` (UTF-16BE for Thaana, ASCII otherwise) and rebuild `/Root /AcroForm /Fields` after copyPages so the output stays interactive in Acrobat / Preview / Chrome / pdf.js. Reopening in rihaPDF re-extracts the same values. XFA, JS actions, `/AA`, and digital-signature creation are out of scope.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
@@ -108,7 +108,7 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 - **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
 - **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q…Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
 - **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
-- **Redaction scope is page-content focused.** Current redaction surgery destroys text-show ops, supported image pixels / image draws, Form XObject draws, and vector paint ops in the page content stream. PDF annotation objects and AcroForm widget values live outside that stream; do not rely on redaction rectangles to sanitize source annotations, newly-added annotation contents, or form-field values until annotation/widget redaction is implemented and tested.
+- **Annotation and form redaction is geometry-first.** Text markup quads and ink strokes are clipped/split so portions outside the redaction survive. Text-bearing, unsupported annotation types, and overlapped AcroForm widgets are removed on overlap because their dictionaries can carry recoverable `/Contents`, `/V`, `/DV`, or appearance data. Partial form-field value redaction is not attempted; overlapping a widget removes the whole field.
 - **Form widgets need a touched-field save path today.** Filled fields save with `/V` and rebuild `/Root /AcroForm /Fields`, but a form PDF saved after unrelated edits with no form-field changes may keep copied widget annotations without a rebuilt AcroForm field tree. Until the save path rebuilds AcroForm whenever copied widgets exist, make at least one form-field change before saving a fillable document that must remain interactive.
 
 ## Scripts
@@ -155,7 +155,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `annotations.test.ts`                         | highlight / comment / ink save, ink cross-page move, ink delete               |
+| `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line         |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable      |
@@ -183,7 +183,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 | `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                 |
 | `preview-strip.test.ts`                       | original glyphs removed from canvas during edits                              |
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction → no recoverable bytes  |
-| `save-redactions.test.ts`                     | partial image pixels sanitized; full image resource pruned; vector stripped   |
+| `save-redactions.test.ts`                     | image/vector/annotation/form content under redactions is sanitized            |
 | `signature.test.ts`                           | visual signature draw/import → local library, cleanup, insert, save           |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                      |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                         |
@@ -201,7 +201,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Save pipeline
 
 - [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/lib/shapedDraw.ts) / [shapedBidi.ts](src/lib/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
-- [ ] **Redact annotations and form widgets.** Redaction currently targets page content streams, XObjects, raster image streams, and vector paint ops. Annotation dictionaries and AcroForm widget values can still carry data outside the content stream; add overlap-based annotation/widget removal or sanitization before claiming redaction covers those layers.
+- [ ] **Partial form-widget redaction.** Redaction removes an overlapped AcroForm field as the safe default. A future version could split visual widget appearances or preserve non-overlapped widgets from the same field when that can be done without leaving `/V`/`/DV` recoverable.
 - [ ] **Rebuild AcroForm on any saved output containing widgets.** `rebuildOutputAcroForm` currently runs when form fills are present. It should also run for unrelated saves of fillable PDFs so `copyPages` output keeps widgets reachable through `/Root /AcroForm /Fields`.
 
 ### Overlay / interaction

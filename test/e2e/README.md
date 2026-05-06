@@ -40,11 +40,11 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 90 e2e tests.
+The suite currently has 96 e2e tests.
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `annotations.test.ts`                         | highlight / comment / ink save, ink cross-page move, ink delete               |
+| `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save -> reopen -> toggle off -> no orphan line      |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text - all deletable      |
@@ -72,7 +72,7 @@ The suite currently has 90 e2e tests.
 | `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                 |
 | `preview-strip.test.ts`                       | original image pixels removed from live canvas during drag                    |
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction removes text/bytes      |
-| `save-redactions.test.ts`                     | partial image pixels sanitized; full image resource pruned; vector stripped   |
+| `save-redactions.test.ts`                     | image/vector/annotation/form content under redactions is sanitized            |
 | `signature.test.ts`                           | visual signature draw/import -> local library, cleanup, insert, save          |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                      |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                         |

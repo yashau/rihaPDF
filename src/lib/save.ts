@@ -51,10 +51,15 @@ import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "./bl
 import type { Annotation, AnnotationColor } from "./annotations";
 import { applyAnnotationsToDoc } from "./saveAnnotations";
 import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "./saveFormFields";
+import { applyRedactionsToFormWidgets } from "./redactFormFields";
 import { drawShapedText, measureShapedWidth } from "./shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "./shapedBidi";
 import { DEFAULT_TEXT_COLOR } from "./color";
 import { rectsOverlap, type Redaction } from "./redactions";
+import {
+  applyRedactionsToNewAnnotations,
+  applyRedactionsToPageAnnotations,
+} from "./redactAnnotations";
 import { planRedactionStrip } from "./redactGlyphs";
 import { type Mat6, transformPoint } from "./pdfGeometry";
 
@@ -1179,13 +1184,33 @@ export async function applyEditsAndSave(
     }
   }
 
+  // AcroForm widgets carry field values outside the page content stream.
+  // If a redaction overlaps any widget of a field, remove that field's
+  // widgets and clear its value/appearance data before copyPages can
+  // preserve it into the output.
+  if (redactions.length > 0) {
+    for (const [sourceKey, ctx] of ctxBySource) {
+      const sourceRedactions = redactionsBySource.get(sourceKey) ?? [];
+      if (sourceRedactions.length === 0) continue;
+      const byPage = new Map<number, Redaction[]>();
+      for (const r of sourceRedactions) {
+        const list = byPage.get(r.pageIndex) ?? [];
+        list.push(r);
+        byPage.set(r.pageIndex, list);
+      }
+      applyRedactionsToFormWidgets(ctx.doc, byPage);
+    }
+  }
+
   // Annotations - native PDF /Annot dicts appended to each source
   // page's /Annots array. Bucket by source so we only pay one pass per
   // doc; pdf-lib copyPages then carries the new /Annots through to the
   // output along with any pre-existing source annotations.
-  if (annotations.length > 0) {
+  const annotationsForSave =
+    redactions.length > 0 ? applyRedactionsToNewAnnotations(annotations, redactions) : annotations;
+  if (annotationsForSave.length > 0) {
     const annotsBySource = new Map<string, Annotation[]>();
-    for (const a of annotations) {
+    for (const a of annotationsForSave) {
       const list = annotsBySource.get(a.sourceKey) ?? [];
       list.push(a);
       annotsBySource.set(a.sourceKey, list);
@@ -1194,6 +1219,29 @@ export async function applyEditsAndSave(
       const ctx = ctxBySource.get(sourceKey);
       if (!ctx) continue;
       await applyAnnotationsToDoc(ctx.doc, list, { getFont: ctx.getFont });
+    }
+  }
+
+  // Annotation redaction - sanitize native /Annots before copyPages
+  // preserves them into the output. Geometry-based markups can be
+  // clipped/split; text-bearing or otherwise unsupported annotation
+  // types are removed on overlap so their dictionaries do not keep
+  // recoverable content under the black redaction rectangle.
+  if (redactions.length > 0) {
+    for (const [sourceKey, ctx] of ctxBySource) {
+      const sourceRedactions = redactionsBySource.get(sourceKey) ?? [];
+      if (sourceRedactions.length === 0) continue;
+      const byPage = new Map<number, Redaction[]>();
+      for (const r of sourceRedactions) {
+        const list = byPage.get(r.pageIndex) ?? [];
+        list.push(r);
+        byPage.set(r.pageIndex, list);
+      }
+      for (const [pageIndex, pageRedactions] of byPage) {
+        const page = ctx.doc.getPages()[pageIndex];
+        if (!page) continue;
+        applyRedactionsToPageAnnotations(ctx.doc, page, pageRedactions);
+      }
     }
   }
 
@@ -1249,7 +1297,9 @@ export async function applyEditsAndSave(
     copiedPerSource.set(sourceKey, copied);
   }
   const cursorPerSource = new Map<string, number>();
+  const outputRedactionsByPage = new Map<number, Redaction[]>();
   for (const slot of slots) {
+    const outputPageIndex = output.getPageCount();
     if (slot.kind === "blank") {
       const sk = blankSourceKey(slot.id);
       const copied = copiedPerSource.get(sk);
@@ -1258,6 +1308,8 @@ export async function applyEditsAndSave(
       } else {
         output.addPage(slot.size);
       }
+      const pageRedactions = redactionsBySource.get(sk)?.filter((r) => r.pageIndex === 0) ?? [];
+      if (pageRedactions.length > 0) outputRedactionsByPage.set(outputPageIndex, pageRedactions);
       continue;
     }
     const copied = copiedPerSource.get(slot.sourceKey);
@@ -1265,6 +1317,18 @@ export async function applyEditsAndSave(
     const cursor = cursorPerSource.get(slot.sourceKey) ?? 0;
     output.addPage(copied[cursor]);
     cursorPerSource.set(slot.sourceKey, cursor + 1);
+    const pageRedactions =
+      redactionsBySource.get(slot.sourceKey)?.filter((r) => r.pageIndex === slot.sourcePageIndex) ??
+      [];
+    if (pageRedactions.length > 0) outputRedactionsByPage.set(outputPageIndex, pageRedactions);
+  }
+  if (outputRedactionsByPage.size > 0) {
+    for (const [pageIndex, pageRedactions] of outputRedactionsByPage) {
+      const page = output.getPages()[pageIndex];
+      if (!page) continue;
+      applyRedactionsToFormWidgets(output, new Map([[pageIndex, pageRedactions]]));
+      applyRedactionsToPageAnnotations(output, page, pageRedactions);
+    }
   }
   // After every page has landed in the output, rebuild /AcroForm/Fields
   // from the widgets that came across with copyPages. copyPages deep-

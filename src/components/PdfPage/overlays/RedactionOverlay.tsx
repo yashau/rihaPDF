@@ -117,7 +117,7 @@ export function RedactionOverlay({
         outline: isSelected ? "2px solid rgba(220, 50, 50, 0.85)" : undefined,
         cursor: "grab",
         pointerEvents: "auto",
-        zIndex: 25,
+        zIndex: 55,
         touchAction: "pan-y pinch-zoom",
       }}
       title="Redaction (drag corners to resize, click to select then Del to delete)"
