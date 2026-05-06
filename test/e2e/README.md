@@ -40,11 +40,12 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 97 e2e tests.
+The suite currently has 105 e2e tests.
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
+| `caret-at-click.test.ts`                      | click opens a collapsed caret inside a source run for partial edits           |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save -> reopen -> toggle off -> no orphan line      |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text - all deletable      |
