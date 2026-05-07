@@ -3,6 +3,7 @@ import type { EditStyle } from "../../lib/save";
 export type InitialCaretPoint = {
   clientX: number;
   clientY: number;
+  caretOffset?: number;
 };
 
 export type EditValue = {

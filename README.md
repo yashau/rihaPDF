@@ -26,7 +26,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 ## Features
 
-- **Edit text runs.** Click → caret-positioned input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
+- **Edit text runs.** Click → source-glyph-positioned caret input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Style overrides survive close/reopen.
 - **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
 - **Insert text and images.** Click-to-place tools that share the edit toolbar.
 - **Visual signatures.** Draw a signature with signing colour presets or import one from an image. Imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse. These are visual PDF image inserts only, not cryptographic PDF signatures.
@@ -86,6 +86,8 @@ save → for each edited run:
 Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/lib/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
 
 Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/lib/contentStream.ts) — pdf-lib doesn't expose its parser publicly, so [pageContent.ts](src/lib/pageContent.ts) reads raw bytes and rewrites them.
+
+Caret placement for source text uses the same PDF-side text-show data as the edit/save pipeline: [sourceFonts.ts](src/lib/sourceFonts.ts) walks `Tj`/`TJ` operators, font widths, text spacing, and horizontal scaling to derive per-glyph source edges; [pdf.ts](src/lib/pdf.ts) maps those edges back to logical text offsets for LTR/RTL run hit-testing before the browser input mounts.
 
 The page renderer is split per concern under [src/components/PdfPage/](src/components/PdfPage/): `index.tsx` (page chrome + gesture wiring), `EditField.tsx`, `EditTextToolbar.tsx`, `overlays.tsx`, `helpers.ts`, `types.ts`.
 
@@ -169,7 +171,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
-| `caret-at-click.test.ts`                      | click opens a collapsed caret inside a source run for partial edits           |
+| `caret-at-click.test.ts`                      | source-glyph click on Maldivian 6.2 line opens caret at matching text offset  |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line         |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text — all deletable      |
@@ -210,7 +212,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Editing
 
 - [ ] **Multi-line paragraph editing.** A wrapped paragraph is N separate runs today; needs cross-line merging keyed on indent + line-spacing plus a multi-line `EditField`.
-- [x] **Caret-at-click instead of full select.** Land the caret at the click position so long lines can be partial-edited.
+- [x] **Caret-at-click instead of full select.** Land the caret at the clicked source-glyph position so long LTR/RTL lines can be partial-edited.
 - [ ] **Marquee select / multi-move.** Drag-rectangle multi-select.
 
 ### Save pipeline

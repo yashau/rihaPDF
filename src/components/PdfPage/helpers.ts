@@ -23,6 +23,11 @@ export function focusInputAtInitialCaret(
     input.select();
     return;
   }
+  if (point.caretOffset !== undefined) {
+    const offset = clamp(point.caretOffset, 0, input.value.length);
+    input.setSelectionRange(offset, offset);
+    return;
+  }
   const rect = input.getBoundingClientRect();
   const x = clamp(point.clientX, rect.left + 1, rect.right - 1);
   const y = rect.top + rect.height / 2;

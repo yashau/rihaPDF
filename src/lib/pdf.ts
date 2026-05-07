@@ -70,6 +70,10 @@ export type TextRun = {
   contentStreamOpIndices: number[];
   /** Concatenated logical-order text. */
   text: string;
+  /** Source-PDF caret candidates in viewport pixels. Each logical
+   *  offset can appear more than once at bidi boundaries where the
+   *  same insertion point has two visual edges. */
+  caretPositions?: Array<{ offset: number; x: number }>;
   /** Viewport-pixel bounding box (left, top, width, height). */
   bounds: { left: number; top: number; width: number; height: number };
   /** Font height in viewport pixels (= |scaleY|). */
@@ -579,23 +583,6 @@ function baseFontTargetsThaana(baseName: string | null | undefined): boolean {
 }
 
 /**
- * Remove phantom whitespace that pdf.js inserts between adjacent
- * positioning operators when extracting RTL combining sequences.
- *
- * Specifically: pdf.js's getTextContent() inserts a U+0020 between two
- * positioned items if the horizontal gap exceeds a threshold. For Thaana
- * (and Arabic) the next item is often a combining mark / fili at the
- * base letter's x — pdf.js misreads that as a word break.
- *
- * Rule: any whitespace immediately *before* a Thaana fili (U+07A6–U+07B0)
- * or Arabic combining mark (U+064B–U+065F, U+0670, U+06D6–U+06ED) is
- * dropped.
- */
-function cleanCombiningSpaces(text: string): string {
-  return text.replace(/\s+(?=[ަ-ް])/g, "").replace(/\s+(?=[ً-ٰٟۖ-ۭ])/g, "");
-}
-
-/**
  * Sort items inside a single run into logical reading order using x-position.
  *
  *  - LTR: ascending x (leftmost = first logical char)
@@ -616,6 +603,89 @@ function sortItemsLogical(items: TextItem[], rtl: boolean): TextItem[] {
     return (b.width || 0) - (a.width || 0);
   };
   return [...items].sort(cmp);
+}
+
+function itemCaretStartEnd(it: TextItem): { startX: number; endX: number } {
+  const left = it.transform[4];
+  const width = it.width || it.height * 0.3;
+  const right = left + width;
+  return scriptOf(it.str) === "rtl" ? { startX: right, endX: left } : { startX: left, endX: right };
+}
+
+const COMBINING_MARK_RE = /^[ަ-ްً-ٰٟۖ-ۭ]$/u;
+
+function fontShowForItem(
+  it: TextItem,
+  fontShowsByOpIndex: Map<number, import("./sourceFonts").FontShow>,
+): import("./sourceFonts").FontShow | null {
+  const ops = Array.from(new Set(it.contentStreamOpIndices ?? []));
+  if (ops.length !== 1) return null;
+  return fontShowsByOpIndex.get(ops[0]) ?? null;
+}
+
+function caretPiecesForItem(
+  it: TextItem,
+  fontShowsByOpIndex: Map<number, import("./sourceFonts").FontShow>,
+  scale: number,
+): Array<{ text: string; startX: number; endX: number }> {
+  const show = fontShowForItem(it, fontShowsByOpIndex);
+  if (show?.glyphSpans && show.glyphSpans.length >= it.str.length) {
+    const spans =
+      scriptOf(it.str) === "rtl" ? [...show.glyphSpans].reverse() : [...show.glyphSpans];
+    spans.length = it.str.length;
+    return spans.map((span, i) => {
+      const left = Math.min(span.x0, span.x1) * scale;
+      const right = Math.max(span.x0, span.x1) * scale;
+      return scriptOf(it.str[i]) === "rtl"
+        ? { text: it.str[i], startX: right, endX: left }
+        : { text: it.str[i], startX: left, endX: right };
+    });
+  }
+
+  const span = itemCaretStartEnd(it);
+  return [{ text: it.str, ...span }];
+}
+
+function buildCaretPositionsFromPieces(
+  pieces: Array<{ text: string; startX: number; endX: number }>,
+): { text: string; caretPositions: Array<{ offset: number; x: number }> } {
+  const chars: Array<{ ch: string; beforeX: number; afterX: number }> = [];
+  for (const piece of pieces) {
+    const len = piece.text.length;
+    if (len === 0) continue;
+    for (let i = 0; i < len; i++) {
+      const beforeT = i / len;
+      const afterT = (i + 1) / len;
+      chars.push({
+        ch: piece.text[i],
+        beforeX: piece.startX + (piece.endX - piece.startX) * beforeT,
+        afterX: piece.startX + (piece.endX - piece.startX) * afterT,
+      });
+    }
+  }
+
+  const kept: typeof chars = [];
+  for (let i = 0; i < chars.length; i++) {
+    if (/\s/.test(chars[i].ch)) {
+      let end = i + 1;
+      while (end < chars.length && /\s/.test(chars[end].ch)) end++;
+      if (end < chars.length && COMBINING_MARK_RE.test(chars[end].ch)) {
+        i = end - 1;
+        continue;
+      }
+    }
+    kept.push(chars[i]);
+  }
+
+  const caretPositions: Array<{ offset: number; x: number }> = [];
+  let text = "";
+  for (let offset = 0; offset < kept.length; offset++) {
+    const ch = kept[offset];
+    text += ch.ch;
+    caretPositions.push({ offset, x: ch.beforeX });
+    caretPositions.push({ offset: offset + 1, x: ch.afterX });
+  }
+  return { text, caretPositions };
 }
 
 /**
@@ -651,12 +721,14 @@ function buildTextRuns(
   const runs: TextRun[] = [];
   let bucket: TextItem[] = [];
   let runIndex = 0;
+  const fontShowsByOpIndex = new Map(fontShows.map((s) => [s.opIndex, s]));
 
   const flush = () => {
     if (bucket.length === 0) return;
     const rtl = bucket.some((it) => isRtlText(it.str));
     const ordered = sortItemsLogical(bucket, rtl);
-    const gapPlaceholders = new Map<string, number>();
+    const gapPlaceholders = new Map<string, { gapPx: number; startX: number; endX: number }>();
+    const caretPieces: Array<{ text: string; startX: number; endX: number }> = [];
 
     let minLeft = Infinity;
     let maxRight = -Infinity;
@@ -693,20 +765,31 @@ function buildTextRuns(
             isListMarkerText(text);
           if (tabLikeListGap) {
             const marker = `\u{e000}${gapPlaceholders.size}\u{e001}`;
-            gapPlaceholders.set(marker, wordGap);
+            const prevEndX = itemCaretStartEnd(prevItem).endX;
+            const currentStartX = itemCaretStartEnd(it).startX;
+            gapPlaceholders.set(marker, {
+              gapPx: wordGap,
+              startX: prevEndX,
+              endX: currentStartX,
+            });
+            caretPieces.push({ text: marker, startX: prevEndX, endX: currentStartX });
             text += marker;
           } else {
+            caretPieces.push({
+              text: " ",
+              startX: itemCaretStartEnd(prevItem).endX,
+              endX: itemCaretStartEnd(it).startX,
+            });
             text += " ";
           }
         }
       }
+      caretPieces.push(...caretPiecesForItem(it, fontShowsByOpIndex, scale));
       text += it.str;
       if (it.str.length > 0) prevItem = it;
       sourceIndices.push(it.index);
       for (const op of it.contentStreamOpIndices ?? []) opIndexSet.add(op);
     }
-    text = cleanCombiningSpaces(text);
-
     // Vertical bounding box: account for Thaana fili that sit above the
     // cap height. Padding 0.20 × height up / 0.10 × down covers fili and
     // common descenders without extending too far into the next line.
@@ -765,17 +848,23 @@ function buildTextRuns(
         bestShow?.bold ?? false,
         bestShow?.italic ?? false,
       );
-      for (const [marker, gapPx] of gapPlaceholders) {
-        const spaces = Math.max(1, Math.round(gapPx / spaceWidth));
+      for (const [marker, gap] of gapPlaceholders) {
+        const spaces = Math.max(1, Math.round(gap.gapPx / spaceWidth));
         text = text.replace(marker, " ".repeat(spaces));
+        for (const piece of caretPieces) {
+          if (piece.text === marker) piece.text = " ".repeat(spaces);
+        }
       }
     }
+    const caret = buildCaretPositionsFromPieces(caretPieces);
+    text = caret.text;
 
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
       sourceIndices,
       contentStreamOpIndices: Array.from(opIndexSet).sort((a, b) => a - b),
       text,
+      caretPositions: caret.caretPositions,
       bounds: {
         left: minLeft,
         top,

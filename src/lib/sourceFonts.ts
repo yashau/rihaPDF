@@ -9,8 +9,16 @@
 // each TextRun.
 
 import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRef } from "pdf-lib";
-import { parseContentStream, findTextShows } from "./contentStream";
+import { parseContentStream, findTextShows, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
+import { readFontMetrics, type FontMetrics } from "./redactGlyphs";
+
+export type FontShowGlyphSpan = {
+  gid: number;
+  /** Glyph edge positions in PDF user space. */
+  x0: number;
+  x1: number;
+};
 
 export type FontShow = {
   /** Baseline x in PDF user space (= text matrix m[4]). */
@@ -31,6 +39,9 @@ export type FontShow = {
    *  they don't change which glyphs are drawn). Decoded via the font's
    *  reverse cmap when pdf.js fails to extract a character. */
   bytes: Uint8Array;
+  /** Per-glyph source positions computed from the PDF font widths and
+   *  TJ spacers. Used for exact caret hit-testing in source text runs. */
+  glyphSpans?: FontShowGlyphSpan[];
   /** Index of the Tj/TJ op in the parsed content-stream ops array.
    *  Used by preview.ts + save.ts to know exactly which ops to strip
    *  when the user edits or drags a run that this show contributed
@@ -52,7 +63,7 @@ export async function extractPageFontShows(pdfBytes: ArrayBuffer): Promise<FontS
     const fontDict = resolveFontDict(pageDict, doc);
     const fontInfoByResource = new Map<
       string,
-      { baseFont: string | null; bold: boolean; italic: boolean }
+      { baseFont: string | null; bold: boolean; italic: boolean; metrics: FontMetrics | null }
     >();
     if (fontDict) {
       for (const [name] of fontDict.entries()) {
@@ -90,6 +101,7 @@ export async function extractPageFontShows(pdfBytes: ArrayBuffer): Promise<FontS
           baseFont,
           bold,
           italic,
+          metrics: readFontMetrics(fontEntry, doc.context),
         });
       }
     }
@@ -97,6 +109,10 @@ export async function extractPageFontShows(pdfBytes: ArrayBuffer): Promise<FontS
     const bytes = getPageContentBytes(doc.context, pageDict);
     const ops = parseContentStream(bytes);
     const shows = findTextShows(ops);
+    const glyphSpansByOpIndex = glyphSpansForTextShows(
+      ops,
+      new Map(Array.from(fontInfoByResource, ([name, info]) => [name, info.metrics])),
+    );
     const fontShows: FontShow[] = shows.map((s) => {
       const info = s.fontName ? fontInfoByResource.get(s.fontName) : null;
       const trBold = s.textRenderingMode === 2;
@@ -126,12 +142,207 @@ export async function extractPageFontShows(pdfBytes: ArrayBuffer): Promise<FontS
         italic: info?.italic ?? false,
         fontResource: s.fontName ?? null,
         bytes: new Uint8Array(operandBytes),
+        glyphSpans: glyphSpansByOpIndex.get(s.index),
         opIndex: s.index,
       };
     });
     result.push(fontShows);
   }
   return result;
+}
+
+type SpanState = {
+  tm: [number, number, number, number, number, number];
+  tlm: [number, number, number, number, number, number];
+  fontName: string | null;
+  fontSize: number;
+  Tc: number;
+  Tw: number;
+  Th: number;
+  TL: number;
+};
+
+function freshSpanState(): SpanState {
+  return {
+    tm: [1, 0, 0, 1, 0, 0],
+    tlm: [1, 0, 0, 1, 0, 0],
+    fontName: null,
+    fontSize: 0,
+    Tc: 0,
+    Tw: 0,
+    Th: 1,
+    TL: 0,
+  };
+}
+
+function cloneSpanState(s: SpanState): SpanState {
+  return {
+    tm: [...s.tm] as SpanState["tm"],
+    tlm: [...s.tlm] as SpanState["tlm"],
+    fontName: s.fontName,
+    fontSize: s.fontSize,
+    Tc: s.Tc,
+    Tw: s.Tw,
+    Th: s.Th,
+    TL: s.TL,
+  };
+}
+
+function applySpanTd(s: SpanState, tx: number, ty: number): void {
+  const [a, b, c, d, e, f] = s.tlm;
+  s.tlm = [a, b, c, d, tx * a + ty * c + e, tx * b + ty * d + f];
+  s.tm = [...s.tlm];
+}
+
+function decodeGlyphIds(bytes: Uint8Array, metrics: FontMetrics): number[] {
+  const out: number[] = [];
+  const bpg = metrics.bytesPerGlyph;
+  const usable = bytes.length - (bytes.length % bpg);
+  for (let i = 0; i < usable; i += bpg) {
+    let gid = 0;
+    for (let k = 0; k < bpg; k++) gid = (gid << 8) | bytes[i + k];
+    out.push(gid);
+  }
+  return out;
+}
+
+function glyphSpansForTextShows(
+  ops: ContentOp[],
+  metricsByFont: Map<string, FontMetrics | null>,
+): Map<number, FontShowGlyphSpan[]> {
+  const out = new Map<number, FontShowGlyphSpan[]>();
+  let s = freshSpanState();
+  const stack: SpanState[] = [];
+
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i];
+    switch (o.op) {
+      case "q":
+        stack.push(cloneSpanState(s));
+        break;
+      case "Q": {
+        const popped = stack.pop();
+        if (popped) s = popped;
+        break;
+      }
+      case "BT":
+        s.tm = [1, 0, 0, 1, 0, 0];
+        s.tlm = [1, 0, 0, 1, 0, 0];
+        break;
+      case "Tf": {
+        const [name, size] = o.operands;
+        if (name?.kind === "name") s.fontName = name.value;
+        if (size?.kind === "number") s.fontSize = size.value;
+        break;
+      }
+      case "Tc":
+        if (o.operands[0]?.kind === "number") s.Tc = o.operands[0].value;
+        break;
+      case "Tw":
+        if (o.operands[0]?.kind === "number") s.Tw = o.operands[0].value;
+        break;
+      case "Tz":
+        if (o.operands[0]?.kind === "number") s.Th = o.operands[0].value / 100;
+        break;
+      case "TL":
+        if (o.operands[0]?.kind === "number") s.TL = o.operands[0].value;
+        break;
+      case "Tm":
+        if (o.operands.length === 6 && o.operands.every((x) => x.kind === "number")) {
+          s.tm = o.operands.map((x) => (x as { value: number }).value) as SpanState["tm"];
+          s.tlm = [...s.tm];
+        }
+        break;
+      case "Td":
+      case "TD":
+        if (
+          o.operands.length === 2 &&
+          o.operands[0].kind === "number" &&
+          o.operands[1].kind === "number"
+        ) {
+          const tx = o.operands[0].value;
+          const ty = o.operands[1].value;
+          if (o.op === "TD") s.TL = -ty;
+          applySpanTd(s, tx, ty);
+        }
+        break;
+      case "T*":
+        applySpanTd(s, 0, -s.TL);
+        break;
+      case "'":
+      case '"':
+      case "Tj":
+      case "TJ": {
+        let stringOperandIndex = 0;
+        if (o.op === "'") {
+          applySpanTd(s, 0, -s.TL);
+        } else if (o.op === '"') {
+          if (o.operands[0]?.kind === "number") s.Tw = o.operands[0].value;
+          if (o.operands[1]?.kind === "number") s.Tc = o.operands[1].value;
+          applySpanTd(s, 0, -s.TL);
+          stringOperandIndex = 2;
+        }
+        const spans = processShowSpans(o, s, metricsByFont, stringOperandIndex);
+        if (spans) out.set(i, spans);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function processShowSpans(
+  op: ContentOp,
+  s: SpanState,
+  metricsByFont: Map<string, FontMetrics | null>,
+  stringOperandIndex: number,
+): FontShowGlyphSpan[] | null {
+  if (!s.fontName || s.fontSize <= 0) return null;
+  const metrics = metricsByFont.get(s.fontName);
+  if (!metrics) return null;
+
+  type Seg = { kind: "string"; bytes: Uint8Array } | { kind: "spacer"; value: number };
+  const segments: Seg[] = [];
+  if (op.op === "TJ") {
+    const arr = op.operands[0];
+    if (arr?.kind !== "array") return null;
+    for (const item of arr.items) {
+      if (item.kind === "literal-string" || item.kind === "hex-string") {
+        segments.push({ kind: "string", bytes: item.bytes });
+      } else if (item.kind === "number") {
+        segments.push({ kind: "spacer", value: item.value });
+      } else {
+        return null;
+      }
+    }
+  } else {
+    const str = op.operands[stringOperandIndex];
+    if (!str || (str.kind !== "literal-string" && str.kind !== "hex-string")) return null;
+    segments.push({ kind: "string", bytes: str.bytes });
+  }
+
+  const spans: FontShowGlyphSpan[] = [];
+  let tx = 0;
+  for (const seg of segments) {
+    if (seg.kind === "spacer") {
+      tx -= (seg.value / 1000) * s.fontSize * s.Th;
+      continue;
+    }
+    for (const gid of decodeGlyphIds(seg.bytes, metrics)) {
+      const widthFontUnits = metrics.widthByGid.get(gid) ?? metrics.defaultWidth;
+      const glyphAdvanceTextSpace = (widthFontUnits / 1000) * s.fontSize * s.Th;
+      const isSpaceChar = metrics.twAppliesToSpace && metrics.bytesPerGlyph === 1 && gid === 0x20;
+      const spacingTextSpace = (s.Tc + (isSpaceChar ? s.Tw : 0)) * s.Th;
+      const [a, , , , e] = s.tm;
+      spans.push({
+        gid,
+        x0: a * tx + e,
+        x1: a * (tx + glyphAdvanceTextSpace) + e,
+      });
+      tx += glyphAdvanceTextSpace + spacingTextSpace;
+    }
+  }
+  return spans;
 }
 
 /** Resources / Font for the given page, resolved through the page tree

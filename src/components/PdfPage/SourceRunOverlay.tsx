@@ -7,6 +7,30 @@ import { cssTextDecoration } from "./helpers";
 import type { EditValue, InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
 
+function sourceCaretOffsetFromClick(
+  run: TextRun,
+  page: RenderedPage,
+  e: React.MouseEvent<HTMLElement>,
+): number | undefined {
+  if (!run.caretPositions || run.caretPositions.length === 0) return undefined;
+  const pageEl = e.currentTarget.closest<HTMLElement>("[data-page-index]");
+  if (!pageEl) return undefined;
+  const pageRect = pageEl.getBoundingClientRect();
+  const displayScale = page.viewWidth > 0 ? pageRect.width / page.viewWidth : 1;
+  if (!Number.isFinite(displayScale) || displayScale <= 0) return undefined;
+  const sourceX = (e.clientX - pageRect.left) / displayScale;
+  let best = run.caretPositions[0];
+  let bestDist = Math.abs(best.x - sourceX);
+  for (const pos of run.caretPositions) {
+    const dist = Math.abs(pos.x - sourceX);
+    if (dist < bestDist) {
+      best = pos;
+      bestDist = dist;
+    }
+  }
+  return best.offset;
+}
+
 /** One source-page text run as an interactive overlay. Renders one of
  *  three branches based on state:
  *
@@ -301,7 +325,11 @@ export function SourceRunOverlay({
           addRedactionForRun(run);
           return;
         }
-        onEditingChange(run.id, { clientX: e.clientX, clientY: e.clientY });
+        onEditingChange(run.id, {
+          clientX: e.clientX,
+          clientY: e.clientY,
+          caretOffset: sourceCaretOffsetFromClick(run, page, e),
+        });
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
