@@ -3,6 +3,7 @@ import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { PageStripSpec } from "@/pdf/render/preview";
 import type { PageSlot } from "@/domain/slots";
 import type { EditValue, ImageMoveValue } from "@/domain/editState";
+import { buildSourceTextBlocks } from "@/pdf/text/textBlocks";
 
 /** Rebuild the per-page preview canvases whenever the set of edited
  *  runs or moved images changes. Per-source — every affected source's
@@ -75,10 +76,27 @@ export function usePreviewCanvases({
       const slot = slotById.get(slotId);
       return slot && slot.kind === "page" ? [slot.sourceKey, slot.sourcePageIndex] : null;
     };
+    const expandRunIds = (
+      sourceKey: string,
+      pageIndex: number,
+      runId: string,
+      edit?: EditValue,
+    ): string[] => {
+      if (edit?.sourceRunIds && edit.sourceRunIds.length > 0) return edit.sourceRunIds;
+      const source = sources.get(sourceKey);
+      const page = source?.pages[pageIndex];
+      if (!page) return [runId];
+      const block = buildSourceTextBlocks(page.textRuns, page.pageNumber).find((b) => b.id === runId);
+      return block?.sourceRunIds ?? [runId];
+    };
     for (const [slotId, runs] of edits) {
       const t = sourceTupleFor(slotId);
       if (!t) continue;
-      for (const runId of runs.keys()) addRun(t[0], t[1], runId);
+      for (const [runId, edit] of runs) {
+        for (const sourceRunId of expandRunIds(t[0], t[1], runId, edit)) {
+          addRun(t[0], t[1], sourceRunId);
+        }
+      }
     }
     for (const [slotId, imgs] of imageMoves) {
       const t = sourceTupleFor(slotId);
@@ -99,7 +117,7 @@ export function usePreviewCanvases({
     for (const [slotId, runId] of editingByPage) {
       const t = sourceTupleFor(slotId);
       if (!t) continue;
-      addRun(t[0], t[1], runId);
+      for (const sourceRunId of expandRunIds(t[0], t[1], runId)) addRun(t[0], t[1], sourceRunId);
     }
     for (const [slotId, shapes] of shapeDeletes) {
       const t = sourceTupleFor(slotId);

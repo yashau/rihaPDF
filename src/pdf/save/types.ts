@@ -7,6 +7,9 @@ export type Edit = {
   /** Page index within `sourceKey`'s doc. */
   pageIndex: number;
   runId: string;
+  /** Source TextRun ids covered by this edit. Omitted for legacy
+   *  single-run edits where `runId` is the source TextRun id. */
+  sourceRunIds?: string[];
   newText: string;
   style?: EditStyle;
   /** Move offset in viewport pixels — translates the new draw position

@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { colorToCss } from "@/domain/color";
 import type { EditValue } from "@/domain/editState";
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
+import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
 import { cssTextDecoration } from "./helpers";
@@ -63,7 +64,7 @@ export function SourceRunOverlay({
   addHighlightForRun,
   addRedactionForRun,
 }: {
-  run: TextRun;
+  run: TextRun | SourceTextBlock;
   page: RenderedPage;
   tool: ToolMode;
   isEditing: boolean;
@@ -131,6 +132,8 @@ export function SourceRunOverlay({
   };
 
   if (isEditing) {
+    const sourceRunIds =
+      "sourceRunIds" in run && run.sourceRunIds.length > 1 ? run.sourceRunIds : undefined;
     return (
       <EditField
         run={run}
@@ -147,6 +150,7 @@ export function SourceRunOverlay({
             ...value,
             dx: editedValue?.dx ?? 0,
             dy: editedValue?.dy ?? 0,
+            sourceRunIds,
           };
           const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
           if (value.text !== run.text || value.style || hasOffset) {
@@ -257,12 +261,12 @@ export function SourceRunOverlay({
             ),
             color: colorToCss(style.color) ?? "black",
             width: "100%",
-            whiteSpace: "pre",
+            whiteSpace: "pre-wrap",
             paddingLeft: padX,
             paddingRight: padX,
           }}
         >
-          {editedValue.text}
+      {editedValue.text}
         </span>
       </span>
     );
@@ -297,7 +301,7 @@ export function SourceRunOverlay({
         color: isModified ? "black" : "transparent",
         backgroundColor: "transparent",
         pointerEvents: "auto",
-        whiteSpace: "pre",
+        whiteSpace: "pre-wrap",
         overflow: "visible",
         // Same as the edited branch above — hide once the user has
         // moved so the body-portal preview can escape the page

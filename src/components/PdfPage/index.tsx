@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { FormField, FormValue } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
@@ -26,6 +26,7 @@ import { PlacementCaptureLayer } from "./PlacementCaptureLayer";
 import { CrossPageImageArrivalOverlay, CrossPageTextArrivalOverlay } from "./arrivals";
 import { SourceRunOverlay } from "./SourceRunOverlay";
 import { buildToolbarBlockers } from "./toolbarBlockers";
+import { buildSourceTextBlocks } from "@/pdf/text/textBlocks";
 import { usePageFitScale } from "./usePageFitScale";
 import { useRunMarkupActions } from "./useRunMarkupActions";
 import { useRunDrag } from "./useRunDrag";
@@ -241,6 +242,12 @@ export function PdfPage({
     onRedactionAdd,
   });
   const toolbarBlockers = buildToolbarBlockers(page, edits, insertedTexts);
+  const sourceTextBlocks = useMemo(
+    () => buildSourceTextBlocks(page.textRuns, page.pageNumber),
+    [page.pageNumber, page.textRuns],
+  );
+  const editableTextTargets =
+    tool === "highlight" || tool === "redact" ? page.textRuns : sourceTextBlocks;
 
   return (
     <div
@@ -313,7 +320,7 @@ export function PdfPage({
             We don't switch the parent off while editing — the EditField's
             onBlur commits the current edit when the user clicks another
             run, so they can hop between edits without first dismissing. */}
-          {page.textRuns.map((run) => (
+          {editableTextTargets.map((run) => (
             <SourceRunOverlay
               key={run.id}
               run={run}

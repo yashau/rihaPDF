@@ -85,6 +85,7 @@ export function buildSavePayload({
         sourceKey: addr.sourceKey,
         pageIndex: addr.pageIndex,
         runId,
+        sourceRunIds: value.sourceRunIds,
         newText: value.text,
         style: value.style,
         dx: value.dx,
