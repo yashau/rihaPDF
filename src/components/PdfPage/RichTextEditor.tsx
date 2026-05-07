@@ -181,7 +181,8 @@ function createLineLayoutEditorState(block: RichTextBlock, pageScale: number, rt
     root.clear();
     const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
     const lines = splitSpansIntoLines(spans);
-    for (const line of lines) {
+    for (const rawLine of lines) {
+      const line = trimLeadingLineSpans(rawLine);
       const paragraph = $createParagraphNode();
       for (const span of line) {
         appendTextNode(paragraph, span.text, span.style, pageScale, rtl);
@@ -192,6 +193,42 @@ function createLineLayoutEditorState(block: RichTextBlock, pageScale: number, rt
     const last = rootChildren[rootChildren.length - 1];
     if ($isParagraphNode(last)) last.selectEnd();
   };
+}
+
+function sourceLineLayoutHasLeadingWhitespace(): boolean {
+  for (const rootChild of $getRoot().getChildren()) {
+    if (!$isParagraphNode(rootChild)) continue;
+    for (const child of rootChild.getChildren()) {
+      if (!$isTextNode(child)) break;
+      const text = child.getTextContent();
+      if (text.length === 0) continue;
+      return /^\s/u.test(text);
+    }
+  }
+  return false;
+}
+
+function trimSourceLineLayoutLeadingWhitespace(): boolean {
+  let changed = false;
+  for (const rootChild of $getRoot().getChildren()) {
+    if (!$isParagraphNode(rootChild)) continue;
+    for (const child of rootChild.getChildren()) {
+      if (!$isTextNode(child)) break;
+      const text = child.getTextContent();
+      if (text.length === 0) continue;
+      const trimmed = text.replace(/^\s+/u, "");
+      if (trimmed !== text) {
+        if (trimmed.length === 0) {
+          child.remove();
+        } else {
+          child.setTextContent(trimmed);
+        }
+        changed = true;
+      }
+      break;
+    }
+  }
+  return changed;
 }
 
 function editorStateToRichText(editorState: EditorState, pageScale: number): RichTextBlock {
@@ -330,7 +367,18 @@ function SourceLineLayoutPlugin({
     };
     apply();
     const unregisterRoot = editor.registerRootListener((root) => apply(root));
-    const unregisterUpdate = editor.registerUpdateListener(() => apply());
+    const unregisterUpdate = editor.registerUpdateListener(({ tags }) => {
+      apply();
+      if (tags.has("source-line-layout-trim")) return;
+      let needsTrim = false;
+      editor.getEditorState().read(() => {
+        needsTrim = sourceLineLayoutHasLeadingWhitespace();
+      });
+      if (!needsTrim) return;
+      editor.update(() => trimSourceLineLayoutLeadingWhitespace(), {
+        tag: "source-line-layout-trim",
+      });
+    });
     return () => {
       unregisterRoot();
       unregisterUpdate();

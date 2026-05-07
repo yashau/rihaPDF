@@ -40,7 +40,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 114 e2e tests.
+The suite currently has 116 e2e tests.
 
 | File                                          | What it covers                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -78,6 +78,7 @@ The suite currently has 114 e2e tests.
 | `signature.test.ts`                           | visual signature draw/import -> local library, cleanup, insert, save             |
 | `sidebar-pdf-drop.test.ts`                    | PDF file drops show a sidebar insertion marker and add pages at that gap         |
 | `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font            |
+| `source-paragraph-wysiwyg.test.ts`            | Maldivian source paragraph edit/commit/save visual ink geometry stays aligned    |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                         |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                            |
 

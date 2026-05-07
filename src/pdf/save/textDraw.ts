@@ -664,7 +664,13 @@ export async function emitTextDraw(
     ctx.getFont,
   );
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
-  const drawY = baselineYPdf;
+  // Browser text paints a little lower inside source line-layout boxes
+  // than the raw PDF baseline. Apply the same visual baseline for
+  // paragraph rewrites so commit and saved render stay WYSIWYG.
+  const drawY =
+    edit.richText && plan.lineLayoutsPdf && plan.lineLayoutsPdf.length > 0
+      ? baselineYPdf - fontSizePt * 0.15
+      : baselineYPdf;
 
   if (edit.richText) {
     await drawRichTextBlock(targetPage, richTextOrPlain(edit.richText, edit.newText, style), {
