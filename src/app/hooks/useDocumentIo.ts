@@ -239,7 +239,7 @@ export function useDocumentIo({
         flatFormFills,
       );
       const baseName = primaryFilename.replace(/\.pdf$/i, "");
-      downloadBlob(out, `${baseName}.edited.pdf`);
+      await downloadBlob(out, `${baseName}.edited.pdf`);
     } finally {
       setBusy(false);
     }

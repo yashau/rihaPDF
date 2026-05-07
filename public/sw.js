@@ -1,4 +1,6 @@
 const CACHE_NAME = "rihapdf-v1";
+const DOWNLOAD_CACHE_NAME = "rihapdf-downloads-v1";
+const DOWNLOAD_PATH_PREFIX = "/__rihapdf_downloads__/";
 const CORE_ASSETS = [
   "/",
   "/site.webmanifest",
@@ -24,7 +26,11 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME && key !== DOWNLOAD_CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
@@ -37,6 +43,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  if (url.pathname.startsWith(DOWNLOAD_PATH_PREFIX)) {
+    event.respondWith(serveDownload(request, event));
+    return;
+  }
+
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request, "/"));
     return;
@@ -46,6 +57,19 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(request));
   }
 });
+
+async function serveDownload(request, event) {
+  const cache = await caches.open(DOWNLOAD_CACHE_NAME);
+  const cached = await cache.match(request);
+  if (cached) {
+    event.waitUntil(cache.delete(request));
+    return cached;
+  }
+  return new Response("Download expired.", {
+    status: 410,
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+  });
+}
 
 function shouldCacheAsset(request, url) {
   return (
