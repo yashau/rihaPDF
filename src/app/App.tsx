@@ -426,7 +426,7 @@ export default function App() {
         >
           {slots.length === 0 ? (
             <div className="flex h-full items-center justify-center text-zinc-400 dark:text-zinc-500">
-              Open a PDF to begin. Double-click any text fragment to edit it.
+              Open a PDF to begin.
             </div>
           ) : (
             <div ref={documentZoomTargetRef} className="w-full">
