@@ -387,6 +387,76 @@ function SourceLineLayoutPlugin({
   return null;
 }
 
+function textRectForLine(lineEl: HTMLElement): DOMRect | null {
+  const range = document.createRange();
+  range.selectNodeContents(lineEl);
+  const rects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 && rect.height > 0,
+  );
+  range.detach();
+  if (rects.length === 0) return null;
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  const right = Math.max(...rects.map((rect) => rect.right));
+  const bottom = Math.max(...rects.map((rect) => rect.bottom));
+  return new DOMRect(left, top, right - left, bottom - top);
+}
+
+function nearestLineIndex(root: HTMLElement, clientY: number): number | null {
+  const lines = Array.from(root.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement,
+  );
+  if (lines.length === 0) return null;
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  lines.forEach((line, index) => {
+    const rect = line.getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) {
+      bestIndex = index;
+      bestDistance = 0;
+      return;
+    }
+    const distance = Math.min(Math.abs(clientY - rect.top), Math.abs(clientY - rect.bottom));
+    if (distance < bestDistance) {
+      bestIndex = index;
+      bestDistance = distance;
+    }
+  });
+  return bestIndex;
+}
+
+function TrailingBlankClickPlugin({ enabled }: { enabled: boolean }) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const root = editor.getRootElement();
+    if (!root) return undefined;
+    const onClick = (event: MouseEvent) => {
+      const lineIndex = nearestLineIndex(root, event.clientY);
+      if (lineIndex === null) return;
+      const lineEl = root.children.item(lineIndex);
+      if (!(lineEl instanceof HTMLElement)) return;
+      const textRect = textRectForLine(lineEl);
+      if (!textRect) return;
+      const direction = getComputedStyle(lineEl).direction || getComputedStyle(root).direction;
+      const tolerance = 2;
+      const clickedAfterEnd =
+        direction === "rtl"
+          ? event.clientX < textRect.left - tolerance
+          : event.clientX > textRect.right + tolerance;
+      if (!clickedAfterEnd) return;
+      event.preventDefault();
+      editor.update(() => {
+        const line = $getRoot().getChildren()[lineIndex];
+        if ($isParagraphNode(line)) line.selectEnd();
+      });
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, [editor, enabled]);
+  return null;
+}
+
 export function RichTextEditor({
   id,
   initial,
@@ -537,6 +607,7 @@ export function RichTextEditor({
         offsetY={lineLayoutOffsetY}
         lineHeight={lineHeight}
       />
+      <TrailingBlankClickPlugin enabled={hasLineLayouts} />
       <HistoryPlugin />
       <OnChangePlugin
         ignoreSelectionChange

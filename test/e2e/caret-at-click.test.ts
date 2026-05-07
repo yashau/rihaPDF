@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import fs from "fs";
 import {
+  APP_URL,
   FIXTURE,
   RENDER_SCALE,
   loadFixture,
@@ -13,6 +14,10 @@ let h: Harness;
 
 beforeAll(async () => {
   h = await setupBrowser();
+});
+
+beforeEach(async () => {
+  await h.page.goto(APP_URL, { waitUntil: "networkidle" });
 });
 
 afterAll(async () => {
@@ -134,5 +139,88 @@ describe("text editor caret placement", () => {
     expect(edited.length).toBe(target.text.length + 1);
     expect(edited).toContain("X");
     expect(Math.abs(edited.indexOf("X") - target.caretOffset)).toBeLessThanOrEqual(6);
+  });
+
+  test("clicking trailing blank space in a paragraph places the caret at the line end", async () => {
+    const fixtureBytes = fs.readFileSync(FIXTURE.maldivian).toString("base64");
+    const target = await h.page.evaluate(
+      async ({ b64, scale }) => {
+        // oxlint-disable-next-line typescript/no-implied-eval
+        const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
+        const { loadSource } = (await importer(
+          "/src/pdf/source/loadSource.ts",
+        )) as typeof import("../../src/pdf/source/loadSource");
+        const { buildSourceTextBlocks } = (await importer(
+          "/src/pdf/text/textBlocks.ts",
+        )) as typeof import("../../src/pdf/text/textBlocks");
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], "maldivian.pdf", { type: "application/pdf" });
+        const source = await loadSource(file, scale, "trailing-caret-test");
+        const pageIndex = 1;
+        const run = source.pages[pageIndex].textRuns.find((r) => r.text.startsWith("6.2"));
+        if (!run) throw new Error("6.2 source run not found");
+        const block = buildSourceTextBlocks(
+          source.pages[pageIndex].textRuns,
+          source.pages[pageIndex].pageNumber,
+        ).find((b) => b.sourceRunIds.includes(run.id));
+        if (!block) throw new Error("6.2 source paragraph block not found");
+        return { pageIndex, runId: block.id };
+      },
+      { b64: fixtureBytes, scale: RENDER_SCALE },
+    );
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator(`[data-page-index="${target.pageIndex}"]`).scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    const run = h.page.locator(
+      `[data-page-index="${target.pageIndex}"] [data-run-id="${target.runId}"]`,
+    );
+    await run.waitFor({ state: "visible" });
+    const runBox = await run.boundingBox();
+    expect(runBox, "couldn't find the Maldivian 6.2 paragraph").not.toBeNull();
+    await h.page.mouse.click(runBox!.x + runBox!.width * 0.5, runBox!.y + runBox!.height * 0.15);
+
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await editor.waitFor({ state: "visible" });
+    await h.page.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLElement>('[data-editor][contenteditable="true"]')
+          ?.getAttribute("data-text-visible") === "true",
+    );
+
+    const before = await editor.evaluate((el) =>
+      (el as HTMLElement).innerText.replace(/[\u2066-\u2069]/gu, "").replace(/\n$/u, ""),
+    );
+    const click = await editor.evaluate((el) => {
+      const root = el as HTMLElement;
+      const lines = Array.from(root.children).filter(
+        (child): child is HTMLElement => child instanceof HTMLElement,
+      );
+      const line = lines[lines.length - 1];
+      if (!line) throw new Error("paragraph editor line not found");
+      const range = document.createRange();
+      range.selectNodeContents(line);
+      const rects = Array.from(range.getClientRects()).filter(
+        (rect) => rect.width > 0 && rect.height > 0,
+      );
+      range.detach();
+      if (rects.length === 0) throw new Error("paragraph editor text rect not found");
+      const rootRect = root.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      const textLeft = Math.min(...rects.map((rect) => rect.left));
+      return {
+        x: Math.max(rootRect.left + 4, textLeft - 24),
+        y: lineRect.top + lineRect.height / 2,
+      };
+    });
+
+    await h.page.mouse.click(click.x, click.y);
+    await h.page.keyboard.type("X");
+    const edited = await editor.evaluate((el) =>
+      (el as HTMLElement).innerText.replace(/[\u2066-\u2069]/gu, "").replace(/\n$/u, ""),
+    );
+
+    expect(edited).toBe(`${before}X`);
   });
 });
