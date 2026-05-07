@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check": "tsc -b && oxfmt --check && oxlint src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
+    "check": "pnpm tailwind:canonical && tsc -b && oxfmt --check && oxlint src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
     "lint": "oxlint src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
+    "tailwind:canonical": "node scripts/checkTailwindCanonicalSpacing.mjs",
+    "tailwind:canonical:fix": "node scripts/checkTailwindCanonicalSpacing.mjs --fix",
     "preview": "vite preview",
     "test": "vitest run",
     "test:fixtures": "node test/fixtures/build.mjs",

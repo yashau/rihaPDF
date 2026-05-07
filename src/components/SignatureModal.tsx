@@ -121,7 +121,7 @@ export function SignatureModal({
                     </Tabs.Tab>
                   </Tabs.List>
                 </Tabs.ListContainer>
-                <Tabs.Panel id="library" className="h-[300px] overflow-auto sm:h-[340px]">
+                <Tabs.Panel id="library" className="h-75 overflow-auto sm:h-85">
                   <SignatureLibrary
                     assets={assets}
                     busy={busy}
@@ -139,7 +139,7 @@ export function SignatureModal({
                     }}
                   />
                 </Tabs.Panel>
-                <Tabs.Panel id="draw" className="h-[300px] overflow-auto sm:h-[340px]">
+                <Tabs.Panel id="draw" className="h-75 overflow-auto sm:h-85">
                   <DrawSignaturePanel
                     color={color}
                     onColorChange={setColor}
@@ -157,7 +157,7 @@ export function SignatureModal({
                     }}
                   />
                 </Tabs.Panel>
-                <Tabs.Panel id="import" className="h-[300px] overflow-auto sm:h-[340px]">
+                <Tabs.Panel id="import" className="h-75 overflow-auto sm:h-85">
                   <ImportSignaturePanel
                     busy={busy}
                     fileInputRef={fileInputRef}
