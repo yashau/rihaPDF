@@ -6,6 +6,7 @@ import {
   pushGraphicsState,
   rgb,
 } from "pdf-lib";
+import bidiFactory from "bidi-js";
 import type { AnnotationColor } from "@/domain/annotations";
 import { DEFAULT_TEXT_COLOR } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
@@ -26,6 +27,25 @@ import type {
 } from "./streamSurgery";
 
 type RichDrawLine = RichTextSpan[];
+type Bidi = {
+  getEmbeddingLevels(
+    text: string,
+    explicitDirection?: "ltr" | "rtl",
+  ): { levels: Uint8Array; paragraphs: Array<{ start: number; end: number; level: number }> };
+};
+type RichDrawToken = RichTextSpan & {
+  level?: number;
+};
+
+let bidiInstance: Bidi | null = null;
+
+function getBidi(): Bidi {
+  if (!bidiInstance) {
+    const factory = bidiFactory as () => Bidi;
+    bidiInstance = factory();
+  }
+  return bidiInstance;
+}
 
 function splitRichTextLines(block: RichTextBlock): RichDrawLine[] {
   const lines: RichDrawLine[] = [[]];
@@ -51,8 +71,8 @@ function trimLeadingLineSpaces(line: RichDrawLine): RichDrawLine {
     .filter((span) => span.text.length > 0);
 }
 
-function splitLineTokens(line: RichDrawLine): RichDrawLine {
-  const tokens: RichDrawLine = [];
+function splitLineTokens(line: RichDrawLine): RichDrawToken[] {
+  const tokens: RichDrawToken[] = [];
   for (const span of line) {
     for (const part of span.text.split(/(\s+|\d+(?:[./-]\d+)+|\d+|[()]+)/u)) {
       if (part.length > 0) tokens.push({ text: part, style: span.style });
@@ -63,6 +83,53 @@ function splitLineTokens(line: RichDrawLine): RichDrawLine {
 
 function isWhitespaceToken(span: RichTextSpan): boolean {
   return span.text.length > 0 && span.text.trim().length === 0;
+}
+
+function mirrorRtlPunctuation(text: string, level: number | undefined): string {
+  if (level === undefined || level % 2 === 0) return text;
+  return text.replace(/[()]/gu, (ch) => (ch === "(" ? ")" : "("));
+}
+
+function rtlVisualTokens(line: RichDrawLine): RichDrawToken[] {
+  const tokens = splitLineTokens(line);
+  const text = tokens.map((token) => token.text).join("");
+  if (text.length === 0) return tokens;
+  const levels = getBidi().getEmbeddingLevels(text, "rtl").levels;
+  let offset = 0;
+  const withLevels = tokens.map((token) => {
+    const start = offset;
+    offset += token.text.length;
+    let level = levels[start] ?? 1;
+    for (let i = start + 1; i < offset; i++) level = Math.max(level, levels[i] ?? level);
+    return { ...token, level, text: mirrorRtlPunctuation(token.text, level) };
+  });
+  return reorderTokensToVisual(withLevels);
+}
+
+function reorderTokensToVisual<T extends { level?: number }>(tokens: T[]): T[] {
+  let maxLevel = 0;
+  let minOddLevel = Infinity;
+  for (const token of tokens) {
+    const level = token.level ?? 0;
+    maxLevel = Math.max(maxLevel, level);
+    if (level % 2 === 1) minOddLevel = Math.min(minOddLevel, level);
+  }
+  if (minOddLevel === Infinity) return tokens.slice();
+
+  const ordered = tokens.slice();
+  for (let level = maxLevel; level >= minOddLevel; level--) {
+    let runStart = -1;
+    for (let i = 0; i <= ordered.length; i++) {
+      const inRun = i < ordered.length && (ordered[i].level ?? 0) >= level;
+      if (inRun && runStart === -1) {
+        runStart = i;
+      } else if (!inRun && runStart !== -1) {
+        ordered.splice(runStart, i - runStart, ...ordered.slice(runStart, i).reverse());
+        runStart = -1;
+      }
+    }
+  }
+  return ordered;
 }
 
 function spaceCount(line: RichDrawLine): number {
@@ -370,8 +437,19 @@ async function drawTokenizedRichLine(
     getFont: EmbeddedFontFactory;
   },
 ): Promise<void> {
-  const tokens = splitLineTokens(line);
-  let cursorX = opts.isRtl ? opts.x + opts.width : opts.x;
+  const tokens = opts.isRtl ? rtlVisualTokens(line) : splitLineTokens(line);
+  const tokenWidths: Array<{
+    span: RichDrawToken;
+    width: number;
+    family: string;
+    fontSizePt: number;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+    font: PDFFont;
+    fontBytes: Uint8Array | null;
+    style: EditStyle;
+  }> = [];
+  let totalWidth = 0;
   for (const span of tokens) {
     const style = mergeStyle(opts.baseStyle, span.style);
     const family = style.fontFamily ?? opts.fallbackFamily;
@@ -390,33 +468,49 @@ async function drawTokenizedRichLine(
       dir,
       opts.getFont,
     );
+    totalWidth += widthPt;
+    tokenWidths.push({
+      span,
+      width: widthPt,
+      family,
+      fontSizePt,
+      italic,
+      dir,
+      font: pdfFont,
+      fontBytes,
+      style,
+    });
+  }
+  let cursorX = opts.isRtl ? opts.x + opts.width - totalWidth : opts.x;
+  for (const item of tokenWidths) {
+    const span = item.span;
     if (isWhitespaceToken(span)) {
-      cursorX += opts.isRtl ? -widthPt : widthPt;
+      cursorX += item.width;
       continue;
     }
-    const drawX = opts.isRtl ? cursorX - widthPt : cursorX;
+    const drawX = cursorX;
     await drawTextWithStyle(page, span.text, {
       x: drawX,
       y: opts.y,
-      size: fontSizePt,
-      font: pdfFont,
-      fontBytes,
-      family,
-      italic,
-      dir,
+      size: item.fontSizePt,
+      font: item.font,
+      fontBytes: item.fontBytes,
+      family: item.family,
+      italic: item.italic,
+      dir: item.dir,
       getFont: opts.getFont,
-      color: style.color,
+      color: item.style.color,
     });
     drawDecorations(page, {
       x: drawX,
       y: opts.y,
-      width: widthPt,
-      size: fontSizePt,
-      underline: style.underline ?? opts.baseStyle.underline ?? false,
-      strikethrough: style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
-      color: style.color,
+      width: item.width,
+      size: item.fontSizePt,
+      underline: item.style.underline ?? opts.baseStyle.underline ?? false,
+      strikethrough: item.style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
+      color: item.style.color,
     });
-    cursorX += opts.isRtl ? -widthPt : widthPt;
+    cursorX += item.width;
   }
 }
 
