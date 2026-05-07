@@ -17,7 +17,7 @@ export function OverlayDeleteButton({
   return (
     <button
       type="button"
-      data-edit-toolbar
+      data-overlay-delete
       aria-label={ariaLabel}
       className={`absolute ${positionClassName} w-5 h-5 rounded-full bg-white border border-zinc-300 text-red-600 shadow flex items-center justify-center hover:bg-red-50`}
       style={{ zIndex: 40, touchAction: "none", ...style }}
