@@ -50,7 +50,7 @@ export function SignatureModal({
     if (!isOpen) return;
     // Signature storage is an external browser system; loading on open
     // intentionally syncs that store into modal state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refresh().catch((err) => {
       console.error("Failed to load signatures:", err);
       setError("Could not load saved signatures.");

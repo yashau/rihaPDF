@@ -11,9 +11,12 @@
 ![Tests](https://img.shields.io/badge/tests-105%20e2e-2ea44f)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
+![HeroUI](https://img.shields.io/badge/HeroUI-3-000000)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-4-6e9f18?logo=vitest&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-e2e-2ead33?logo=playwright&logoColor=white)
+![Oxlint](https://img.shields.io/badge/Oxlint-1.63-cc5a2f)
+![Oxfmt](https://img.shields.io/badge/Oxfmt-0.48-cc5a2f)
 ![pnpm](https://img.shields.io/badge/pnpm-11-f69220?logo=pnpm&logoColor=white)
 
 Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edit in place, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
@@ -119,9 +122,9 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 ```bash
 pnpm dev            # vite dev server (localhost:5173)
 pnpm build          # tsc + vite build → dist/
-pnpm check          # tsc -b && prettier --check && eslint  (CI gate)
-pnpm lint           # eslint .
-pnpm format         # prettier --write .
+pnpm check          # tsc -b && oxfmt --check && oxlint  (CI gate)
+pnpm lint           # oxlint over src/test/config entry points
+pnpm format         # oxfmt
 pnpm test           # vitest E2E suite (needs dev server up)
 pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
 pnpm cf:config      # generate wrangler.jsonc from env vars

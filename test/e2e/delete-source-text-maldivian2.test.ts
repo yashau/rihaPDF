@@ -71,7 +71,7 @@ describe("source-text deletion (maldivian2)", () => {
 async function firstPageText(pdfPath: string): Promise<string> {
   const bytes = fs.readFileSync(pdfPath);
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");

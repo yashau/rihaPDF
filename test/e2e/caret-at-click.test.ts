@@ -24,7 +24,7 @@ describe("text editor caret placement", () => {
     const fixtureBytes = fs.readFileSync(FIXTURE.maldivian).toString("base64");
     const target = await h.page.evaluate(
       async ({ b64, scale }) => {
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        // oxlint-disable-next-line typescript/no-implied-eval
         const importer = new Function("p", "return import(p)") as (
           p: string,
         ) => Promise<typeof import("../../src/lib/loadSource")>;

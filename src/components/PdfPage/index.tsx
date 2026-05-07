@@ -307,19 +307,19 @@ export function PdfPage({
 
   // Mounts the live canvas (preview or original) into our DOM slot and
   // sizes it. Mutating the DOM canvas's style is the whole point of
-  // this effect — react-hooks/immutability would have us copy first,
+  // this effect — the immutability rule would have us copy first,
   // but the canvas is a render artefact, not an owned prop value.
-  /* eslint-disable-next-line react-hooks/immutability */
+  /* oxlint-disable-next-line react-hooks/immutability */
   useEffect(() => {
     const node = containerRef.current?.querySelector("[data-canvas-slot]") as HTMLElement | null;
     if (!node) return;
     const liveCanvas = previewCanvas ?? page.canvas;
     node.replaceChildren(liveCanvas);
-    /* eslint-disable react-hooks/immutability */
+    /* oxlint-disable react-hooks/immutability */
     liveCanvas.style.display = "block";
     liveCanvas.style.width = `${page.viewWidth}px`;
     liveCanvas.style.height = `${page.viewHeight}px`;
-    /* eslint-enable react-hooks/immutability */
+    /* oxlint-enable react-hooks/immutability */
   }, [page, previewCanvas]);
 
   /** Add a highlight annotation covering a single run. We don't reuse

@@ -36,7 +36,7 @@ export function useMobileChrome(isMobile: boolean) {
   // document is closed — both states make the toggle invisible/disabled
   // and a stuck-open drawer would be unrecoverable.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     if (!isMobile) setMobileSidebarOpen(false);
   }, [isMobile]);
 

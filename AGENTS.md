@@ -72,10 +72,10 @@ The dev server is expected at `http://localhost:5173` for tests.
 ```bash
 pnpm dev            # Vite dev server
 pnpm build          # TypeScript build + Vite production build
-pnpm check          # TypeScript + Prettier check + ESLint
-pnpm lint           # ESLint only
-pnpm format         # Prettier write
-pnpm format:check   # Prettier check only
+pnpm check          # TypeScript + Oxfmt check + Oxlint
+pnpm lint           # Oxlint over src/test/config entry points
+pnpm format         # Oxfmt write
+pnpm format:check   # Oxfmt check only
 pnpm test           # Vitest E2E suite; requires pnpm dev already running
 pnpm test:fixtures  # Rebuild generated fixture PDFs
 pnpm preview        # Preview production build
@@ -232,8 +232,8 @@ Use diagnostic scripts in `scripts/` for investigation. Do not treat them as a r
 ## Code Style
 
 - TypeScript is strict enough that `pnpm check` should remain clean.
-- Formatting is Prettier-controlled. Do not hand-format against Prettier.
-- ESLint uses type-aware rules for `src`, tests, scripts, and config files.
+- Formatting is Oxfmt-controlled. Do not hand-format against Oxfmt.
+- Oxlint uses migrated type-aware rules for `src`, tests, and config entry points.
 - Use React function components and hooks consistent with the existing code.
 - Prefer lucide-react icons for UI actions when adding buttons.
 - Keep comments short and useful. Add comments for non-obvious PDF/content-stream logic, not for ordinary React or TypeScript mechanics.

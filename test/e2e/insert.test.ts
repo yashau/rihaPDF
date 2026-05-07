@@ -94,7 +94,7 @@ describe("inserting net-new content", () => {
 
     // Verify text + image count via the app's own modules.
     const checks = await h.page.evaluate(async (b64) => {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      // oxlint-disable-next-line typescript/no-implied-eval
       const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       const sourceImages = (await importer(
@@ -123,7 +123,7 @@ describe("inserting net-new content", () => {
 async function captureImageCount(pdfPath: string): Promise<number> {
   const bytes = fs.readFileSync(pdfPath);
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const mod = (await importer(

@@ -116,7 +116,7 @@ export function PageSidebar({
     }
 
     if (stale.size === 0 && additions.size === 0) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     setThumbs((prev) => {
       const next = new Map<string, string>();
       for (const [k, v] of prev) {
@@ -126,7 +126,7 @@ export function PageSidebar({
       for (const [k, v] of additions) next.set(k, v);
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [slots, sources]);
 
   const insertBlankAt = (i: number) => {

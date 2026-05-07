@@ -216,7 +216,7 @@ export function CommentLayer({
   // Close the inline editor when the user switches tool — keeps the
   // textarea from sticking around as a stale overlay during a tool change.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     if (tool !== "select") setEditingCommentId(null);
   }, [tool]);
 
@@ -237,7 +237,7 @@ export function CommentLayer({
     }
     seenCommentIdsRef.current = currentIds;
     if (newlyAdded !== null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
       setEditingCommentId(newlyAdded);
     }
   }, [annotations]);

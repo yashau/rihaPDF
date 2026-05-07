@@ -103,7 +103,7 @@ export function EditField({
     if (measureRef.current) measureRef.current.textContent = text || " ";
     if (inputRef.current) focusInputAtInitialCaret(inputRef.current, initialCaretPoint);
     remeasure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   // Latest commit closure — captured by the document-level click handler

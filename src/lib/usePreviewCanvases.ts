@@ -125,8 +125,8 @@ export function usePreviewCanvases({
       if (specs.length > 0) tasks.push({ sourceKey, specs });
     }
     if (tasks.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map()));
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
+      setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map<string, HTMLCanvasElement>()));
       return;
     }
     const gen = ++previewGenRef.current;

@@ -266,7 +266,7 @@ export async function dynImport<T = unknown>(page: Page, modulePath: string): Pr
     // The Function() bypass is intentional: vitest's SSR transform
     // rewrites raw `import(p)` to a helper that doesn't exist in the
     // page browser's runtime, so wrap to defer parsing.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("path", "return import(path)") as (p: string) => Promise<unknown>;
     return await importer(p);
   }, modulePath) as Promise<T>;

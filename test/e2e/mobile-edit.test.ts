@@ -144,7 +144,7 @@ async function seedSignatureStorage(): Promise<void> {
       req.onblocked = () => resolve();
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const sig = (await importer(
       "/src/lib/signatures.ts",

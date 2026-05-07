@@ -31,7 +31,7 @@ async function captureImages(pdfPath: string) {
   const bytes = fs.readFileSync(pdfPath);
   const b64 = bytes.toString("base64");
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (
       p: string,
     ) => Promise<typeof import("../../src/lib/sourceImages")>;

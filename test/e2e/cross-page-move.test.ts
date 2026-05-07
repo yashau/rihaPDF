@@ -82,7 +82,7 @@ async function saveAndDownload(name: string): Promise<string> {
 async function extractTextByPage(pdfPath: string): Promise<string[]> {
   const b64 = fs.readFileSync(pdfPath).toString("base64");
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -106,7 +106,7 @@ async function extractTextByPage(pdfPath: string): Promise<string[]> {
 async function extractImageCountsByPage(pdfPath: string): Promise<number[]> {
   const b64 = fs.readFileSync(pdfPath).toString("base64");
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const mod = (await importer(
       "/src/lib/sourceImages.ts",

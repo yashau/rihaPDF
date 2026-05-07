@@ -104,7 +104,7 @@ function nativeInputValueSetter(
 ): boolean {
   const proto = Object.getPrototypeOf(el) as object;
   const desc = Object.getOwnPropertyDescriptor(proto, "value");
-  // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked via .call below
+  // oxlint-disable-next-line typescript/unbound-method -- invoked via .call below
   const setter = desc?.set;
   if (!setter) return false;
   setter.call(el, value);

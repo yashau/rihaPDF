@@ -35,7 +35,7 @@ async function clearSignatureStorage() {
 async function captureImageCount(pdfPath: string): Promise<number> {
   const bytes = fs.readFileSync(pdfPath);
   return h.page.evaluate(async (b64) => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const mod = (await importer(
@@ -102,7 +102,7 @@ describe("signature insertion", () => {
   test("import processing removes a light background and trims transparent pixels", async () => {
     await h.page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
     const result = await h.page.evaluate(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      // oxlint-disable-next-line typescript/no-implied-eval
       const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const sig = (await importer(
         "/src/lib/signatures.ts",
