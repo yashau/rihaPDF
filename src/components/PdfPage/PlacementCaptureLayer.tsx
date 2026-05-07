@@ -13,7 +13,9 @@ export function PlacementCaptureLayer({
   tool: ToolMode;
   onCanvasClick: (pdfX: number, pdfY: number) => void;
 }) {
-  if (tool !== "addText" && tool !== "addImage" && tool !== "comment") return null;
+  if (tool !== "addText" && tool !== "addImage" && tool !== "comment" && tool !== "redact") {
+    return null;
+  }
 
   return (
     <div

@@ -32,6 +32,11 @@ export type Redaction = PdfRect & {
  *  user can resize after the click to tighten or expand as needed. */
 export const REDACTION_LINE_PAD: LineMarkupExtents = { aboveBaseline: 1.0, belowBaseline: 0.5 };
 
+/** Default size for a freshly-dropped redaction rectangle, in PDF
+ *  points. The user can drag or resize it immediately after placement. */
+export const REDACTION_DEFAULT_WIDTH = 160;
+export const REDACTION_DEFAULT_HEIGHT = 40;
+
 let counter = 0;
 export function newRedactionId(): string {
   counter += 1;

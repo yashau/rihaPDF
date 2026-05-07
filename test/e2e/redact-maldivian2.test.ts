@@ -59,14 +59,12 @@ describe("redaction round-trip (maldivian2)", () => {
     expect(target, "page-0 should have at least one ≥10-char run").not.toBeNull();
     const originalText = target!.text;
 
-    // Default-sized redaction over the whole run.
+    const targetRun = h.page.locator(`[data-run-id="${target!.id}"]`);
     await h.page.locator('[data-testid="tool-redact"]').click();
     await h.page.waitForTimeout(100);
-    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
-    await h.page.waitForTimeout(150);
+    const redactionEl = await dropRedactionOverRun(targetRun);
 
     // Select the rect so its resize handles render.
-    const redactionEl = h.page.locator("[data-redaction-id]").first();
     const redBox = await redactionEl.boundingBox();
     expect(redBox, "redaction overlay should have a bbox").not.toBeNull();
     await h.page.mouse.click(redBox!.x + redBox!.width / 2, redBox!.y + redBox!.height / 2);
@@ -144,11 +142,10 @@ describe("redaction round-trip (maldivian2)", () => {
     expect(target, "page-0 should have at least one substantial text run").not.toBeNull();
     const originalText = target!.text;
 
-    // Activate redact tool, then click the run.
+    // Activate redact tool, then place a redaction over the run.
     await h.page.locator('[data-testid="tool-redact"]').click();
     await h.page.waitForTimeout(100);
-    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
-    await h.page.waitForTimeout(150);
+    await dropRedactionOverRun(h.page.locator(`[data-run-id="${target!.id}"]`));
 
     // The in-editor preview should now have a black rectangle on
     // page 0 (selectable / resizable, but here we just save).
@@ -188,6 +185,40 @@ describe("redaction round-trip (maldivian2)", () => {
     ).toBe(-1);
   });
 });
+
+async function dropRedactionOverRun(run: ReturnType<Harness["page"]["locator"]>) {
+  const runBox = await run.boundingBox();
+  expect(runBox, "target text run should have a bbox").not.toBeNull();
+  const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+  expect(pageBox, "page should have a bbox").not.toBeNull();
+
+  const x = Math.max(pageBox!.x + 2, runBox!.x - 6);
+  const y = Math.max(pageBox!.y + 2, runBox!.y - 8);
+  await h.page.mouse.click(x, y);
+  await h.page.waitForTimeout(150);
+
+  const redactionEl = h.page.locator("[data-redaction-id]").first();
+  const redBox = await redactionEl.boundingBox();
+  expect(redBox, "redaction overlay should be created").not.toBeNull();
+
+  const desiredRight = Math.min(pageBox!.x + pageBox!.width - 2, runBox!.x + runBox!.width + 6);
+  const desiredBottom = Math.min(pageBox!.y + pageBox!.height - 2, runBox!.y + runBox!.height + 8);
+  if (redBox!.x + redBox!.width < desiredRight || redBox!.y + redBox!.height < desiredBottom) {
+    const handle = redactionEl.locator('[data-resize-handle="br"]');
+    const handleBox = await handle.boundingBox();
+    expect(handleBox, "BR resize handle should be visible after placement").not.toBeNull();
+    await h.page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await h.page.mouse.down();
+    await h.page.mouse.move(desiredRight, desiredBottom, { steps: 8 });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(150);
+  }
+
+  return redactionEl;
+}
 
 async function firstPageText(pdfPath: string): Promise<string> {
   const bytes = fs.readFileSync(pdfPath);

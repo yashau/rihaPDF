@@ -10,7 +10,12 @@ import {
 import { blankSourceKey } from "@/domain/blankSource";
 import type { FormValue } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { Redaction } from "@/domain/redactions";
+import {
+  REDACTION_DEFAULT_HEIGHT,
+  REDACTION_DEFAULT_WIDTH,
+  newRedactionId,
+  type Redaction,
+} from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import type { PendingImage, ToolMode } from "@/domain/toolMode";
 import type { Selection } from "@/domain/selection";
@@ -288,6 +293,30 @@ export function useDocumentMutations({
           return next;
         });
         setTool("select");
+        return;
+      }
+      if (tool === "redact") {
+        const id = newRedactionId();
+        recordHistory(null);
+        setRedactions((prev) => {
+          const next = new Map(prev);
+          const arr = [
+            ...(next.get(slotId) ?? []),
+            {
+              id,
+              sourceKey: slotSourceKey,
+              pageIndex: slotPageIndex,
+              pdfX,
+              pdfY: pdfY - REDACTION_DEFAULT_HEIGHT,
+              pdfWidth: REDACTION_DEFAULT_WIDTH,
+              pdfHeight: REDACTION_DEFAULT_HEIGHT,
+            } satisfies Redaction,
+          ];
+          next.set(slotId, arr);
+          return next;
+        });
+        setSelection({ kind: "redaction", slotId, id });
+        setTool("select");
       }
     },
     [
@@ -299,6 +328,7 @@ export function useDocumentMutations({
       setInsertedImages,
       setInsertedTexts,
       setPendingImage,
+      setRedactions,
       setSelection,
       setTool,
       slotsRef,

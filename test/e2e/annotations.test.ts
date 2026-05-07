@@ -502,7 +502,7 @@ describe("annotation round-trip", () => {
     await h.page.waitForTimeout(150);
 
     await h.page.locator('[data-testid="tool-redact"]').click();
-    await targetRun.click();
+    await h.page.mouse.click(inkTargetBox!.x + 12, inkTargetBox!.y - 8);
     await h.page.waitForTimeout(150);
     const redactionBox = await h.page.locator("[data-redaction-id]").first().boundingBox();
     expect(redactionBox, "redaction overlay should be created").not.toBeNull();
@@ -512,18 +512,38 @@ describe("annotation round-trip", () => {
     expect(inks).toHaveLength(1);
     expect(inks[0].inkList, "/InkList should survive with outside segments only").not.toBeNull();
 
-    const redLeft = redactionBox!.x;
-    const redRight = redactionBox!.x + redactionBox!.width;
-    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
-    expect(pageBox).not.toBeNull();
+    const redactionPdfSpan = await h.page
+      .locator("[data-redaction-id]")
+      .first()
+      .evaluate((el, fallbackScale) => {
+        const pageEl = el.closest<HTMLElement>("[data-page-index]");
+        const pageScale = Number(pageEl?.dataset.pageScale) || fallbackScale;
+        const pageHeight = Number(pageEl?.dataset.viewHeight) / pageScale;
+        const left = Number.parseFloat((el as HTMLElement).style.left);
+        const top = Number.parseFloat((el as HTMLElement).style.top);
+        const width = Number.parseFloat((el as HTMLElement).style.width);
+        const height = Number.parseFloat((el as HTMLElement).style.height);
+        return {
+          left: left / pageScale,
+          right: (left + width) / pageScale,
+          bottom: pageHeight - (top + height) / pageScale,
+          top: pageHeight - top / pageScale,
+        };
+      }, RENDER_SCALE);
 
     for (const stroke of inks[0].inkList!) {
       for (let i = 0; i + 1 < stroke.length; i += 2) {
-        const xScreen = pageBox!.x + stroke[i] * RENDER_SCALE;
+        const xPdf = stroke[i];
+        const yPdf = stroke[i + 1];
+        const insideRedaction =
+          xPdf > redactionPdfSpan.left + 1 &&
+          xPdf < redactionPdfSpan.right - 1 &&
+          yPdf > redactionPdfSpan.bottom + 1 &&
+          yPdf < redactionPdfSpan.top - 1;
         expect(
-          xScreen <= redLeft + 1 || xScreen >= redRight - 1,
-          `ink point ${xScreen} should not remain inside saved redaction span ${redLeft}..${redRight}`,
-        ).toBe(true);
+          insideRedaction,
+          `ink point ${xPdf},${yPdf} should not remain inside saved redaction rect ${JSON.stringify(redactionPdfSpan)}`,
+        ).toBe(false);
       }
     }
   }, 60_000);

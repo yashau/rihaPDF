@@ -126,7 +126,7 @@ export function useSaveStatus({
         : tool === "highlight"
           ? "Tap a text run to highlight"
           : tool === "redact"
-            ? "Tap a text run to redact (drag corners to resize)"
+            ? "Tap a page to drop a redaction (drag corners to resize)"
             : tool === "comment"
               ? "Tap a page to drop a comment"
               : tool === "ink"
