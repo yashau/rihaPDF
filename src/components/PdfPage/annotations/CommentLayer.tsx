@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import type { ToolMode } from "@/domain/toolMode";
@@ -9,6 +8,7 @@ import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { attachThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { findPageAtPoint, isFocusMovingToToolbar } from "../helpers";
 import { MobileThaanaToggleBar } from "../MobileThaanaToggleBar";
+import { OverlayDeleteButton } from "../overlays/OverlayDeleteButton";
 import { rgba, vpY } from "./helpers";
 
 /** Comment-box layer. HTML divs (not SVG) so we can drop a real
@@ -364,17 +364,10 @@ export function CommentLayer({
               </div>
             )}
             {tool === "select" && !isEditing ? (
-              <button
-                type="button"
+              <OverlayDeleteButton
                 aria-label="Delete comment"
-                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-zinc-300 text-red-600 shadow flex items-center justify-center hover:bg-red-50"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAnnotationDelete(a.id);
-                }}
-              >
-                <Trash2 size={10} aria-hidden />
-              </button>
+                onDelete={() => onAnnotationDelete(a.id)}
+              />
             ) : null}
           </div>
         );

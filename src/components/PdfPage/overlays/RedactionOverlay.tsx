@@ -122,11 +122,7 @@ export function RedactionOverlay({
     >
       {isSelected ? (
         <>
-          <OverlayDeleteButton
-            aria-label="Delete redaction"
-            positionClassName="-top-7 -right-2"
-            onDelete={onDelete}
-          />
+          <OverlayDeleteButton aria-label="Delete redaction" onDelete={onDelete} />
           <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} />
         </>
       ) : null}

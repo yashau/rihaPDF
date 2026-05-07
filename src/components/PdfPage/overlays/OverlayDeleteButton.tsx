@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 export function OverlayDeleteButton({
   "aria-label": ariaLabel,
   onDelete,
-  positionClassName = "-top-2 -right-2",
+  positionClassName = "-bottom-7 -right-2",
   style,
 }: {
   "aria-label": string;

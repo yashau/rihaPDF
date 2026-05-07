@@ -269,7 +269,7 @@ export function EditField({
           positionClassName=""
           style={{
             left: editorLeft + width - 10,
-            top: editorTop - 28,
+            top: editorTop + run.bounds.height + 8,
           }}
           onDelete={onDelete}
         />

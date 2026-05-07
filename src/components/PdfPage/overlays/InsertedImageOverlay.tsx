@@ -183,11 +183,7 @@ export function InsertedImageOverlay({
       >
         {isSelected ? (
           <>
-            <OverlayDeleteButton
-              aria-label="Delete inserted image"
-              positionClassName="-top-7 -right-2"
-              onDelete={onDelete}
-            />
+            <OverlayDeleteButton aria-label="Delete inserted image" onDelete={onDelete} />
             <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} />
           </>
         ) : null}

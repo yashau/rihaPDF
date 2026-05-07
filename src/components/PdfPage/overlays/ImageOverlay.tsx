@@ -166,11 +166,7 @@ export function ImageOverlay({
     >
       {movable && isSelected ? (
         <>
-          <OverlayDeleteButton
-            aria-label="Delete image"
-            positionClassName="-top-7 -right-2"
-            onDelete={onDelete}
-          />
+          <OverlayDeleteButton aria-label="Delete image" onDelete={onDelete} />
           <ResizeHandles parentW={boxW} parentH={boxH} onPointerDown={startResize} />
         </>
       ) : null}

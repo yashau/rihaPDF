@@ -380,7 +380,6 @@ export function InsertedTextOverlay({
         {isEditing ? (
           <OverlayDeleteButton
             aria-label="Delete inserted text"
-            positionClassName="-top-7 -right-2"
             onDelete={() => {
               onDelete();
               onClose();

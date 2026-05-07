@@ -160,11 +160,7 @@ export function HighlightOverlay({
     >
       {isSelected && resizable ? (
         <>
-          <OverlayDeleteButton
-            aria-label="Delete highlight"
-            positionClassName="-top-7 -right-2"
-            onDelete={onDelete}
-          />
+          <OverlayDeleteButton aria-label="Delete highlight" onDelete={onDelete} />
           <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
           <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
           <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />

@@ -317,11 +317,7 @@ function InkOverlay({
       >
         {svg}
         {isSelected ? (
-          <OverlayDeleteButton
-            aria-label="Delete ink annotation"
-            positionClassName="-top-7 -right-2"
-            onDelete={onDeleteSelection}
-          />
+          <OverlayDeleteButton aria-label="Delete ink annotation" onDelete={onDeleteSelection} />
         ) : null}
       </div>
       {renderPortal({ pointerEvents: "none" }, svg)}
