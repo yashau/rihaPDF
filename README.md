@@ -232,10 +232,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 - [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
 - [ ] **Round-trip existing `/Annots`.** Source annotations pass through `copyPages` but aren't surfaced as editable. Parse `/Annots` in [loadSource.ts](src/lib/loadSource.ts).
 
-### Testing / CI
-
-- [ ] **Assert fixture determinism in CI.** CI regenerates synthetic PDFs with `pnpm test:fixtures`; add a follow-up `git diff --exit-code test/fixtures` so fixture drift is caught instead of silently tested.
-
 ### Source-PDF support
 
 - [ ] **PDFs without `/ToUnicode`.** Need a glyph-name → codepoint table for Adobe Thaana glyph names. Survey of ~140 gazette.gov.mv PDFs (via [sweepGazette.mjs](scripts/sweepGazette.mjs)) found no real cases in the wild — deprioritised until a fixture shows up.
