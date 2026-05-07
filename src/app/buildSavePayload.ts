@@ -4,11 +4,11 @@ import {
   type ImageMove,
   type ShapeDelete,
   type TextInsert,
-} from "@/lib/save/types";
+} from "@/pdf/save/types";
 import type { Annotation } from "@/domain/annotations";
 import { blankSourceKey } from "@/domain/blankSource";
 import type { FormValue } from "@/domain/formFields";
-import type { FormFill } from "@/lib/saveFormFields";
+import type { FormFill } from "@/pdf/save/forms";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";

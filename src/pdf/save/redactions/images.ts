@@ -1,7 +1,7 @@
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 import type { Redaction } from "@/domain/redactions";
 import { type Mat6, transformPoint } from "@/pdf/geometry/pdfGeometry";
-import { lookupPageXObjectRef } from "./xobjects";
+import { lookupPageXObjectRef } from "../xobjects";
 
 export function rectContains(
   outer: Redaction,

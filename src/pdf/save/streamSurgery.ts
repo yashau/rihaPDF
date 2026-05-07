@@ -9,12 +9,12 @@ import {
 import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
 import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
-import { planRedactionStrip } from "../redactGlyphs";
+import { planRedactionStrip } from "./redactions/glyphs";
 import type { Edit, ImageMove, ShapeDelete } from "./types";
 import type { LoadedSourceContext } from "./context";
 import { findMatchingQ, lookupPageXObjectRef, readImageBytesFromXObject } from "./xobjects";
-import { makeRedactedImageXObject, rectContains } from "./redactionImages";
-import { markVectorPaintOpsForRedaction, pruneUnusedPageXObjects } from "./vectorRedaction";
+import { makeRedactedImageXObject, rectContains } from "./redactions/images";
+import { markVectorPaintOpsForRedaction, pruneUnusedPageXObjects } from "./redactions/vectors";
 
 /** Plan for a same-source draw: emit drawText on this source's `doc`
  *  at (boxLeftPdf, baselineYPdf) on `targetPageIndex`. */

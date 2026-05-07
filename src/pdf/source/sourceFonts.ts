@@ -16,7 +16,7 @@ import {
   type PdfTextState,
   type TextShowSegment,
 } from "@/pdf/content/pdfTextWalker";
-import { readFontMetrics, type FontMetrics } from "@/lib/redactGlyphs";
+import { readFontMetrics, type FontMetrics } from "@/pdf/save/redactions/glyphs";
 
 export type FontShowGlyphSpan = {
   gid: number;

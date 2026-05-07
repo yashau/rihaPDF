@@ -16,7 +16,7 @@ import {
   pushGraphicsState,
   rgb,
 } from "pdf-lib";
-import { applyEditsAndSave } from "../../src/lib/save";
+import { applyEditsAndSave } from "../../src/pdf/save";
 import type { LoadedSource } from "../../src/pdf/source/loadSource";
 import { extractPageImages } from "../../src/pdf/source/sourceImages";
 import { extractPageShapes } from "../../src/pdf/source/sourceShapes";

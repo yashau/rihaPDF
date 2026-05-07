@@ -205,7 +205,7 @@ export function useDocumentIo({
     if (sources.size === 0 || !primaryFilename) return;
     setBusy(true);
     try {
-      const { applyEditsAndSave, downloadBlob } = await import("@/lib/save");
+      const { applyEditsAndSave, downloadBlob } = await import("@/pdf/save");
       const {
         flatEdits,
         flatImageMoves,

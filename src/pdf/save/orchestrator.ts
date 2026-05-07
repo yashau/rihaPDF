@@ -13,15 +13,15 @@ import type { PageSlot } from "@/domain/slots";
 import type { LoadedSource } from "@/pdf/source/loadSource";
 import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "@/domain/blankSource";
 import type { Annotation } from "@/domain/annotations";
-import { applyAnnotationsToDoc } from "../saveAnnotations";
-import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "../saveFormFields";
-import { applyRedactionsToFormWidgets } from "../redactFormFields";
+import { applyAnnotationsToDoc } from "./annotations";
+import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "./forms";
+import { applyRedactionsToFormWidgets } from "./redactions/forms";
 import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
 import { type Redaction } from "@/domain/redactions";
 import {
   applyRedactionsToNewAnnotations,
   applyRedactionsToPageAnnotations,
-} from "../redactAnnotations";
+} from "./redactions/annotations";
 import { removeParsedSourceAnnotationsFromDoc } from "@/pdf/source/sourceAnnotations";
 import type { Edit, ImageInsert, ImageMove, ShapeDelete, TextInsert } from "./types";
 import { makeFontFactory, type LoadedSourceContext } from "./context";
