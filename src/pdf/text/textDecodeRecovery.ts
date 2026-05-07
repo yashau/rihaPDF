@@ -41,7 +41,6 @@ export function applyShowDecodes(
   type DecodedShow = {
     show: FontShow;
     text: string;
-    visualPieces?: NonNullable<TextItem["visualPieces"]>;
   };
   const decodedShows: DecodedShow[] = [];
   for (const show of fontShows) {
@@ -50,17 +49,14 @@ export function applyShowDecodes(
     if (!map) continue;
     let decoded = decodeViaMap(show.bytes, map);
     if (decoded == null || decoded.length === 0) continue;
-    const visualPieces = visualPiecesForShow(show, decoded, scale, viewportTransform);
     const isRtl = /[֐-ࣿ\u{10800}-\u{10FFF}]/u.test(decoded);
-    if (!isRtl) {
-      const text = decoded.replace(/^\s+|\s+$/g, "");
-      if (text.length > 0 || visualPieces) decodedShows.push({ show, text, visualPieces });
-      continue;
-    }
+    // Only override RTL shows. pdf.js extracts Latin / digit text
+    // correctly via the same `/ToUnicode` CMap that breaks for fili.
+    if (!isRtl) continue;
     decoded = Array.from(decoded).reverse().join("");
     decoded = decoded.replace(/^\s+|\s+$/g, "");
     if (decoded.length === 0) continue;
-    decodedShows.push({ show, text: decoded, visualPieces });
+    decodedShows.push({ show, text: decoded });
   }
 
   stampContentStreamOpsOnItems(items, fontShows, scale, viewportHeight);
@@ -137,7 +133,6 @@ export function applyShowDecodes(
         fontName: sameLine[0]?.fontName ?? "",
         hasEOL: false,
         contentStreamOpIndices: [ds.show.opIndex],
-        visualPieces: ds.visualPieces,
       });
       continue;
     }
@@ -172,7 +167,6 @@ export function applyShowDecodes(
     }
     main.str = ds.text;
     main.contentStreamOpIndices = [...(main.contentStreamOpIndices ?? []), ds.show.opIndex];
-    main.visualPieces = [...(main.visualPieces ?? []), ...(ds.visualPieces ?? [])];
     for (const it of claimed) {
       if (it !== main) {
         it.str = "";
@@ -180,33 +174,6 @@ export function applyShowDecodes(
       }
     }
   }
-}
-
-function viewportX(viewportTransform: number[], x: number, y: number): number {
-  return viewportTransform[0] * x + viewportTransform[2] * y + viewportTransform[4];
-}
-
-function visualPiecesForShow(
-  show: FontShow,
-  decodedText: string,
-  scale: number,
-  viewportTransform: number[],
-): NonNullable<TextItem["visualPieces"]> | undefined {
-  if (!show.glyphSpans || show.glyphSpans.length === 0) return undefined;
-  const chars = Array.from(decodedText);
-  const count = Math.min(chars.length, show.glyphSpans.length);
-  const pieces: NonNullable<TextItem["visualPieces"]> = [];
-  for (let i = 0; i < count; i++) {
-    const text = chars[i];
-    if (/\s/u.test(text)) continue;
-    const span = show.glyphSpans[i];
-    const x0 = viewportX(viewportTransform, span.x0, show.y);
-    const x1 = viewportX(viewportTransform, span.x1, show.y);
-    const left = Math.min(x0, x1);
-    const width = Math.max(Math.abs(x1 - x0), scale);
-    pieces.push({ text, left, width });
-  }
-  return pieces.length > 0 ? pieces : undefined;
 }
 
 /** Pair every content-stream Tj/TJ show with the closest pdf.js item

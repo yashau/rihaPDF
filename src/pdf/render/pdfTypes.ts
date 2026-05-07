@@ -29,9 +29,6 @@ export type TextItem = {
    *  Filled in by `applyShowDecodes` so save / preview-strip can map
    *  an item back to the exact ops it owns without position guessing. */
   contentStreamOpIndices?: number[];
-  /** Source glyph fragments in viewport pixels, decoded directly from
-   *  content-stream text-show bytes and paired with their glyph spans. */
-  visualPieces?: Array<{ text: string; left: number; width: number }>;
 };
 
 /**
@@ -55,13 +52,6 @@ export type TextRun = {
    *  offset can appear more than once at bidi boundaries where the
    *  same insertion point has two visual edges. */
   caretPositions?: Array<{ offset: number; x: number }>;
-  /** Source-PDF visual fragments in viewport pixels. These preserve
-   *  the rendered order/placement before pdf.js logical text and bidi
-   *  normalization collapse the run into an editable string. */
-  visualPieces?: Array<{ text: string; left: number; width: number }>;
-  /** Source text reconstructed from visual glyph positions. Intended
-   *  for display/editing when pdf.js logical text gives poor bidi order. */
-  visualText?: string;
   /** Viewport-pixel bounding box (left, top, width, height). */
   bounds: { left: number; top: number; width: number; height: number };
   /** Font height in viewport pixels (= |scaleY|). */

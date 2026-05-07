@@ -41,22 +41,20 @@ type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
   ? P
   : never;
 
+const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
+const NUMERIC_MARKER_RE = /(^|\s)([()[\].-]*\d[\d()[\].-]*)(?=$|\s)/gu;
 const LRI = "\u2066";
 const PDI = "\u2069";
-const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
-const RTL_INLINE_NUMBER_RE = /[()[\]./-]*\d[\d()[\]./-]*/gu;
 
-function protectRtlInlineNumbers(text: string, rtl: boolean): string {
+function protectRtlNumericMarkers(text: string, rtl: boolean): string {
   if (!rtl) return text;
-  return text.replace(RTL_INLINE_NUMBER_RE, (value) => `${LRI}${value}${PDI}`);
+  return text.replace(NUMERIC_MARKER_RE, (_match, prefix: string, marker: string) => {
+    return `${prefix}${LRI}${marker}${PDI}`;
+  });
 }
 
 function stripBidiControls(text: string): string {
   return text.replace(BIDI_CONTROL_RE, "");
-}
-
-function hasRtlText(text: string): boolean {
-  return /[\u0590-\u08ff\u0780-\u07bf]/u.test(text);
 }
 
 function colorToCssValue(color: AnnotationColor | undefined): string | undefined {
@@ -126,7 +124,7 @@ function createInitialEditorState(block: RichTextBlock, pageScale: number, rtl: 
     const paragraph = $createParagraphNode();
     const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
     for (const span of spans) {
-      const pieces = protectRtlInlineNumbers(span.text, rtl).split("\n");
+      const pieces = protectRtlNumericMarkers(span.text, rtl).split("\n");
       pieces.forEach((piece, index) => {
         if (index > 0) paragraph.append($createLineBreakNode());
         if (piece.length === 0) return;
@@ -309,11 +307,7 @@ export function RichTextEditor({
       onError(error: Error) {
         throw error;
       },
-      editorState: createInitialEditorState(
-        initial,
-        pageScale,
-        defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
-      ),
+      editorState: createInitialEditorState(initial, pageScale, defaultStyle.dir === "rtl"),
     }),
     [defaultStyle.dir, id, initial, pageScale],
   );
@@ -363,8 +357,7 @@ export function RichTextEditor({
 
   const fontFamily = activeStyle.fontFamily ?? defaultStyle.fontFamily;
   const fontSize = activeStyle.fontSize ?? defaultStyle.fontSize;
-  const editorDir =
-    activeStyle.dir ?? defaultStyle.dir ?? (hasRtlText(initial.text) ? "rtl" : "auto");
+  const editorDir = activeStyle.dir ?? defaultStyle.dir ?? "auto";
   const editorNode = (
     <LexicalComposer initialConfig={initialConfig}>
       <EditorRefPlugin editorRef={editorRef} />
@@ -399,18 +392,16 @@ export function RichTextEditor({
               outline: "2px solid rgb(59, 130, 246)",
               background: "white",
               color: colorToCss(activeStyle.color) ?? "black",
-              caretColor: "black",
               colorScheme: "light",
               fontFamily: `"${fontFamily}"`,
               fontSize: `${fontSize * pageScale}px`,
               lineHeight: `${lineHeight}px`,
               textAlign: textAlign === "justify" ? "justify" : "start",
-              textAlignLast: textAlign === "justify" ? "justify" : "auto",
-              whiteSpace: textAlign === "justify" ? "pre-line" : wrap ? "pre-wrap" : "pre",
+              textAlignLast: "auto",
+              whiteSpace: wrap ? "pre-wrap" : "pre",
               overflowWrap: wrap ? "break-word" : "normal",
               wordBreak: "normal",
               boxSizing: "border-box",
-              direction: editorDir === "auto" ? undefined : editorDir,
               unicodeBidi: "plaintext",
             }}
             onKeyDown={(e) => {
@@ -442,8 +433,6 @@ export function RichTextEditor({
           top,
           zIndex: 25,
           pointerEvents: "auto",
-          width,
-          minHeight,
         }}
       >
         {editorNode}

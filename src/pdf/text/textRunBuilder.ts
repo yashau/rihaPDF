@@ -100,57 +100,6 @@ function fontShowForItem(it: TextItem, fontShowsByOpIndex: Map<number, FontShow>
 
 type CaretPiece = { text: string; startX: number; endX: number };
 
-function isCombiningMark(text: string): boolean {
-  return COMBINING_MARK_RE.test(text);
-}
-
-function buildVisualPiecesFromCaretPieces(
-  pieces: CaretPiece[],
-  minLeft: number,
-): TextRun["visualPieces"] {
-  const clusters: Array<{ text: string; left: number; right: number }> = [];
-  for (const piece of pieces) {
-    if (piece.text.length === 0) continue;
-    for (let i = 0; i < piece.text.length; i++) {
-      const ch = piece.text[i];
-      if (/\s/u.test(ch)) continue;
-      const beforeT = i / piece.text.length;
-      const afterT = (i + 1) / piece.text.length;
-      const startX = piece.startX + (piece.endX - piece.startX) * beforeT;
-      const endX = piece.startX + (piece.endX - piece.startX) * afterT;
-      const left = Math.min(startX, endX);
-      const right = Math.max(startX, endX);
-      const prev = clusters[clusters.length - 1];
-      if (prev && isCombiningMark(ch)) {
-        prev.text += ch;
-        prev.left = Math.min(prev.left, left);
-        prev.right = Math.max(prev.right, right);
-      } else {
-        clusters.push({ text: ch, left, right });
-      }
-    }
-  }
-  return clusters
-    .map((cluster) => ({
-      text: cluster.text,
-      left: cluster.left - minLeft,
-      width: Math.max(cluster.right - cluster.left, 1),
-    }))
-    .sort((a, b) => a.left - b.left);
-}
-
-function buildVisualPiecesFromItems(items: TextItem[], minLeft: number): TextRun["visualPieces"] {
-  const pieces = items.flatMap((item) => item.visualPieces ?? []);
-  if (pieces.length === 0) return undefined;
-  return pieces
-    .map((piece) => ({
-      text: piece.text,
-      left: piece.left - minLeft,
-      width: piece.width,
-    }))
-    .sort((a, b) => a.left - b.left);
-}
-
 function caretPiecesForItem(
   it: TextItem,
   fontShowsByOpIndex: Map<number, FontShow>,
@@ -386,15 +335,12 @@ export function buildTextRuns(
     const caret = buildCaretPositionsFromPieces(caretPieces);
     text = caret.text;
 
-    const exactVisualPieces = buildVisualPiecesFromItems(bucket, minLeft);
-
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
       sourceIndices,
       contentStreamOpIndices: Array.from(opIndexSet).sort((a, b) => a - b),
       text,
       caretPositions: caret.caretPositions,
-      visualPieces: exactVisualPieces ?? buildVisualPiecesFromCaretPieces(caretPieces, minLeft),
       bounds: {
         left: minLeft,
         top,
