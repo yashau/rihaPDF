@@ -34,19 +34,19 @@ import {
   PDFString,
 } from "pdf-lib";
 import type { FormValue } from "@/domain/formFields";
-import { isRtlScript } from "@/lib/fonts";
+import { isRtlScript } from "@/pdf/text/fonts";
 import {
   collectWidgetDicts,
   discoverWidgetOnState,
   inheritedOwner,
   isFieldKid,
   partialFieldName,
-} from "@/lib/pdfFormTree";
+} from "@/pdf/forms/pdfFormTree";
 import {
   encodePdfTextString,
   makeAcroFormFontSetup,
   type EmbeddedFontFactory,
-} from "./pdfAcroForm";
+} from "@/pdf/forms/pdfAcroForm";
 
 /** Flat fill record passed into the save pipeline — the App's
  *  formValues Map<sourceKey, Map<fullName, FormValue>> is flattened to

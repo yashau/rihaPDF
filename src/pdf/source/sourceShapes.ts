@@ -24,16 +24,16 @@
 // ops (no q…Q at all) are not detected.
 
 import { PDFDocument } from "pdf-lib";
-import { parseContentStream, type ContentOp } from "./contentStream";
-import { getPageContentBytes } from "./pageContent";
+import { parseContentStream, type ContentOp } from "@/pdf/content/contentStream";
+import { getPageContentBytes } from "@/pdf/content/pageContent";
 import {
   includePathConstructionPoints,
   readNumberOperands,
   VECTOR_CLIP_OPS,
   VECTOR_PAINT_OPS,
   VECTOR_PATH_END_OPS,
-} from "./pdfPathOps";
-import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/lib/pdfGeometry";
+} from "@/pdf/content/pdfPathOps";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/pdf/geometry/pdfGeometry";
 
 export type ShapeInstance = {
   /** Stable id: "p<pageNumber>-s<index>". */

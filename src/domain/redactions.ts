@@ -16,8 +16,8 @@
 // annotations. (pdfX, pdfY) is the BOTTOM-LEFT of the rect.
 
 import type { LineMarkupExtents } from "@/domain/annotations";
-import type { PdfRect } from "@/lib/pdfGeometry";
-export { rectsOverlap } from "@/lib/pdfGeometry";
+import type { PdfRect } from "@/pdf/geometry/pdfGeometry";
+export { rectsOverlap } from "@/pdf/geometry/pdfGeometry";
 
 export type Redaction = PdfRect & {
   id: string;

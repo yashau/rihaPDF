@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { colorToCss } from "@/domain/color";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import { cssTextDecoration } from "./helpers";
 import type { EditValue } from "./types";
 import type { ImageDragState } from "./useImageDrag";

@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import type { ToolMode } from "@/domain/toolMode";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
-import { isRtlScript } from "../../../lib/fonts";
+import { isRtlScript } from "@/pdf/text/fonts";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { attachThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { findPageAtPoint, isFocusMovingToToolbar } from "../helpers";

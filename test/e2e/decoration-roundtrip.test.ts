@@ -33,7 +33,7 @@ import {
   tearDown,
   type Harness,
 } from "../helpers/browser";
-import { extractPageShapes } from "../../src/lib/sourceShapes";
+import { extractPageShapes } from "../../src/pdf/source/sourceShapes";
 
 let h: Harness;
 

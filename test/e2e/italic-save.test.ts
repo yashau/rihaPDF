@@ -22,8 +22,8 @@ import {
   tearDown,
   type Harness,
 } from "../helpers/browser";
-import { parseContentStream } from "../../src/lib/contentStream";
-import { getPageContentBytes } from "../../src/lib/pageContent";
+import { parseContentStream } from "../../src/pdf/content/contentStream";
+import { getPageContentBytes } from "../../src/pdf/content/pageContent";
 
 let h: Harness;
 

@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "@/app/App";
-import { injectFontFaces } from "./lib/fonts";
+import { injectFontFaces } from "@/pdf/text/fonts";
 import { installErrorOverlay } from "@/platform/browser/errorOverlay";
 import { registerServiceWorker } from "@/platform/browser/serviceWorker";
 

@@ -22,9 +22,9 @@
 // scaling/rotation is preserved verbatim.
 
 import { PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
-import { parseContentStream, type ContentOp } from "./contentStream";
-import { getPageContentBytes } from "./pageContent";
-import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/lib/pdfGeometry";
+import { parseContentStream, type ContentOp } from "@/pdf/content/contentStream";
+import { getPageContentBytes } from "@/pdf/content/pageContent";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/pdf/geometry/pdfGeometry";
 
 export type ImageInstance = {
   /** Stable id for UI / save plumbing: "p<pageNumber>-i<index>". */

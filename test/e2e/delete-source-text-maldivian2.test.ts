@@ -74,7 +74,9 @@ async function firstPageText(pdfPath: string): Promise<string> {
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+    const pdfMod = (await importer(
+      "/src/pdf/render/pdf.ts",
+    )) as typeof import("../../src/pdf/render/pdf");
     const doc = await pdfMod.loadPdf(bytes.buffer.slice(0));
     const p = await doc.getPage(1);
     const content = await p.getTextContent();

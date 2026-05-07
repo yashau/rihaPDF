@@ -1,6 +1,6 @@
 import { PDFDocument, PDFFont, StandardFonts } from "pdf-lib";
-import type { LoadedSource } from "../loadSource";
-import { FONTS, loadFontBytes } from "../fonts";
+import type { LoadedSource } from "@/pdf/source/loadSource";
+import { FONTS, loadFontBytes } from "@/pdf/text/fonts";
 
 export type EmbeddedFontFactory = (
   family: string,

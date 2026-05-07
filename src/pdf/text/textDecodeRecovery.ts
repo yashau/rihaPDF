@@ -1,8 +1,8 @@
-import type { GlyphMap } from "./glyphMap";
-import { multiplyTransforms } from "./pdfTransform";
-import { scriptOf } from "./pdfTextScript";
-import type { TextItem } from "./pdfTypes";
-import type { FontShow } from "./sourceFonts";
+import type { GlyphMap } from "@/pdf/source/glyphMap";
+import { multiplyTransforms } from "@/pdf/geometry/pdfTransform";
+import { scriptOf } from "@/pdf/text/pdfTextScript";
+import type { TextItem } from "@/pdf/render/pdfTypes";
+import type { FontShow } from "@/pdf/source/sourceFonts";
 
 /**
  * For each content-stream text-show with a known glyph map, decode the

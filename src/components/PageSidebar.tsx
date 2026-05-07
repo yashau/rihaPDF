@@ -20,7 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { PageSlot } from "@/domain/slots";
 import { blankSlot } from "@/domain/slots";
-import type { LoadedSource } from "../lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 
 type Props = {
   slots: PageSlot[];

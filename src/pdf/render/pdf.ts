@@ -1,15 +1,15 @@
-import { applyShowDecodes } from "./textDecodeRecovery";
-import { buildTextRuns } from "./textRunBuilder";
-import type { GlyphMap } from "./glyphMap";
-import { loadPdf } from "./pdfjs";
-import { itemBoundsInViewport, multiplyTransforms } from "./pdfTransform";
-import type { PdfPage, RenderedPage, TextItem } from "./pdfTypes";
-import type { FontShow } from "./sourceFonts";
-import type { ImageInstance } from "./sourceImages";
-import type { ShapeInstance } from "./sourceShapes";
+import { applyShowDecodes } from "@/pdf/text/textDecodeRecovery";
+import { buildTextRuns } from "@/pdf/text/textRunBuilder";
+import type { GlyphMap } from "@/pdf/source/glyphMap";
+import { loadPdf } from "@/pdf/render/pdfjs";
+import { itemBoundsInViewport, multiplyTransforms } from "@/pdf/geometry/pdfTransform";
+import type { PdfPage, RenderedPage, TextItem } from "@/pdf/render/pdfTypes";
+import type { FontShow } from "@/pdf/source/sourceFonts";
+import type { ImageInstance } from "@/pdf/source/sourceImages";
+import type { ShapeInstance } from "@/pdf/source/sourceShapes";
 
 export { loadPdf, itemBoundsInViewport };
-export type { PdfDoc, PdfPage, RenderedPage, TextItem, TextRun } from "./pdfTypes";
+export type { PdfDoc, PdfPage, RenderedPage, TextItem, TextRun } from "@/pdf/render/pdfTypes";
 
 export async function renderPage(
   page: PdfPage,

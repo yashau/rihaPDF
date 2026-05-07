@@ -16,7 +16,7 @@ import { HighlightToolbar } from "@/components/HighlightToolbar";
 import { InkToolbar } from "@/components/InkToolbar";
 import { PageSidebar } from "@/components/PageSidebar";
 import type { PageSlot } from "@/domain/slots";
-import type { LoadedSource } from "@/lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import { useTheme } from "@/platform/theme";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useMobileChrome } from "@/app/hooks/useMobileChrome";

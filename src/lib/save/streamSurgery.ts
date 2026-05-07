@@ -1,13 +1,13 @@
 import { PDFName, PDFRef } from "pdf-lib";
-import type { TextRun } from "../pdf";
+import type { TextRun } from "@/pdf/render/pdf";
 import {
   findTextShows,
   parseContentStream,
   serializeContentStream,
   type ContentOp,
-} from "../contentStream";
-import { getPageContentBytes, setPageContentBytes } from "../pageContent";
-import { DEFAULT_FONT_FAMILY } from "../fonts";
+} from "@/pdf/content/contentStream";
+import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
+import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
 import { planRedactionStrip } from "../redactGlyphs";
 import type { Edit, ImageMove, ShapeDelete } from "./types";

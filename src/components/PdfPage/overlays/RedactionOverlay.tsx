@@ -1,4 +1,4 @@
-import type { RenderedPage } from "../../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { Redaction } from "@/domain/redactions";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import {

@@ -3,7 +3,7 @@ import type { Annotation } from "@/domain/annotations";
 import { buildSavePayload } from "@/app/buildSavePayload";
 import type { FormValue } from "@/domain/formFields";
 import { readImageFile, type ImageInsertion, type TextInsertion } from "@/domain/insertions";
-import type { LoadedSource } from "@/lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { Redaction } from "@/domain/redactions";
 import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 import { pageSlot, slotsFromSource, type PageSlot } from "@/domain/slots";
@@ -95,7 +95,7 @@ export function useDocumentIo({
     async (file: File) => {
       setBusy(true);
       try {
-        const { loadSource } = await import("@/lib/loadSource");
+        const { loadSource } = await import("@/pdf/source/loadSource");
         const source = await loadSource(file, renderScale, PRIMARY_SOURCE_KEY);
         const nextSlots = slotsFromSource(source);
         setPrimaryFilename(file.name);
@@ -152,7 +152,7 @@ export function useDocumentIo({
       if (files.length === 0) return;
       setBusy(true);
       try {
-        const { loadSource } = await import("@/lib/loadSource");
+        const { loadSource } = await import("@/pdf/source/loadSource");
         recordHistory(null);
         const loaded: { source: LoadedSource; sourceSlots: PageSlot[] }[] = [];
         for (const file of files) {

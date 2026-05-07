@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 
 export function CanvasSlot({
   page,

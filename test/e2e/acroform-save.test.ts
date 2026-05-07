@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFObject, PDFString, rgb } from "pdf-lib";
 import { applyEditsAndSave } from "../../src/lib/save";
-import type { LoadedSource } from "../../src/lib/loadSource";
+import type { LoadedSource } from "../../src/pdf/source/loadSource";
 
 const SOURCE_KEY = "fillable";
 const FIELD_NAME = "keptField";

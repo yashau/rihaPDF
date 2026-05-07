@@ -9,16 +9,16 @@
 // keeps every page first-class for editing the moment it appears.
 
 import { PDFDocument } from "pdf-lib";
-import { loadPdf, renderPage, type RenderedPage } from "@/lib/pdf";
-import { extractPageFontShows, type FontShow } from "./sourceFonts";
-import { extractPageGlyphMaps } from "./glyphMap";
-import { extractPageImages } from "./sourceImages";
-import type { ImageInstance } from "./sourceImages";
-import { extractPageShapes } from "./sourceShapes";
-import type { ShapeInstance } from "./sourceShapes";
-import { pairDecorationsWithRuns } from "./runDecorations";
+import { loadPdf, renderPage, type RenderedPage } from "@/pdf/render/pdf";
+import { extractPageFontShows, type FontShow } from "@/pdf/source/sourceFonts";
+import { extractPageGlyphMaps } from "@/pdf/source/glyphMap";
+import { extractPageImages } from "@/pdf/source/sourceImages";
+import type { ImageInstance } from "@/pdf/source/sourceImages";
+import { extractPageShapes } from "@/pdf/source/sourceShapes";
+import type { ShapeInstance } from "@/pdf/source/sourceShapes";
+import { pairDecorationsWithRuns } from "@/pdf/text/runDecorations";
 import { extractFormFields, type FormField } from "@/domain/formFields";
-import { extractSourceAnnotations } from "@/lib/sourceAnnotations";
+import { extractSourceAnnotations } from "@/pdf/source/sourceAnnotations";
 import type { Annotation } from "@/domain/annotations";
 export { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 

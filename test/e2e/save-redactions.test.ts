@@ -17,9 +17,9 @@ import {
   rgb,
 } from "pdf-lib";
 import { applyEditsAndSave } from "../../src/lib/save";
-import type { LoadedSource } from "../../src/lib/loadSource";
-import { extractPageImages } from "../../src/lib/sourceImages";
-import { extractPageShapes } from "../../src/lib/sourceShapes";
+import type { LoadedSource } from "../../src/pdf/source/loadSource";
+import { extractPageImages } from "../../src/pdf/source/sourceImages";
+import { extractPageShapes } from "../../src/pdf/source/sourceShapes";
 import type { Annotation } from "../../src/domain/annotations";
 import { FIXTURE } from "../helpers/browser";
 

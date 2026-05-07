@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { RenderedPage } from "../../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import { pdfRectToViewportRect } from "../geometry";
 import { cropCanvasToDataUrl } from "../helpers";
 import type { ImageMoveValue, ResizeCorner } from "../types";
@@ -31,7 +31,7 @@ export function ImageOverlay({
   onResizeStart,
   onSelect,
 }: {
-  img: import("../../../lib/sourceImages").ImageInstance;
+  img: import("@/pdf/source/sourceImages").ImageInstance;
   page: RenderedPage;
   persisted: ImageMoveValue | undefined;
   isDragging: boolean;

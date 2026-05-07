@@ -3,7 +3,7 @@ import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import type { FormField } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { RenderedPage } from "../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { Redaction } from "@/domain/redactions";
 import type { ToolMode } from "@/domain/toolMode";
 

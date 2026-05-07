@@ -89,7 +89,9 @@ describe("inserted-text formatting toolbar", () => {
       // oxlint-disable-next-line typescript/no-implied-eval
       const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+      const pdfMod = (await importer(
+        "/src/pdf/render/pdf.ts",
+      )) as typeof import("../../src/pdf/render/pdf");
       const baseFontMod = (await importer(
         "/src/dev/readBaseFonts.ts",
       )) as typeof import("../../src/dev/readBaseFonts");

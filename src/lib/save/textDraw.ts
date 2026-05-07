@@ -8,9 +8,9 @@ import {
 } from "pdf-lib";
 import type { AnnotationColor } from "@/domain/annotations";
 import { DEFAULT_TEXT_COLOR } from "@/domain/color";
-import { DEFAULT_FONT_FAMILY, FONTS } from "../fonts";
-import { drawShapedText, measureShapedWidth } from "../shapedDraw";
-import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "../shapedBidi";
+import { DEFAULT_FONT_FAMILY, FONTS } from "@/pdf/text/fonts";
+import { drawShapedText, measureShapedWidth } from "@/pdf/text/shapedDraw";
+import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "@/pdf/text/shapedBidi";
 import {
   fontHasNativeItalic,
   ITALIC_SHEAR,

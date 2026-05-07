@@ -17,7 +17,7 @@ import type {
   RadioFormField,
   TextFormField,
 } from "@/domain/formFields";
-import { isRtlScript } from "../../lib/fonts";
+import { isRtlScript } from "@/pdf/text/fonts";
 import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";

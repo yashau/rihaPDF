@@ -1,4 +1,4 @@
-import type { RenderedPage } from "../../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import { pdfRectToViewportRect } from "../geometry";
 
 /** Selectable hit-zone for a vector shape (line, rect, path) detected
@@ -13,7 +13,7 @@ export function ShapeOverlay({
   isSelected,
   onSelect,
 }: {
-  shape: import("../../../lib/sourceShapes").ShapeInstance;
+  shape: import("@/pdf/source/sourceShapes").ShapeInstance;
   page: RenderedPage;
   isSelected: boolean;
   onSelect: () => void;

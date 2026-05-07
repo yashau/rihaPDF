@@ -1,4 +1,4 @@
-import type { TextItem } from "./pdfTypes";
+import type { TextItem } from "@/pdf/render/pdfTypes";
 
 /** 6-element affine transform: [a, b, c, d, tx, ty]. */
 export type Mat = number[];

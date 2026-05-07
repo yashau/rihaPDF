@@ -262,7 +262,9 @@ export async function extractTextByPage(page: Page, pdfPath: string): Promise<st
   return page.evaluate(async (b64) => {
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+    const pdfMod = (await importer(
+      "/src/pdf/render/pdf.ts",
+    )) as typeof import("../../src/pdf/render/pdf");
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const doc = await pdfMod.loadPdf(bytes.buffer);
     const out: string[] = [];
@@ -286,8 +288,8 @@ export async function extractImageCountsByPage(page: Page, pdfPath: string): Pro
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const mod = (await importer(
-      "/src/lib/sourceImages.ts",
-    )) as typeof import("../../src/lib/sourceImages");
+      "/src/pdf/source/sourceImages.ts",
+    )) as typeof import("../../src/pdf/source/sourceImages");
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const all = await mod.extractPageImages(bytes.buffer);
     return all.map((p) => p.length);
@@ -300,8 +302,8 @@ export async function captureImages(page: Page, pdfPath: string) {
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (
       p: string,
-    ) => Promise<typeof import("../../src/lib/sourceImages")>;
-    const mod = await importer("/src/lib/sourceImages.ts");
+    ) => Promise<typeof import("../../src/pdf/source/sourceImages")>;
+    const mod = await importer("/src/pdf/source/sourceImages.ts");
     const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
     const all = await mod.extractPageImages(buf);
     return all.map((perPage) =>
@@ -342,7 +344,7 @@ function formatPageLog(pageLog: string[] | null): string {
  *    await page.evaluate(async (path) => {
  *      const mod = await __dynImport(path);
  *      return mod.something;
- *    }, "/src/lib/sourceImages.ts");
+ *    }, "/src/pdf/source/sourceImages.ts");
  *
  *  Inject this exact call inside page.evaluate by also injecting the
  *  helper as a string. Easier: callers use `dynImport(page, modulePath)`

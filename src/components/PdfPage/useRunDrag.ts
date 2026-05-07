@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { useRef, useState } from "react";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import { clickSuppressMs, useDragGesture } from "@/platform/hooks/useDragGesture";
 import { findPageAtPoint } from "./helpers";
 import type { EditValue } from "./types";

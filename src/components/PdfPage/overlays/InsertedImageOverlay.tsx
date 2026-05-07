@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { RenderedPage } from "../../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { ImageInsertion } from "@/domain/insertions";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import {

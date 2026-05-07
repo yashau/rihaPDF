@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { colorToCss } from "@/domain/color";
-import type { TextRun } from "../../lib/pdf";
+import type { TextRun } from "@/pdf/render/pdf";
 import type { EditStyle } from "../../lib/save";
 import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";

@@ -48,9 +48,13 @@ import {
   type HighlightAnnotation,
   type InkAnnotation,
 } from "@/domain/annotations";
-import { isRtlScript } from "@/lib/fonts";
-import { encodeUtf16BE, makeAcroFormFontSetup, type EmbeddedFontFactory } from "./pdfAcroForm";
-import { buildShapedTextOps, measureShapedWidth } from "./shapedDraw";
+import { isRtlScript } from "@/pdf/text/fonts";
+import {
+  encodeUtf16BE,
+  makeAcroFormFontSetup,
+  type EmbeddedFontFactory,
+} from "@/pdf/forms/pdfAcroForm";
+import { buildShapedTextOps, measureShapedWidth } from "@/pdf/text/shapedDraw";
 
 /** Subset of save.ts's per-source font factory needed by the comment
  *  /AP path. Defined structurally here so saveAnnotations.ts doesn't

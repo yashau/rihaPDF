@@ -1,7 +1,7 @@
-import { FONTS, resolveFamilyFromHint } from "@/lib/fonts";
-import { scriptOf } from "./pdfTextScript";
-import type { TextItem, TextRun } from "./pdfTypes";
-import type { FontShow } from "./sourceFonts";
+import { FONTS, resolveFamilyFromHint } from "@/pdf/text/fonts";
+import { scriptOf } from "@/pdf/text/pdfTextScript";
+import type { TextItem, TextRun } from "@/pdf/render/pdfTypes";
+import type { FontShow } from "@/pdf/source/sourceFonts";
 
 function isListMarkerText(text: string): boolean {
   return /^[\d.()[\]/-]+$/.test(text.trim());

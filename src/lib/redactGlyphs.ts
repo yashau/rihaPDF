@@ -31,9 +31,13 @@
 // under-stripping would leave glyphs in the file.
 
 import { PDFArray, PDFContext, PDFDict, PDFName, PDFNumber, PDFRef } from "pdf-lib";
-import type { ContentOp, ContentToken } from "./contentStream";
-import { rectsOverlap, type PdfRect } from "@/lib/pdfGeometry";
-import { walkTextShows, type PdfTextState, type TextShowSegment } from "./pdfTextWalker";
+import type { ContentOp, ContentToken } from "@/pdf/content/contentStream";
+import { rectsOverlap, type PdfRect } from "@/pdf/geometry/pdfGeometry";
+import {
+  walkTextShows,
+  type PdfTextState,
+  type TextShowSegment,
+} from "@/pdf/content/pdfTextWalker";
 
 export type FontMetrics = {
   /** 1 for simple fonts (Type1/TrueType/MMType1); 2 for /Identity-H

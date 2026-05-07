@@ -13,7 +13,7 @@
 // what used to be `original` vs `external` collapses into a single
 // `page` kind that carries a sourceKey + page index within that source.
 
-import type { LoadedSource } from "@/lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import { PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 
 export type PageSlot =

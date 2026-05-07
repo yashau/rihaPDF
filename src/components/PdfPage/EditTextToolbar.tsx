@@ -12,7 +12,7 @@ import {
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import type { AnnotationColor } from "@/domain/annotations";
-import { FONTS } from "../../lib/fonts";
+import { FONTS } from "@/pdf/text/fonts";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { ColorPickerPopover } from "./ColorPickerPopover";

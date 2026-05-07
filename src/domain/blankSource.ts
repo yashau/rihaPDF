@@ -13,7 +13,7 @@
 // `output.addPage(slot.size)` we used before.
 
 import type { PageSlot } from "@/domain/slots";
-import type { RenderedPage } from "@/lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 
 const BLANK_SOURCE_PREFIX = "__blank__:";
 

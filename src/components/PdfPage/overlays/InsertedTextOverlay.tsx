@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnnotationColor } from "@/domain/annotations";
 import { colorToCss } from "@/domain/color";
-import type { RenderedPage } from "../../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
 import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";

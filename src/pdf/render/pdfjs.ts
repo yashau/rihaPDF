@@ -1,6 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
-import type { PdfDoc } from "./pdfTypes";
+import type { PdfDoc } from "@/pdf/render/pdfTypes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 

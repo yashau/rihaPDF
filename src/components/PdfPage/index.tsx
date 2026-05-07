@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { FormField } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";

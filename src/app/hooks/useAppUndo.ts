@@ -2,7 +2,7 @@ import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction
 import type { Annotation } from "@/domain/annotations";
 import type { FormValue } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { LoadedSource } from "@/lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import { useUndoRedo } from "@/platform/hooks/useUndoRedo";

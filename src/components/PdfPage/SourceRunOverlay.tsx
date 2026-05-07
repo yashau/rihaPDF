@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { colorToCss } from "@/domain/color";
-import type { RenderedPage, TextRun } from "../../lib/pdf";
+import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
 import { cssTextDecoration } from "./helpers";

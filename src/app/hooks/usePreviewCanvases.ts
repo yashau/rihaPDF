@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { LoadedSource } from "@/lib/loadSource";
-import type { PageStripSpec } from "@/lib/preview";
+import type { LoadedSource } from "@/pdf/source/loadSource";
+import type { PageStripSpec } from "@/pdf/render/preview";
 import type { PageSlot } from "@/domain/slots";
 import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
@@ -137,7 +137,7 @@ export function usePreviewCanvases({
     const debounceMs = isMobile ? 250 : 150;
     const handle = window.setTimeout(async () => {
       try {
-        const { buildPreviewBytes, renderPagePreviewCanvas } = await import("@/lib/preview");
+        const { buildPreviewBytes, renderPagePreviewCanvas } = await import("@/pdf/render/preview");
         const next = new Map<string, HTMLCanvasElement>();
         for (const { sourceKey, specs } of tasks) {
           const source = sources.get(sourceKey);

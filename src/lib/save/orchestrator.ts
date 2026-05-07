@@ -10,19 +10,19 @@ import {
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { PageSlot } from "@/domain/slots";
-import type { LoadedSource } from "../loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "@/domain/blankSource";
 import type { Annotation } from "@/domain/annotations";
 import { applyAnnotationsToDoc } from "../saveAnnotations";
 import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "../saveFormFields";
 import { applyRedactionsToFormWidgets } from "../redactFormFields";
-import { DEFAULT_FONT_FAMILY } from "../fonts";
+import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
 import { type Redaction } from "@/domain/redactions";
 import {
   applyRedactionsToNewAnnotations,
   applyRedactionsToPageAnnotations,
 } from "../redactAnnotations";
-import { removeParsedSourceAnnotationsFromDoc } from "../sourceAnnotations";
+import { removeParsedSourceAnnotationsFromDoc } from "@/pdf/source/sourceAnnotations";
 import type { Edit, ImageInsert, ImageMove, ShapeDelete, TextInsert } from "./types";
 import { makeFontFactory, type LoadedSourceContext } from "./context";
 import { drawDecorations, drawTextWithStyle, emitTextDraw, measureTextWidth } from "./textDraw";

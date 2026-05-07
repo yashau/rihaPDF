@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { colorToCss } from "@/domain/color";
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import { cropCanvasToDataUrl, cssTextDecoration, findPageAtPoint } from "./helpers";
 import type { CrossPageArrival, CrossPageImageArrival, EditValue, ImageMoveValue } from "./types";
 import { useCrossPageDragPreview } from "./useCrossPageDragPreview";

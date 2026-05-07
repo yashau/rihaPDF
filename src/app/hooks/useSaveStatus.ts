@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import type { Annotation } from "@/domain/annotations";
 import type { FormValue } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { LoadedSource } from "@/lib/loadSource";
+import type { LoadedSource } from "@/pdf/source/loadSource";
 import { PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import type { PendingImage, ToolMode } from "@/domain/toolMode";
-import { annotationArraysEquivalent } from "@/lib/sourceAnnotations";
+import { annotationArraysEquivalent } from "@/pdf/source/sourceAnnotations";
 import { sumMapArrayLengths, sumMapSetSizes, sumMapSizes } from "@/domain/collectionCounts";
 import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 

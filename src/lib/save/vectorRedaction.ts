@@ -1,13 +1,13 @@
 import { PDFDict, PDFName } from "pdf-lib";
-import type { ContentOp } from "../contentStream";
+import type { ContentOp } from "@/pdf/content/contentStream";
 import {
   includePathConstructionPoints,
   readNumberOperands,
   VECTOR_PAINT_OPS,
   VECTOR_PATH_END_OPS,
-} from "../pdfPathOps";
+} from "@/pdf/content/pdfPathOps";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
-import { mulCm, type Mat6, transformPoint } from "../pdfGeometry";
+import { mulCm, type Mat6, transformPoint } from "@/pdf/geometry/pdfGeometry";
 
 export function markVectorPaintOpsForRedaction(
   ops: ContentOp[],

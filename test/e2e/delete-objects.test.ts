@@ -207,8 +207,8 @@ async function imageCount(pdfPath: string, pageIndex: number): Promise<number> {
       const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       const mod = (await importer(
-        "/src/lib/sourceImages.ts",
-      )) as typeof import("../../src/lib/sourceImages");
+        "/src/pdf/source/sourceImages.ts",
+      )) as typeof import("../../src/pdf/source/sourceImages");
       const images = await mod.extractPageImages(bytes.buffer);
       return images[pageIndex]?.length ?? 0;
     },
@@ -222,7 +222,9 @@ async function firstPageText(pdfPath: string): Promise<string> {
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+    const pdfMod = (await importer(
+      "/src/pdf/render/pdf.ts",
+    )) as typeof import("../../src/pdf/render/pdf");
     const doc = await pdfMod.loadPdf(bytes.buffer.slice(0));
     const p = await doc.getPage(1);
     const content = await p.getTextContent();

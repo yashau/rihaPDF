@@ -94,8 +94,8 @@ export type RenderedPage = {
   textItems: TextItem[];
   textRuns: TextRun[];
   /** Image / Form XObject placements on this page. Drag-movable. */
-  images: import("./sourceImages").ImageInstance[];
+  images: import("@/pdf/source/sourceImages").ImageInstance[];
   /** Vector-shape (line / rect / path) blocks on this page. Selectable
    *  + deletable; not movable in v1. */
-  shapes: import("./sourceShapes").ShapeInstance[];
+  shapes: import("@/pdf/source/sourceShapes").ShapeInstance[];
 };

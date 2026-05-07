@@ -27,8 +27,8 @@ describe("text editor caret placement", () => {
         // oxlint-disable-next-line typescript/no-implied-eval
         const importer = new Function("p", "return import(p)") as (
           p: string,
-        ) => Promise<typeof import("../../src/lib/loadSource")>;
-        const { loadSource } = await importer("/src/lib/loadSource.ts");
+        ) => Promise<typeof import("../../src/pdf/source/loadSource")>;
+        const { loadSource } = await importer("/src/pdf/source/loadSource.ts");
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const file = new File([bytes], "maldivian.pdf", { type: "application/pdf" });
         const source = await loadSource(file, scale, "caret-test");

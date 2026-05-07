@@ -1,4 +1,4 @@
-import type { ContentOp } from "./contentStream";
+import type { ContentOp } from "@/pdf/content/contentStream";
 
 export const VECTOR_PAINT_OPS = new Set(["S", "s", "f", "F", "f*", "B", "B*", "b", "b*"]);
 export const VECTOR_PATH_END_OPS = new Set([...VECTOR_PAINT_OPS, "n"]);

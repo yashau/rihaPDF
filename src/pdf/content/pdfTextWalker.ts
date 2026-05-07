@@ -1,4 +1,4 @@
-import type { ContentOp } from "./contentStream";
+import type { ContentOp } from "@/pdf/content/contentStream";
 
 export type PdfTextState = {
   tm: [number, number, number, number, number, number];

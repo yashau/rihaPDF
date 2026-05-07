@@ -1,4 +1,4 @@
-import type { RenderedPage } from "../../lib/pdf";
+import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
 import type { EditValue, ToolbarBlocker } from "./types";
 

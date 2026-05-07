@@ -9,10 +9,14 @@
 // each TextRun.
 
 import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRef } from "pdf-lib";
-import { parseContentStream, findTextShows, type ContentOp } from "./contentStream";
-import { getPageContentBytes } from "./pageContent";
-import { walkTextShows, type PdfTextState, type TextShowSegment } from "./pdfTextWalker";
-import { readFontMetrics, type FontMetrics } from "./redactGlyphs";
+import { parseContentStream, findTextShows, type ContentOp } from "@/pdf/content/contentStream";
+import { getPageContentBytes } from "@/pdf/content/pageContent";
+import {
+  walkTextShows,
+  type PdfTextState,
+  type TextShowSegment,
+} from "@/pdf/content/pdfTextWalker";
+import { readFontMetrics, type FontMetrics } from "@/lib/redactGlyphs";
 
 export type FontShowGlyphSpan = {
   gid: number;

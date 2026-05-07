@@ -47,7 +47,7 @@ import {
   setTextMatrix,
   showText,
 } from "pdf-lib";
-import { shapeAuto, shapeRtlThaana, type ShapeResult } from "./shape";
+import { shapeAuto, shapeRtlThaana, type ShapeResult } from "@/pdf/text/shape";
 
 export type ShapedTextOptions = {
   text: string;

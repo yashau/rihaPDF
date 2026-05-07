@@ -6,8 +6,8 @@
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import { PDFDocument } from "pdf-lib";
-import { extractPageGlyphMaps, decodeShowBytes } from "../lib/glyphMap";
-import { extractPageFontShows } from "../lib/sourceFonts";
+import { extractPageGlyphMaps, decodeShowBytes } from "@/pdf/source/glyphMap";
+import { extractPageFontShows } from "@/pdf/source/sourceFonts";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 

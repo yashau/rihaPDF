@@ -10,7 +10,7 @@
 // Pure read — never mutates the doc.
 
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from "pdf-lib";
-import { isRtlScript } from "@/lib/fonts";
+import { isRtlScript } from "@/pdf/text/fonts";
 import {
   decodePdfTextString,
   discoverWidgetOnState,
@@ -19,7 +19,7 @@ import {
   isFieldKid,
   readPdfNumber,
   readPdfRectArray,
-} from "@/lib/pdfFormTree";
+} from "@/pdf/forms/pdfFormTree";
 
 export type FormFieldWidget = {
   /** Stable id: `<sourceKey>:<fullName>:<widgetIndex>`. */

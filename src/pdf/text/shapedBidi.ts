@@ -25,7 +25,7 @@
 
 import bidiFactory from "bidi-js";
 import { type PDFFont, type PDFPage, rgb } from "pdf-lib";
-import { buildShapedTextOpsFromShape, shapedAdvancePt, shapeText } from "./shapedDraw";
+import { buildShapedTextOpsFromShape, shapedAdvancePt, shapeText } from "@/pdf/text/shapedDraw";
 
 type Bidi = {
   getEmbeddingLevels(

@@ -16,9 +16,13 @@
 
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import type { RenderedPage } from "@/lib/pdf";
-import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
-import { getPageContentBytes, setPageContentBytes } from "./pageContent";
+import type { RenderedPage } from "@/pdf/render/pdf";
+import {
+  parseContentStream,
+  serializeContentStream,
+  findTextShows,
+} from "@/pdf/content/contentStream";
+import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
 
 export type PageStripSpec = {
   /** Page index within the source's doc. */
