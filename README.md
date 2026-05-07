@@ -215,7 +215,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Editing
 
 - [ ] **Multi-line paragraph editing.** A wrapped paragraph is N separate runs today; needs cross-line merging keyed on indent + line-spacing plus a multi-line `EditField`.
-- [x] **Caret-at-click instead of full select.** Land the caret at the clicked source-glyph position so long LTR/RTL lines can be partial-edited.
 - [ ] **Marquee select / multi-move.** Drag-rectangle multi-select.
 
 ### Save pipeline
