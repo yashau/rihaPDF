@@ -174,6 +174,10 @@ export function SourceRunOverlay({
 
   if (edited) {
     const style = editedValue.style ?? {};
+    const isParagraph = "isParagraph" in run && run.isParagraph;
+    const overlayLineHeight = isParagraph
+      ? Math.max(run.height * 1.45, run.height + 4)
+      : run.bounds.height;
     const defaultFontSizePt = run.height / page.scale;
     const defaultStyle = {
       fontFamily: style.fontFamily ?? run.fontFamily,
@@ -221,7 +225,7 @@ export function SourceRunOverlay({
           pointerEvents: "auto",
           cursor: isDragging ? "grabbing" : "text",
           display: "flex",
-          alignItems: "center",
+          alignItems: isParagraph ? "flex-start" : "center",
           overflow: "visible",
           // Once the user actually moves the cursor, the portal'd
           // clone (rendered by PdfPage) is what they see — the
@@ -261,7 +265,7 @@ export function SourceRunOverlay({
         <span
           dir={style.dir ?? "auto"}
           style={{
-            lineHeight: `${run.bounds.height}px`,
+            lineHeight: `${overlayLineHeight}px`,
             width: "100%",
             whiteSpace: "pre-wrap",
             paddingLeft: padX,
@@ -272,7 +276,7 @@ export function SourceRunOverlay({
             block={richTextOrPlain(editedValue.richText, editedValue.text, style)}
             defaultStyle={defaultStyle}
             pageScale={page.scale}
-            lineHeight={run.bounds.height}
+            lineHeight={overlayLineHeight}
           />
         </span>
       </span>

@@ -24,25 +24,19 @@ import {
   type EditorState,
   type LexicalEditor,
 } from "lexical";
-import {
-  $getSelectionStyleValueForProperty,
-  $patchStyleText,
-} from "@lexical/selection";
+import { $getSelectionStyleValueForProperty, $patchStyleText } from "@lexical/selection";
 import type { AnnotationColor } from "@/domain/annotations";
 import { colorToCss, hexToColor } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
-import {
-  normalizeRichTextBlock,
-  richTextFromPlainText,
-  type RichTextBlock,
-  type RichTextSpan,
-} from "@/domain/richText";
+import { normalizeRichTextBlock, type RichTextBlock, type RichTextSpan } from "@/domain/richText";
 import { thaanaForLatin } from "@/domain/thaanaKeyboard";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { EditTextToolbar } from "./EditTextToolbar";
 
-type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (patch: infer P) => void
+type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
+  patch: infer P,
+) => void
   ? P
   : never;
 
@@ -463,20 +457,6 @@ function InitialFocusPlugin({ offset }: { offset?: number }) {
   return null;
 }
 
-export function richTextBlockFromLegacy(text: string, style?: EditStyle): RichTextBlock {
-  return richTextFromPlainText(text, style);
-}
-
-export function firstSpanStyle(block: RichTextBlock): EditStyle | undefined {
-  return block.spans.find((span) => span.text.length > 0)?.style;
-}
-
-export function uniformSpanStyle(block: RichTextBlock): EditStyle | undefined {
-  const nonEmpty = block.spans.filter((span) => span.text.length > 0);
-  if (nonEmpty.length !== 1) return undefined;
-  return nonEmpty[0].style;
-}
-
 export function RichTextView({
   block,
   defaultStyle,
@@ -490,36 +470,57 @@ export function RichTextView({
   lineHeight: number;
 }) {
   const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
+  const lines: RichTextSpan[][] = [[]];
+  for (const span of spans) {
+    const parts = span.text.split("\n");
+    parts.forEach((part, index) => {
+      if (index > 0) lines.push([]);
+      if (part.length > 0) lines[lines.length - 1].push({ text: part, style: span.style });
+    });
+  }
   return (
     <>
-      {spans.map((span, spanIndex) => {
-        const style = { ...defaultStyle, ...span.style };
-        const pieces = span.text.split("\n");
-        return pieces.map((piece, pieceIndex) => (
-          <span
-            // oxlint-disable-next-line react/no-array-index-key -- spans are render-only projections.
-            key={`${spanIndex}:${pieceIndex}`}
-            style={{
-              fontFamily: `"${style.fontFamily}"`,
-              fontSize: `${style.fontSize * pageScale}px`,
-              lineHeight: `${lineHeight}px`,
-              fontWeight: style.bold ? 700 : 400,
-              fontStyle: style.italic ? "italic" : "normal",
-              textDecoration: [
-                style.underline ? "underline" : "",
-                style.strikethrough ? "line-through" : "",
-              ]
-                .filter(Boolean)
-                .join(" "),
-              color: colorToCss(style.color) ?? "black",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {pieceIndex > 0 ? <br /> : null}
-            {piece}
-          </span>
-        ));
-      })}
+      {lines.map((line, lineIndex) => (
+        <span
+          // oxlint-disable-next-line react/no-array-index-key -- render-only line projection.
+          key={lineIndex}
+          style={{
+            display: "block",
+            minHeight: lineHeight,
+            lineHeight: `${lineHeight}px`,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {line.length === 0
+            ? " "
+            : line.map((span, spanIndex) => {
+                const style = { ...defaultStyle, ...span.style };
+                return (
+                  <span
+                    // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
+                    key={spanIndex}
+                    style={{
+                      fontFamily: `"${style.fontFamily}"`,
+                      fontSize: `${style.fontSize * pageScale}px`,
+                      lineHeight: `${lineHeight}px`,
+                      fontWeight: style.bold ? 700 : 400,
+                      fontStyle: style.italic ? "italic" : "normal",
+                      textDecoration: [
+                        style.underline ? "underline" : "",
+                        style.strikethrough ? "line-through" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" "),
+                      color: colorToCss(style.color) ?? "black",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {span.text}
+                  </span>
+                );
+              })}
+        </span>
+      ))}
     </>
   );
 }

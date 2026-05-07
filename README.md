@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-114%20e2e%20%2B%2029%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-114%20e2e%20%2B%2033%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -181,7 +181,7 @@ For focused unit coverage that does not need the dev server:
 pnpm test:coverage test/unit
 ```
 
-The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup.
+The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup.
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
@@ -189,7 +189,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 ### Editing
 
-- [ ] **Multi-line paragraph editing.** A wrapped paragraph is N separate runs today; needs cross-line merging keyed on indent + line-spacing plus a multi-line `EditField`.
+- [x] **Multi-line paragraph editing.** Source runs with matching indent / line spacing are grouped into editable text blocks, and source + inserted text share a multi-line rich editor.
 - [ ] **Marquee select / multi-move.** Drag-rectangle multi-select.
 
 ### Save pipeline

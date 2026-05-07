@@ -271,8 +271,7 @@ export async function drawRichTextBlock(
     const line = lines[lineIndex];
     const plain = line.map((span) => span.text).join("");
     const isRtl =
-      opts.baseStyle.dir === "rtl" ||
-      (opts.baseStyle.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(plain));
+      opts.baseStyle.dir === "rtl" || (opts.baseStyle.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(plain));
     const lineY = opts.y - opts.lineStep * lineIndex;
     const lineWidth = await measureRichLine(
       line,

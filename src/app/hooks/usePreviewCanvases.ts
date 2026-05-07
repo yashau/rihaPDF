@@ -86,7 +86,9 @@ export function usePreviewCanvases({
       const source = sources.get(sourceKey);
       const page = source?.pages[pageIndex];
       if (!page) return [runId];
-      const block = buildSourceTextBlocks(page.textRuns, page.pageNumber).find((b) => b.id === runId);
+      const block = buildSourceTextBlocks(page.textRuns, page.pageNumber).find(
+        (b) => b.id === runId,
+      );
       return block?.sourceRunIds ?? [runId];
     };
     for (const [slotId, runs] of edits) {

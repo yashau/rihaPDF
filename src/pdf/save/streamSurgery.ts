@@ -553,11 +553,7 @@ function resolveEditRun(
   return buildSourceTextBlocks(runs, pageNumber).find((b) => b.id === edit.runId);
 }
 
-function sourceRunsForEdit(
-  runs: TextRun[],
-  run: TextRun | SourceTextBlock,
-  edit: Edit,
-): TextRun[] {
+function sourceRunsForEdit(runs: TextRun[], run: TextRun | SourceTextBlock, edit: Edit): TextRun[] {
   const ids =
     edit.sourceRunIds && edit.sourceRunIds.length > 0
       ? edit.sourceRunIds

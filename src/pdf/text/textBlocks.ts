@@ -1,6 +1,7 @@
 import type { TextRun } from "@/pdf/render/pdfTypes";
 
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u;
+const LIST_MARKER_RE = /^[\s\d.()[\]/-]+[A-Za-z\u0780-\u07bf]/u;
 
 export type SourceTextBlock = TextRun & {
   sourceRunIds: string[];
@@ -10,6 +11,49 @@ export type SourceTextBlock = TextRun & {
 
 function isRtl(text: string): boolean {
   return RTL_RE.test(text);
+}
+
+function startsWithListMarker(text: string): boolean {
+  return LIST_MARKER_RE.test(text);
+}
+
+function cssSpaceWidth(
+  fontFamily: string,
+  fontSizePx: number,
+  bold: boolean,
+  italic: boolean,
+): number {
+  if (typeof document === "undefined") return fontSizePx * 0.25;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return fontSizePx * 0.25;
+  ctx.font = `${italic ? "italic " : ""}${bold ? "700" : "400"} ${fontSizePx}px "${fontFamily}"`;
+  const width = ctx.measureText(" ").width;
+  return width > 0 ? width : fontSizePx * 0.25;
+}
+
+function spacesForIndent(gapPx: number, run: TextRun): string {
+  if (gapPx <= 0) return "";
+  const spaceWidth = cssSpaceWidth(run.fontFamily, run.height, run.bold, run.italic);
+  return " ".repeat(Math.max(0, Math.round(gapPx / spaceWidth)));
+}
+
+function lineStartEdge(run: TextRun, rtl: boolean): number {
+  return rtl ? run.bounds.left + run.bounds.width : run.bounds.left;
+}
+
+function textWithLineIndents(lines: TextRun[]): string {
+  const first = lines[0];
+  const rtl = isRtl(first.text);
+  const firstStart = lineStartEdge(first, rtl);
+  return lines
+    .map((line, index) => {
+      if (index === 0) return line.text;
+      const start = lineStartEdge(line, rtl);
+      const gap = rtl ? firstStart - start : start - firstStart;
+      return `${spacesForIndent(gap, line)}${line.text}`;
+    })
+    .join("\n");
 }
 
 function sameInlineStyle(a: TextRun, b: TextRun): boolean {
@@ -34,7 +78,10 @@ function canJoinParagraph(prev: TextRun, next: TextRun, first: TextRun): boolean
   const nominalLineHeight = Math.max(first.bounds.height, prev.bounds.height, next.bounds.height);
   if (lineStep < nominalLineHeight * 0.65 || lineStep > nominalLineHeight * 1.8) return false;
   const indentDelta = Math.abs(lineIndent(next, rtl) - lineIndent(first, rtl));
-  if (indentDelta > nominalLineHeight * 1.25) return false;
+  const indentLimit = startsWithListMarker(first.text)
+    ? nominalLineHeight * 4
+    : nominalLineHeight * 1.25;
+  if (indentDelta > indentLimit) return false;
   return true;
 }
 
@@ -53,16 +100,16 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
   const top = Math.min(...lines.map((line) => line.bounds.top));
   const bottom = Math.max(...lines.map((line) => line.bounds.top + line.bounds.height));
   const sourceIndices = lines.flatMap((line) => line.sourceIndices);
-  const opIndices = Array.from(
-    new Set(lines.flatMap((line) => line.contentStreamOpIndices)),
-  ).sort((a, b) => a - b);
+  const opIndices = Array.from(new Set(lines.flatMap((line) => line.contentStreamOpIndices))).sort(
+    (a, b) => a - b,
+  );
   const decorationOpRanges = lines.flatMap((line) => line.decorationOpRanges ?? []);
   return {
     ...first,
     id: `p${pageNumber}-b${index}`,
     sourceIndices,
     contentStreamOpIndices: opIndices,
-    text: lines.map((line) => line.text).join("\n"),
+    text: textWithLineIndents(lines),
     caretPositions: undefined,
     bounds: {
       left,
@@ -80,7 +127,10 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
   };
 }
 
-export function buildSourceTextBlocks(runs: readonly TextRun[], pageNumber: number): SourceTextBlock[] {
+export function buildSourceTextBlocks(
+  runs: readonly TextRun[],
+  pageNumber: number,
+): SourceTextBlock[] {
   const blocks: SourceTextBlock[] = [];
   let bucket: TextRun[] = [];
   const flush = () => {

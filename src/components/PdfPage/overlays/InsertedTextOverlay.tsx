@@ -1,14 +1,11 @@
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
-import { richTextOrPlain } from "@/domain/richText";
+import { richTextOrPlain, uniformSpanStyle } from "@/domain/richText";
 import { pdfBaselineToViewportBox } from "../geometry";
-import {
-  chooseToolbarTop,
-  findPageAtPoint,
-} from "../helpers";
+import { chooseToolbarTop, findPageAtPoint } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
-import { RichTextEditor, RichTextView, uniformSpanStyle } from "../RichTextEditor";
+import { RichTextEditor, RichTextView } from "../RichTextEditor";
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
