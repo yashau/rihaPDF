@@ -9,6 +9,7 @@
 // PdfPage converts to viewport space when rendering.
 
 import type { EditStyle } from "@/domain/editStyle";
+import type { RichTextBlock } from "@/domain/richText";
 
 export type TextInsertion = {
   /** Stable id for state plumbing: "p<pageNumber>-t<index>". */
@@ -31,6 +32,9 @@ export type TextInsertion = {
   fontSize: number;
   text: string;
   style?: EditStyle;
+  /** Rich text for partial formatting and multi-line inserted text.
+   *  `text` stays as the plain-text mirror for legacy callers. */
+  richText?: RichTextBlock;
 };
 
 export type ImageInsertion = {

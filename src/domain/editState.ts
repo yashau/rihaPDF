@@ -1,9 +1,17 @@
 import type { AnnotationColor } from "@/domain/annotations";
 import type { EditStyle } from "@/domain/editStyle";
+import type { RichTextBlock } from "@/domain/richText";
 
 export type EditValue = {
   text: string;
   style?: EditStyle;
+  /** Rich replacement text for partial formatting and multi-line
+   *  paragraph edits. `text` remains the plain-text mirror for legacy
+   *  callers and simple status checks. */
+  richText?: RichTextBlock;
+  /** Source TextRun ids covered by this edit. Omitted for legacy
+   *  single-run edits, where the map key is also the source run id. */
+  sourceRunIds?: string[];
   /** Move offset from the original run position, in viewport pixels
    *  (origin-page-relative). Positive dx -> right, positive dy -> down.
    *  Used both for SAME-page save (translates drawn text by (dx/scale,
