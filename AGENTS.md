@@ -10,10 +10,12 @@ The app parses and edits PDFs entirely in the browser. Saved PDFs must preserve 
 
 Primary source areas:
 
-- `src/App.tsx`: composition root and top-level app state wiring.
+- `src/app/`: composition root, top-level app state wiring, document I/O hooks, and save-payload assembly.
 - `src/components/`: UI components.
 - `src/components/PdfPage/`: page rendering, overlays, gestures, edit fields, annotation layers.
-- `src/lib/`: PDF parsing, content-stream rewriting, save pipeline, fonts, shaping, redaction, selection, undo/redo, preview, form fields.
+- `src/domain/`: shared editor domain models for annotations, forms, geometry, insertions, redactions, selection, signatures, slots, and tool state.
+- `src/pdf/`: PDF parsing, rendering, source extraction, content-stream rewriting, save pipeline, forms, fonts, shaping, and redaction internals.
+- `src/platform/`: browser utilities, theme handling, polyfills, and reusable platform hooks.
 - `test/unit/`: focused Vitest tests for pure parser, geometry, text-run, and redaction internals.
 - `test/e2e/`: Vitest tests that drive the app through Playwright.
 - `test/fixtures/`: pinned and generated PDFs used by tests.
@@ -37,7 +39,7 @@ Reference docs already in the repo:
 - Do not weaken privacy guarantees. PDFs should remain client-side; do not add uploads, analytics, remote processing, or third-party calls without explicit product direction.
 - Do not commit generated outputs such as `dist/`, `.wrangler/`, `test-logs/`, or fixture outputs unless the user explicitly asks and the file is intended to be tracked.
 - Generated PDF fixtures under `test/fixtures/` are tracked when intentionally regenerated. The fixture generator freezes PDF metadata dates so repeated runs should be byte-stable.
-- Preserve the bundled font metadata and attributions. If adding or changing fonts, update `src/lib/fonts.ts`, `NOTICE`, and `public/fonts/dhivehi/README.md` as appropriate.
+- Preserve the bundled font metadata and attributions. If adding or changing fonts, update `src/pdf/text/fonts.ts`, `NOTICE`, and `public/fonts/dhivehi/README.md` as appropriate.
 - Use ASCII in new code and docs unless a file already uses non-ASCII or the content specifically requires Dhivehi/Thaana examples.
 
 ## Environment
@@ -123,15 +125,15 @@ save
 
 Important modules:
 
-- `src/lib/contentStream.ts`: custom tokenizer/parser for PDF content streams.
-- `src/lib/pageContent.ts`: raw content stream access and rewrites.
-- `src/lib/save.ts`: save orchestration.
-- `src/lib/buildSavePayload.ts`: pure translation from page slots to save payloads.
-- `src/lib/shapedDraw.ts`: HarFuzz-shaped text emission.
-- `src/lib/shapedBidi.ts`: mixed-script bidi segmentation before shaping.
-- `src/lib/redactions.ts` and `src/lib/redactGlyphs.ts`: redaction behavior.
-- `src/lib/pdfAcroForm.ts`, `src/lib/formFields.ts`, and `src/lib/saveFormFields.ts`: AcroForm support.
-- `src/lib/saveAnnotations.ts` and `src/lib/annotations.ts`: native PDF annotation support.
+- `src/pdf/content/contentStream.ts`: custom tokenizer/parser for PDF content streams.
+- `src/pdf/content/pageContent.ts`: raw content stream access and rewrites.
+- `src/pdf/save/orchestrator.ts` and `src/pdf/save/index.ts`: save orchestration and public save exports.
+- `src/app/buildSavePayload.ts`: pure translation from page slots to save payloads.
+- `src/pdf/text/shapedDraw.ts`: HarfBuzz-shaped text emission.
+- `src/pdf/text/shapedBidi.ts`: mixed-script bidi segmentation before shaping.
+- `src/domain/redactions.ts` and `src/pdf/save/redactions/`: redaction domain data and PDF-side redaction behavior.
+- `src/pdf/forms/pdfAcroForm.ts`, `src/domain/formFields.ts`, and `src/pdf/save/forms.ts`: AcroForm support.
+- `src/pdf/save/annotations.ts` and `src/domain/annotations.ts`: native PDF annotation support.
 
 ### UI and Interaction
 
@@ -140,7 +142,7 @@ Important modules:
 - Overlays live in `src/components/PdfPage/overlays/`.
 - Annotation layers live in `src/components/PdfPage/annotations/`.
 - Drag helpers include `useRunDrag.ts`, `useImageDrag.ts`, and `useCrossPageDragPreview.tsx`.
-- Shared app state hooks live in `src/lib/`, including `useUndoRedo`, `useSelection`, `usePreviewCanvases`, `useMobileChrome`, and `useDragGesture`.
+- App-specific state hooks live in `src/app/hooks/`, including `useSelection`, `usePreviewCanvases`, and `useMobileChrome`; reusable platform hooks such as `useUndoRedo` and `useDragGesture` live in `src/platform/hooks/`.
 
 When adjusting UI, preserve:
 
@@ -153,7 +155,7 @@ When adjusting UI, preserve:
 
 ### Text, Fonts, and Shaping
 
-- Thaana replacement text must use the font pipeline in `src/lib/fonts.ts`.
+- Thaana replacement text must use the font pipeline in `src/pdf/text/fonts.ts`.
 - Saved Thaana text is shaped with HarfBuzz and emitted as raw PDF text operators.
 - Mixed Latin/Thaana runs are segmented by bidi-js before shaping.
 - Font embedding intentionally uses `subset: false` for the bundled Thaana font pipeline.
@@ -201,8 +203,8 @@ Relevant tests include:
 Visual signatures are not cryptographic PDF signatures. They are local PNG assets that reuse the inserted-image placement/save pipeline.
 
 - Signature UI lives in `src/components/SignatureModal.tsx`; do not couple it to About modal internals.
-- Signature storage and image processing live in `src/lib/signatures.ts` and use IndexedDB so saved signatures remain browser-local.
-- Drawn signatures support the signing colour presets in `src/lib/color.ts`.
+- Signature storage and image processing live in `src/domain/signatures.ts` and use IndexedDB so saved signatures remain browser-local.
+- Drawn signatures support the signing colour presets in `src/domain/color.ts`.
 - Imported signatures should be processed client-side only: remove a simple background where possible, trim transparent pixels, and avoid uploads or remote model/API calls unless explicitly approved.
 
 Relevant tests include:

@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-110%20e2e%20%2B%2012%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-110%20e2e%20%2B%2013%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -55,7 +55,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **HeroUI v3 + Tailwind v4 + lucide-react** — components / styling / icons
 - **@dnd-kit** — sortable thumbnails
 
-`harfbuzzjs` does the Thaana shaping at save time — replacement runs are shaped via HarfBuzz and emitted as raw `Tj` operators against a `subset: false` Type 0 font, so GPOS mark anchoring is correct ([shapedDraw.ts](src/lib/shapedDraw.ts)). `bidi-js` segments mixed-script runs by direction so each level-run shapes with its own font and direction ([shapedBidi.ts](src/lib/shapedBidi.ts)).
+`harfbuzzjs` does the Thaana shaping at save time — replacement runs are shaped via HarfBuzz and emitted as raw `Tj` operators against a `subset: false` Type 0 font, so GPOS mark anchoring is correct ([shapedDraw.ts](src/pdf/text/shapedDraw.ts)). `bidi-js` segments mixed-script runs by direction so each level-run shapes with its own font and direction ([shapedBidi.ts](src/pdf/text/shapedBidi.ts)).
 
 ## Quick start
 
@@ -86,20 +86,20 @@ save → for each edited run:
           bidi-js segmentation first (shapedBidi.ts)
 ```
 
-Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/lib/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
+Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/pdf/text/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
 
-Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/lib/contentStream.ts) — pdf-lib doesn't expose its parser publicly, so [pageContent.ts](src/lib/pageContent.ts) reads raw bytes and rewrites them.
+Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/pdf/content/contentStream.ts) — pdf-lib doesn't expose its parser publicly, so [pageContent.ts](src/pdf/content/pageContent.ts) reads raw bytes and rewrites them.
 
-Caret placement for source text uses the same PDF-side text-show data as the edit/save pipeline: [sourceFonts.ts](src/lib/sourceFonts.ts) walks `Tj`/`TJ` operators, font widths, text spacing, and horizontal scaling to derive per-glyph source edges; [pdf.ts](src/lib/pdf.ts) maps those edges back to logical text offsets for LTR/RTL run hit-testing before the browser input mounts.
+Caret placement for source text uses the same PDF-side text-show data as the edit/save pipeline: [sourceFonts.ts](src/pdf/source/sourceFonts.ts) walks `Tj`/`TJ` operators, font widths, text spacing, and horizontal scaling to derive per-glyph source edges; [pdf.ts](src/pdf/render/pdf.ts) maps those edges back to logical text offsets for LTR/RTL run hit-testing before the browser input mounts.
 
-The page renderer is split per concern under [src/components/PdfPage/](src/components/PdfPage/): `index.tsx` (page chrome + gesture wiring), `EditField.tsx`, `EditTextToolbar.tsx`, `overlays.tsx`, `helpers.ts`, `types.ts`.
+The page renderer is split per concern under [src/components/PdfPage/](src/components/PdfPage/): `index.tsx` (page chrome + gesture wiring), `EditField.tsx`, `EditTextToolbar.tsx`, `overlays/`, `helpers.ts`, `types.ts`.
 
-`App.tsx` is a composition root over [AppHeader](src/components/AppHeader.tsx), [PageList](src/components/PageList.tsx), [PageWithToolbar](src/components/PageWithToolbar.tsx), and [AboutModal](src/components/AboutModal.tsx). State hooks live alongside lib code: [useUndoRedo](src/lib/useUndoRedo.ts), [usePreviewCanvases](src/lib/usePreviewCanvases.ts), [useSelection](src/lib/useSelection.ts), [useMobileChrome](src/lib/useMobileChrome.ts), [useDragGesture](src/lib/useDragGesture.ts). [buildSavePayload.ts](src/lib/buildSavePayload.ts) is the pure translator from slot list → `SourceSavePayload[]`.
+`App.tsx` is a composition root at [src/app/App.tsx](src/app/App.tsx) over [AppHeader](src/components/AppHeader/), [PageList](src/components/PageList.tsx), [PageWithToolbar](src/components/PageWithToolbar.tsx), and [AboutModal](src/components/AboutModal.tsx). App-specific state hooks live in [src/app/hooks/](src/app/hooks/), including [usePreviewCanvases](src/app/hooks/usePreviewCanvases.ts), [useSelection](src/app/hooks/useSelection.ts), and [useMobileChrome](src/app/hooks/useMobileChrome.ts); shared platform hooks such as [useUndoRedo](src/platform/hooks/useUndoRedo.ts) and [useDragGesture](src/platform/hooks/useDragGesture.ts) live in [src/platform/hooks/](src/platform/hooks/). [buildSavePayload.ts](src/app/buildSavePayload.ts) is the pure translator from slot list → `SourceSavePayload[]`.
 
 ## Adding a new Dhivehi font
 
 1. Drop the `.ttf` into [public/fonts/dhivehi/](public/fonts/dhivehi/) (slugified filename).
-2. Append a row to `FONTS` in [src/lib/fonts.ts](src/lib/fonts.ts):
+2. Append a row to `FONTS` in [src/pdf/text/fonts.ts](src/pdf/text/fonts.ts):
    ```ts
    { family: "MV MyFont", label: "MV MyFont", localAliases: ["MV MyFont"],
      url: "/fonts/dhivehi/myfont.ttf" },
@@ -155,9 +155,9 @@ Do not run `wrangler login` in CI. GitHub Actions authenticates Wrangler with `C
 
 ## Debugging on devices without devtools
 
-Append `?debug=1` to any URL to install a fixed-position error overlay that surfaces uncaught errors, promise rejections, worker errors, and `console.error` output. Implemented in [errorOverlay.ts](src/lib/errorOverlay.ts); zero overhead when absent.
+Append `?debug=1` to any URL to install a fixed-position error overlay that surfaces uncaught errors, promise rejections, worker errors, and `console.error` output. Implemented in [errorOverlay.ts](src/platform/browser/errorOverlay.ts); zero overhead when absent.
 
-The About modal (`?` in the header) has a **Show browser diagnostics** toggle that lists feature-detection results plus whether `ReadableStream`'s async-iterator was native or polyfilled by [polyfills.ts](src/lib/polyfills.ts).
+The About modal (`?` in the header) has a **Show browser diagnostics** toggle that lists feature-detection results plus whether `ReadableStream`'s async-iterator was native or polyfilled by [polyfills.ts](src/platform/browser/polyfills.ts).
 
 ## Tests
 
@@ -181,7 +181,7 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 ### Save pipeline
 
-- [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/lib/shapedDraw.ts) / [shapedBidi.ts](src/lib/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
+- [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/pdf/text/shapedDraw.ts) / [shapedBidi.ts](src/pdf/text/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
 - [ ] **Partial form-widget redaction.** Redaction removes an overlapped AcroForm field as the safe default. A future version could split visual widget appearances or preserve non-overlapped widgets from the same field when that can be done without leaving `/V`/`/DV` recoverable.
 
 ### Overlay / interaction
