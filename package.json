@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check": "tsc -b && oxfmt --check && oxlint src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
-    "lint": "oxlint src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
+    "check": "tsc -b && oxfmt --check && oxlint --threads=1 src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
+    "lint": "oxlint --threads=1 src test *.js *.mjs *.config.ts *.config.js *.config.mjs",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "preview": "vite preview",
