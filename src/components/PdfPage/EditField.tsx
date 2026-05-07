@@ -1,7 +1,8 @@
 import type { EditValue } from "@/domain/editState";
-import { richTextOrPlain, uniformSpanStyle } from "@/domain/richText";
+import { richTextOrPlain } from "@/domain/richText";
+import { sourceEditCommitValue } from "@/domain/sourceEditCommit";
 import type { TextRun } from "@/pdf/render/pdf";
-import { chooseToolbarTop, hasStyle } from "./helpers";
+import { chooseToolbarTop } from "./helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import { RichTextEditor } from "./RichTextEditor";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
@@ -12,10 +13,6 @@ const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 
 function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlock {
   return "isParagraph" in run;
-}
-
-function hasRichTextStyle(richText: ReturnType<typeof richTextOrPlain>): boolean {
-  return richText.spans.some((span) => span.style && hasStyle(span.style));
 }
 
 export function EditField({
@@ -111,19 +108,14 @@ export function EditField({
       boundaryWidth={pageViewWidth}
       initialCaretOffset={initialCaretPoint?.caretOffset}
       onCommit={(richText) => {
-        const style = uniformSpanStyle(richText);
-        const hasUniformStyle = !!style && hasStyle(style);
-        const hasStyledSpans = hasRichTextStyle(richText);
-        const unchangedText = richText.text === displayText && displayText !== sourceText;
-        const plainText = unchangedText ? sourceText : richText.text;
-        onCommit({
-          text: plainText,
-          richText:
-            (hasUniformStyle && !geometry.isParagraph) || (unchangedText && !hasStyledSpans)
-              ? undefined
-              : richText,
-          style: hasUniformStyle ? style : undefined,
-        });
+        onCommit(
+          sourceEditCommitValue({
+            richText,
+            displayText,
+            sourceText,
+            isParagraph: geometry.isParagraph,
+          }),
+        );
       }}
       onDelete={onDelete}
     />

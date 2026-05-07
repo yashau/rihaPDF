@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import type { EditValue } from "@/domain/editState";
 import { richTextOrPlain, type RichTextBlock } from "@/domain/richText";
+import { hasEditStyle, richTextHasStyle, richTextHasTextOrStyle } from "@/domain/sourceEditCommit";
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
@@ -12,25 +13,15 @@ import { sourceEditGeometry } from "./sourceEditGeometry";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
 
-function hasMeaningfulStyle(style: EditValue["style"]): boolean {
-  if (!style) return false;
-  return Object.values(style).some((value) => value !== undefined);
-}
-
 function hasMeaningfulRichText(block: RichTextBlock | undefined, runText: string): boolean {
-  if (!block) return false;
-  return block.text !== runText || block.spans.some((span) => hasMeaningfulStyle(span.style));
-}
-
-function hasRichTextStyle(block: RichTextBlock | undefined): boolean {
-  return !!block?.spans.some((span) => hasMeaningfulStyle(span.style));
+  return richTextHasTextOrStyle(block, runText);
 }
 
 function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): boolean {
   return (
     value.deleted === true ||
     value.text !== run.text ||
-    hasMeaningfulStyle(value.style) ||
+    hasEditStyle(value.style) ||
     hasMeaningfulRichText(value.richText, run.text)
   );
 }
@@ -342,7 +333,7 @@ export function SourceRunOverlay({
             justifyLineLayouts={
               "textAlign" in run &&
               run.textAlign === "justify" &&
-              (hasMeaningfulStyle(style) || hasRichTextStyle(editedValue.richText))
+              (hasEditStyle(style) || richTextHasStyle(editedValue.richText))
             }
           />
         </span>

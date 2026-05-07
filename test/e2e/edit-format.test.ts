@@ -318,8 +318,9 @@ describe("edit-existing-run formatting", () => {
       return null;
     }, target!.id);
     expect(committedRect, "bolded word span not found after commit").not.toBeNull();
-    expect(Math.abs(committedRect!.cx - wordRect.cx)).toBeLessThan(40);
-    expect(Math.abs(committedRect!.top - wordRect.top)).toBeLessThan(8);
+    expect(Math.abs(committedRect!.right - wordRect.right)).toBeLessThan(8);
+    expect(Math.abs(committedRect!.top - wordRect.top)).toBeLessThan(5);
+    expect(Math.abs(committedRect!.bottom - wordRect.bottom)).toBeLessThan(6);
   });
 
   test("toggling bold OFF on an inserted run sticks across reopen", async () => {
