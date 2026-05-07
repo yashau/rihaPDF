@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["unicorn"],
+  "jsPlugins": ["oxlint-tailwindcss"],
   "categories": {
     "correctness": "off"
   },
@@ -10,8 +11,16 @@
   "env": {
     "builtin": true
   },
+  "settings": {
+    "tailwindcss": {
+      "entryPoint": "src/index.css",
+      "rootFontSize": 16
+    }
+  },
   "ignorePatterns": ["dist", "test/fixtures/output", "**/*.pdf"],
-  "rules": {},
+  "rules": {
+    "tailwindcss/enforce-canonical": "error"
+  },
   "overrides": [
     {
       "files": ["src/**/*.{ts,tsx}"],

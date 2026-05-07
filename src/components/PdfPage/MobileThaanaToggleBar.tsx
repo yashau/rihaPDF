@@ -19,7 +19,7 @@ export function MobileThaanaToggleBar({
     <div
       ref={ref}
       data-edit-toolbar
-      className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+      className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:scheme-dark"
       style={{
         position: "fixed",
         left: 0,
