@@ -39,6 +39,26 @@ describe("text run builder", () => {
     expect(runs[0].contentStreamOpIndices).toEqual([3]);
   });
 
+  it("orders widened RTL items by their right edge and preserves embedded digit gaps", () => {
+    const marker = item(0, "7.2", 490, 120, 16, 1);
+    const rtlPrefix = item(1, "\u078b\u07a8\u0788\u07ac\u0780\u07a8", 180, 120, 300, 2);
+    const digits = item(2, "129", 260, 120, 20, 3);
+    const rtlSuffix = item(3, "\u0788\u07a6\u0782\u07a6", 100, 120, 70, 4);
+    rtlPrefix.gapLeft = 190;
+    rtlPrefix.gapRight = 470;
+
+    const runs = buildTextRuns([marker, rtlPrefix, digits, rtlSuffix], 1, [], 1, 200);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].text).toMatch(/^7\.2\s+\u078b\u07a8\u0788\u07ac\u0780\u07a8/);
+    expect(runs[0].text).toContain("\u078b\u07a8\u0788\u07ac\u0780\u07a8 129 ");
+    expect(runs[0].text).not.toContain("\u078b\u07a8\u0788\u07ac\u0780\u07a8129");
+    expect(runs[0].text.indexOf("129")).toBeGreaterThan(
+      runs[0].text.indexOf("\u078b\u07a8\u0788\u07ac\u0780\u07a8"),
+    );
+    expect(runs[0].sourceIndices).toEqual([0, 1, 2, 3]);
+  });
+
   it("prefers owned font shows over nearby unowned candidates", () => {
     const fontShows: FontShow[] = [
       {

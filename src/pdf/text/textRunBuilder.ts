@@ -22,6 +22,16 @@ function cssSpaceWidth(
   return width > 0 ? width : fontSizePx * 0.25;
 }
 
+function spacesForVisualGap(
+  gapPx: number,
+  fontFamily: string,
+  fontSizePx: number,
+  bold: boolean,
+  italic: boolean,
+): number {
+  return Math.max(1, Math.round(gapPx / cssSpaceWidth(fontFamily, fontSizePx, bold, italic)));
+}
+
 // Strong-RTL Unicode ranges: Hebrew, Arabic, Thaana, Syriac, plus the
 // Arabic Presentation Forms blocks. Used to detect run direction.
 const RTL_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE\u{10800}-\u{10FFF}]/u;
@@ -53,8 +63,13 @@ function baseFontTargetsThaana(baseName: string | null | undefined): boolean {
  */
 function sortItemsLogical(items: TextItem[], rtl: boolean): TextItem[] {
   const cmp = (a: TextItem, b: TextItem) => {
-    const ax = a.transform[4];
-    const bx = b.transform[4];
+    const edge = (it: TextItem) => {
+      const left = it.transform[4];
+      const width = it.width || Math.abs(it.transform[3]) * 0.3;
+      return rtl ? left + width : left;
+    };
+    const ax = edge(a);
+    const bx = edge(b);
     const xDelta = rtl ? bx - ax : ax - bx;
     if (Math.abs(xDelta) > 1) return xDelta;
     return (b.width || 0) - (a.width || 0);
@@ -69,6 +84,12 @@ function itemCaretStartEnd(it: TextItem): { startX: number; endX: number } {
   return scriptOf(it.str) === "rtl" ? { startX: right, endX: left } : { startX: left, endX: right };
 }
 
+function caretGapPiece(prevItem: TextItem, it: TextItem): CaretPiece {
+  const prevEndX = itemCaretStartEnd(prevItem).endX;
+  const currentStartX = itemCaretStartEnd(it).startX;
+  return { text: " ", startX: prevEndX, endX: currentStartX };
+}
+
 const COMBINING_MARK_RE = /^[ަ-ްً-ٰٟۖ-ۭ]$/u;
 
 function fontShowForItem(it: TextItem, fontShowsByOpIndex: Map<number, FontShow>): FontShow | null {
@@ -77,11 +98,13 @@ function fontShowForItem(it: TextItem, fontShowsByOpIndex: Map<number, FontShow>
   return fontShowsByOpIndex.get(ops[0]) ?? null;
 }
 
+type CaretPiece = { text: string; startX: number; endX: number };
+
 function caretPiecesForItem(
   it: TextItem,
   fontShowsByOpIndex: Map<number, FontShow>,
   scale: number,
-): Array<{ text: string; startX: number; endX: number }> {
+): CaretPiece[] {
   const show = fontShowForItem(it, fontShowsByOpIndex);
   if (show?.glyphSpans && show.glyphSpans.length >= it.str.length) {
     const spans =
@@ -100,9 +123,17 @@ function caretPiecesForItem(
   return [{ text: it.str, ...span }];
 }
 
-function buildCaretPositionsFromPieces(
-  pieces: Array<{ text: string; startX: number; endX: number }>,
-): { text: string; caretPositions: Array<{ offset: number; x: number }> } {
+function itemLogicalEdges(pieces: CaretPiece[]): { startX: number; endX: number } | null {
+  const first = pieces.find((piece) => piece.text.length > 0);
+  const last = pieces.findLast((piece) => piece.text.length > 0);
+  if (!first || !last) return null;
+  return { startX: first.startX, endX: last.endX };
+}
+
+function buildCaretPositionsFromPieces(pieces: CaretPiece[]): {
+  text: string;
+  caretPositions: Array<{ offset: number; x: number }>;
+} {
   const chars: Array<{ ch: string; beforeX: number; afterX: number }> = [];
   for (const piece of pieces) {
     const len = piece.text.length;
@@ -172,6 +203,20 @@ export function buildTextRuns(
   let bucket: TextItem[] = [];
   let runIndex = 0;
   const fontShowsByOpIndex = new Map(fontShows.map((s) => [s.opIndex, s]));
+  const piecesByItem = new Map<TextItem, CaretPiece[]>();
+  const piecesFor = (it: TextItem) => {
+    let pieces = piecesByItem.get(it);
+    if (!pieces) {
+      pieces = caretPiecesForItem(it, fontShowsByOpIndex, scale);
+      piecesByItem.set(it, pieces);
+    }
+    return pieces;
+  };
+  const logicalGap = (a: TextItem, b: TextItem) => {
+    const aEdges = itemLogicalEdges(piecesFor(a)) ?? itemCaretStartEnd(a);
+    const bEdges = itemLogicalEdges(piecesFor(b)) ?? itemCaretStartEnd(b);
+    return Math.abs(bEdges.startX - aEdges.endX);
+  };
 
   const flush = () => {
     if (bucket.length === 0) return;
@@ -198,7 +243,10 @@ export function buildTextRuns(
       maxHeight = Math.max(maxHeight, h);
       baselineY = ty;
       if (prevItem && it.str.length > 0) {
-        const wordGap = horizontalGap(prevItem, it);
+        const mixedScript = scriptOf(prevItem.str) !== scriptOf(it.str);
+        const visualGap = horizontalGap(prevItem, it);
+        const hiddenLogicalGap = mixedScript ? logicalGap(prevItem, it) : 0;
+        const wordGap = Math.max(visualGap, hiddenLogicalGap);
         if (wordGap > h * 0.12 && !text.endsWith(" ") && !it.str.startsWith(" ")) {
           const tabLikeListGap =
             scriptOf(prevItem.str) === "ltr" &&
@@ -206,26 +254,21 @@ export function buildTextRuns(
             isListMarkerText(text);
           if (tabLikeListGap) {
             const marker = `\u{e000}${gapPlaceholders.size}\u{e001}`;
-            const prevEndX = itemCaretStartEnd(prevItem).endX;
-            const currentStartX = itemCaretStartEnd(it).startX;
+            const gapPiece = caretGapPiece(prevItem, it);
             gapPlaceholders.set(marker, {
-              gapPx: wordGap,
-              startX: prevEndX,
-              endX: currentStartX,
+              gapPx: visualGap,
+              startX: gapPiece.startX,
+              endX: gapPiece.endX,
             });
-            caretPieces.push({ text: marker, startX: prevEndX, endX: currentStartX });
+            caretPieces.push({ ...gapPiece, text: marker });
             text += marker;
           } else {
-            caretPieces.push({
-              text: " ",
-              startX: itemCaretStartEnd(prevItem).endX,
-              endX: itemCaretStartEnd(it).startX,
-            });
+            caretPieces.push(caretGapPiece(prevItem, it));
             text += " ";
           }
         }
       }
-      caretPieces.push(...caretPiecesForItem(it, fontShowsByOpIndex, scale));
+      caretPieces.push(...piecesFor(it));
       text += it.str;
       if (it.str.length > 0) prevItem = it;
       sourceIndices.push(it.index);
@@ -275,14 +318,14 @@ export function buildTextRuns(
     const baseName = bestShow?.baseFont ?? null;
     const fontFamily = resolveFamilyFromHint(baseName, text);
     if (gapPlaceholders.size > 0) {
-      const spaceWidth = cssSpaceWidth(
-        fontFamily,
-        maxHeight,
-        bestShow?.bold ?? false,
-        bestShow?.italic ?? false,
-      );
       for (const [marker, gap] of gapPlaceholders) {
-        const spaces = Math.max(1, Math.round(gap.gapPx / spaceWidth));
+        const spaces = spacesForVisualGap(
+          gap.gapPx,
+          fontFamily,
+          maxHeight,
+          bestShow?.bold ?? false,
+          bestShow?.italic ?? false,
+        );
         text = text.replace(marker, " ".repeat(spaces));
         for (const piece of caretPieces) {
           if (piece.text === marker) piece.text = " ".repeat(spaces);

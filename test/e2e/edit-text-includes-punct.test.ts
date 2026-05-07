@@ -84,6 +84,40 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       /^7\.1 {2,}[\u0780-\u07bf]/u,
     );
 
+    const sevenTwo = await h.page.evaluate(() => {
+      const host = document.querySelector('[data-page-index="2"]');
+      if (!host) return null;
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const text = el.textContent || "";
+        if (text.startsWith("7.2") && text.includes("129") && /[\u0780-\u07bf]/u.test(text)) {
+          return {
+            id: el.getAttribute("data-run-id")!,
+            text,
+          };
+        }
+      }
+      return null;
+    });
+    expect(sevenTwo, "couldn't find the 7.2 / 129 list line on page 3").not.toBeNull();
+    await h.page.locator(`[data-run-id="${sevenTwo!.id}"]`).click();
+    await h.page.waitForTimeout(300);
+    const sevenTwoEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    expect(
+      sevenTwoEditorValue,
+      `edit box should not glue Thaana text to 129: "${sevenTwoEditorValue}"`,
+    ).not.toMatch(/[\u0780-\u07bf]129/u);
+    expect(
+      sevenTwoEditorValue,
+      `edit box should keep a separator after 129: "${sevenTwoEditorValue}"`,
+    ).toMatch(/[\u0780-\u07bf] 129 [\u0780-\u07bf]/u);
+    expect(
+      sevenTwoEditorValue,
+      `edit box should not over-expand inline 129 spacing: "${sevenTwoEditorValue}"`,
+    ).not.toMatch(/[\u0780-\u07bf] {2,}129|129 {2,}[\u0780-\u07bf]/u);
+    expect(sevenTwoEditorValue, `edit box content: "${sevenTwoEditorValue}"`).toMatch(
+      /^7\.2 {2,}[\u0780-\u07bf]/u,
+    );
+
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
     await h.page.waitForTimeout(200);
