@@ -6,6 +6,7 @@ import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
 import { RichTextView } from "./RichTextEditor";
+import { sourceEditGeometry } from "./sourceEditGeometry";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
 
@@ -104,7 +105,6 @@ export function SourceRunOverlay({
   // gone from the render. The HTML overlay below just paints the new
   // content where the user wants it.
   const padX = 2;
-  const padY = 2;
   const activateRun = (nextInitialCaretPoint?: InitialCaretPoint) => {
     if (tool === "highlight") {
       addHighlightForRun(run);
@@ -174,14 +174,18 @@ export function SourceRunOverlay({
 
   if (edited) {
     const style = editedValue.style ?? {};
-    const isParagraph = "isParagraph" in run && run.isParagraph;
-    const overlayLineHeight =
-      isParagraph && "lineStep" in run && run.lineStep
-        ? run.lineStep
-        : isParagraph
-          ? Math.max(run.height * 1.45, run.height + 4)
-          : run.bounds.height;
     const defaultFontSizePt = run.height / page.scale;
+    const hasRtlText = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u.test(editedValue.text);
+    const isRtlEditor =
+      style.dir === "rtl" ||
+      (style.dir !== "ltr" && (hasRtlText || /[\u0780-\u07bf]/u.test(run.text)));
+    const geometry = sourceEditGeometry({
+      run,
+      pageViewWidth: page.viewWidth,
+      dx,
+      dy,
+      isRtlEditor,
+    });
     const defaultStyle = {
       fontFamily: style.fontFamily ?? run.fontFamily,
       fontSize: style.fontSize ?? defaultFontSizePt,
@@ -189,7 +193,7 @@ export function SourceRunOverlay({
       italic: style.italic ?? run.italic,
       underline: style.underline ?? run.underline ?? false,
       strikethrough: style.strikethrough ?? run.strikethrough ?? false,
-      dir: style.dir,
+      dir: style.dir ?? (isRtlEditor ? "rtl" : undefined),
       color: style.color,
     };
     // Edited / dragged run: paint the new text where the user wants
@@ -210,10 +214,10 @@ export function SourceRunOverlay({
         aria-label={`Edit text: ${editedValue.text}`}
         style={{
           position: "absolute",
-          left: run.bounds.left - padX + dx,
-          top: run.bounds.top - padY + dy,
-          width: Math.max(run.bounds.width, 12) + padX * 2,
-          height: run.bounds.height + padY * 2,
+          left: geometry.left,
+          top: geometry.top,
+          width: geometry.width,
+          height: geometry.height,
           // White cover masks the original glyphs at the SOURCE
           // position when the strip pipeline silently no-ops (Form
           // XObject case). After a move the span paints at a NEW
@@ -227,8 +231,7 @@ export function SourceRunOverlay({
             : "1px solid rgba(255, 200, 60, 0.5)",
           pointerEvents: "auto",
           cursor: isDragging ? "grabbing" : "text",
-          display: "flex",
-          alignItems: isParagraph ? "flex-start" : "center",
+          display: "block",
           overflow: "visible",
           // Once the user actually moves the cursor, the portal'd
           // clone (rendered by PdfPage) is what they see — the
@@ -266,23 +269,28 @@ export function SourceRunOverlay({
         onKeyDown={handleOverlayKeyDown}
       >
         <span
-          dir={style.dir ?? "auto"}
+          dir={defaultStyle.dir ?? "auto"}
           style={{
-            lineHeight: `${overlayLineHeight}px`,
+            display: "block",
+            boxSizing: "border-box",
+            height: "100%",
+            lineHeight: `${geometry.lineHeight}px`,
             width: "100%",
-            whiteSpace: "pre-wrap",
-            paddingLeft: padX,
-            paddingRight: padX,
+            whiteSpace: "pre",
+            paddingLeft: geometry.hasSourceLineLayouts ? 0 : padX * 2,
+            paddingRight: geometry.hasSourceLineLayouts ? 0 : padX * 2,
           }}
         >
           <RichTextView
             block={richTextOrPlain(editedValue.richText, editedValue.text, style)}
             defaultStyle={defaultStyle}
             pageScale={page.scale}
-            lineHeight={overlayLineHeight}
+            lineHeight={geometry.lineHeight}
             textAlign={"textAlign" in run ? run.textAlign : undefined}
             wrap={false}
             lineLayouts={"lineLayouts" in run ? run.lineLayouts : undefined}
+            lineLayoutOffsetX={geometry.lineLayoutOffsetX}
+            lineLayoutOffsetY={geometry.lineLayoutOffsetY}
           />
         </span>
       </span>

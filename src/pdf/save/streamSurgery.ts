@@ -17,6 +17,8 @@ import { findMatchingQ, lookupPageXObjectRef, readImageBytesFromXObject } from "
 import { makeRedactedImageXObject, rectContains } from "./redactions/images";
 import { markVectorPaintOpsForRedaction, pruneUnusedPageXObjects } from "./redactions/vectors";
 
+const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u;
+
 /** Plan for a same-source draw: emit drawText on this source's `doc`
  *  at (boxLeftPdf, baselineYPdf) on `targetPageIndex`. */
 export type SameSourceDrawPlan = {
@@ -173,9 +175,16 @@ export async function applyStreamSurgeryForSource(
       const runPdfHeight = run.height / scale;
       const lineStepPdf = lineStepForRuns(sourceRuns, scale);
       const lineLayoutsPdf = lineLayoutsForRuns(sourceRuns, run, scale);
+      const drawBox = drawBoxForEdit(run, edit, scale, runPdfX, runPdfWidth, lineLayoutsPdf);
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
       let matched = shows.filter((s) => editOpIndices.has(s.index));
+      type TargetBox = { y: number; xMin: number; xMax: number };
+      const targetBoxes: TargetBox[] = sourceRuns.map((sourceRun) => ({
+        y: Math.round(pageHeight - sourceRun.baselineY / scale),
+        xMin: sourceRun.bounds.left / scale,
+        xMax: (sourceRun.bounds.left + sourceRun.bounds.width) / scale,
+      }));
       if (matched.length === 0) {
         const tolY = Math.max(2, runPdfHeight * 0.4);
         const tolX = Math.max(2, runPdfHeight * 0.3);
@@ -187,6 +196,20 @@ export async function applyStreamSurgeryForSource(
           if (ex > runPdfX + runPdfWidth + tolX) return false;
           return true;
         });
+      }
+      const matchedIndexes = new Set(matched.map((s) => s.index));
+      const xSlackPdf = Math.max(8, runPdfHeight);
+      for (const s of shows) {
+        if (matchedIndexes.has(s.index)) continue;
+        const ey = Math.round(s.textMatrix[5]);
+        const ex = s.textMatrix[4];
+        for (const box of targetBoxes) {
+          if (Math.abs(ey - box.y) > 1) continue;
+          if (ex < box.xMin - xSlackPdf || ex > box.xMax + xSlackPdf) continue;
+          matched.push(s);
+          matchedIndexes.add(s.index);
+          break;
+        }
       }
 
       // Whatever the path, if the run carries source-detected
@@ -221,9 +244,9 @@ export async function applyStreamSurgeryForSource(
             run,
             sourceKey: source.sourceKey,
             targetPageIndex: edit.targetPageIndex!,
-            boxLeftPdf: edit.targetPdfX ?? 0,
+            boxLeftPdf: edit.targetPdfX ?? drawBox.left,
             baselineYPdf: edit.targetPdfY ?? 0,
-            runPdfWidth,
+            runPdfWidth: drawBox.width,
             runPdfHeight,
             lineStepPdf,
             lineLayoutsPdf,
@@ -234,9 +257,9 @@ export async function applyStreamSurgeryForSource(
             run,
             targetSourceKey,
             targetPageIndex: edit.targetPageIndex!,
-            boxLeftPdf: edit.targetPdfX ?? 0,
+            boxLeftPdf: edit.targetPdfX ?? drawBox.left,
             baselineYPdf: edit.targetPdfY ?? 0,
-            runPdfWidth,
+            runPdfWidth: drawBox.width,
             runPdfHeight,
             lineStepPdf,
             lineLayoutsPdf,
@@ -280,9 +303,9 @@ export async function applyStreamSurgeryForSource(
         run,
         sourceKey: source.sourceKey,
         targetPageIndex: pageIndex,
-        boxLeftPdf: runPdfX + moveX,
+        boxLeftPdf: drawBox.left + moveX,
         baselineYPdf: runPdfY + moveY,
-        runPdfWidth,
+        runPdfWidth: drawBox.width,
         runPdfHeight,
         lineStepPdf,
         lineLayoutsPdf,
@@ -602,9 +625,29 @@ function lineLayoutsForRuns(
       xOffset: layout.left / scale,
       baselineOffset,
       width: layout.width / scale,
-      justify: layout.justify,
+      justify: false,
     };
   });
+}
+
+function drawBoxForEdit(
+  run: TextRun | SourceTextBlock,
+  edit: Edit,
+  scale: number,
+  runPdfX: number,
+  runPdfWidth: number,
+  lineLayoutsPdf: RichTextLineLayoutPdf[] | undefined,
+): { left: number; width: number } {
+  if (lineLayoutsPdf && lineLayoutsPdf.length > 0) return { left: runPdfX, width: runPdfWidth };
+  const text = edit.richText?.text ?? edit.newText;
+  const isRtl = edit.style?.dir === "rtl" || (edit.style?.dir !== "ltr" && RTL_RE.test(text));
+  if (!isRtl) return { left: runPdfX, width: runPdfWidth };
+  const widthPadding = Math.max(240, run.height * 14) / scale;
+  const width = runPdfWidth + widthPadding;
+  return {
+    left: runPdfX + runPdfWidth - width,
+    width,
+  };
 }
 
 function isCrossPageEdit(edit: Edit, sourceKey: string, pageIndex: number): boolean {

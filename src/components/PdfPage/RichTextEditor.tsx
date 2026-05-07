@@ -147,6 +147,53 @@ function createInitialEditorState(block: RichTextBlock, pageScale: number, rtl: 
   };
 }
 
+function splitSpansIntoLines(spans: readonly RichTextSpan[]): RichTextSpan[][] {
+  const lines: RichTextSpan[][] = [[]];
+  for (const span of spans) {
+    const parts = span.text.split("\n");
+    parts.forEach((part, index) => {
+      if (index > 0) lines.push([]);
+      if (part.length > 0) lines[lines.length - 1].push({ text: part, style: span.style });
+    });
+  }
+  return lines;
+}
+
+function appendTextNode(
+  paragraph: ReturnType<typeof $createParagraphNode>,
+  text: string,
+  style: EditStyle | undefined,
+  pageScale: number,
+  rtl: boolean,
+) {
+  const node = $createTextNode(protectRtlNumericMarkers(text, rtl));
+  if (style?.bold) node.toggleFormat("bold");
+  if (style?.italic) node.toggleFormat("italic");
+  if (style?.underline) node.toggleFormat("underline");
+  if (style?.strikethrough) node.toggleFormat("strikethrough");
+  node.setStyle(styleToCss(style, pageScale));
+  paragraph.append(node);
+}
+
+function createLineLayoutEditorState(block: RichTextBlock, pageScale: number, rtl: boolean) {
+  return () => {
+    const root = $getRoot();
+    root.clear();
+    const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
+    const lines = splitSpansIntoLines(spans);
+    for (const line of lines) {
+      const paragraph = $createParagraphNode();
+      for (const span of line) {
+        appendTextNode(paragraph, span.text, span.style, pageScale, rtl);
+      }
+      root.append(paragraph);
+    }
+    const rootChildren = root.getChildren();
+    const last = rootChildren[rootChildren.length - 1];
+    if ($isParagraphNode(last)) last.selectEnd();
+  };
+}
+
 function editorStateToRichText(editorState: EditorState, pageScale: number): RichTextBlock {
   const spans: RichTextSpan[] = [];
   editorState.read(() => {
@@ -247,6 +294,47 @@ function ThaanaInputPlugin({ enabled }: { enabled: boolean }) {
   return null;
 }
 
+function SourceLineLayoutPlugin({
+  layouts,
+  offsetX,
+  offsetY,
+  lineHeight,
+}: {
+  layouts?: readonly SourceTextLineLayout[];
+  offsetX?: number;
+  offsetY?: number;
+  lineHeight: number;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    if (!layouts || layouts.length === 0) return undefined;
+    const apply = () => {
+      const root = editor.getRootElement();
+      if (!root) return;
+      Array.from(root.children).forEach((child, index) => {
+        if (!(child instanceof HTMLElement)) return;
+        const layout = layouts[index];
+        child.style.margin = "0";
+        child.style.padding = "0";
+        child.style.position = "absolute";
+        child.style.left = `${(layout?.left ?? 0) + (offsetX ?? 0)}px`;
+        child.style.top = `${(layout?.top ?? lineHeight * index) + (offsetY ?? 0)}px`;
+        child.style.width = typeof layout?.width === "number" ? `${layout.width}px` : "100%";
+        child.style.minHeight = `${lineHeight}px`;
+        child.style.lineHeight = `${lineHeight}px`;
+        child.style.textAlign = "start";
+        child.style.textAlignLast = "auto";
+        child.style.whiteSpace = "pre";
+        child.style.overflowWrap = "normal";
+        child.style.wordBreak = "normal";
+      });
+    };
+    apply();
+    return editor.registerUpdateListener(() => apply());
+  }, [editor, layouts, offsetX, offsetY, lineHeight]);
+  return null;
+}
+
 export function RichTextEditor({
   id,
   initial,
@@ -259,6 +347,9 @@ export function RichTextEditor({
   maxHeight,
   lineHeight,
   textAlign: _textAlign,
+  lineLayouts,
+  lineLayoutOffsetX,
+  lineLayoutOffsetY,
   wrap,
   scroll,
   toolbarTop,
@@ -280,6 +371,9 @@ export function RichTextEditor({
   maxHeight?: number;
   lineHeight: number;
   textAlign?: "justify" | "start";
+  lineLayouts?: readonly SourceTextLineLayout[];
+  lineLayoutOffsetX?: number;
+  lineLayoutOffsetY?: number;
   wrap?: boolean;
   scroll?: boolean;
   toolbarTop: number;
@@ -311,13 +405,22 @@ export function RichTextEditor({
       onError(error: Error) {
         throw error;
       },
-      editorState: createInitialEditorState(
-        initial,
-        pageScale,
-        defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
-      ),
+      editorState:
+        lineLayouts && lineLayouts.length > 0
+          ? createLineLayoutEditorState(
+              initial,
+              pageScale,
+              defaultStyle.dir === "rtl" ||
+                (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
+            )
+          : createInitialEditorState(
+              initial,
+              pageScale,
+              defaultStyle.dir === "rtl" ||
+                (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
+            ),
     }),
-    [defaultStyle.dir, id, initial, pageScale],
+    [defaultStyle.dir, id, initial, lineLayouts, pageScale],
   );
 
   const commit = useCallback(() => {
@@ -376,6 +479,12 @@ export function RichTextEditor({
         onStyleChange={setActiveStyle}
       />
       <ThaanaInputPlugin enabled={isMobile && thaanaInput} />
+      <SourceLineLayoutPlugin
+        layouts={lineLayouts}
+        offsetX={lineLayoutOffsetX}
+        offsetY={lineLayoutOffsetY}
+        lineHeight={lineHeight}
+      />
       <HistoryPlugin />
       <OnChangePlugin
         ignoreSelectionChange
@@ -396,8 +505,9 @@ export function RichTextEditor({
               height: maxHeight === minHeight ? minHeight : undefined,
               minHeight,
               maxHeight: maxHeight ?? (scroll ? 360 : undefined),
-              overflow: scroll ? "auto" : "visible",
-              padding: "0 4px",
+              overflow:
+                lineLayouts && lineLayouts.length > 0 ? "visible" : scroll ? "auto" : "visible",
+              padding: lineLayouts && lineLayouts.length > 0 ? 0 : "0 4px",
               outline: "2px solid rgb(59, 130, 246)",
               background: "white",
               color: colorToCss(activeStyle.color) ?? "black",
@@ -411,6 +521,7 @@ export function RichTextEditor({
               overflowWrap: wrap ? "break-word" : "normal",
               wordBreak: "normal",
               boxSizing: "border-box",
+              position: lineLayouts && lineLayouts.length > 0 ? "relative" : undefined,
               direction: editorDir === "auto" ? undefined : editorDir,
               unicodeBidi: "plaintext",
             }}
@@ -518,6 +629,8 @@ export function RichTextView({
   textAlign,
   wrap = true,
   lineLayouts,
+  lineLayoutOffsetX = 0,
+  lineLayoutOffsetY = 0,
 }: {
   block: RichTextBlock;
   defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
@@ -527,6 +640,8 @@ export function RichTextView({
   textAlign?: "justify" | "start";
   wrap?: boolean;
   lineLayouts?: readonly SourceTextLineLayout[];
+  lineLayoutOffsetX?: number;
+  lineLayoutOffsetY?: number;
 }) {
   const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
   const lines: RichTextSpan[][] = [[]];
@@ -562,14 +677,14 @@ export function RichTextView({
             style={{
               display: "block",
               position: "absolute",
-              left: layout?.left ?? 0,
-              top: layout?.top ?? lineHeight * lineIndex,
+              left: (layout?.left ?? 0) + lineLayoutOffsetX,
+              top: (layout?.top ?? lineHeight * lineIndex) + lineLayoutOffsetY,
               width: layout?.width ?? "100%",
               minHeight: lineHeight,
               lineHeight: `${lineHeight}px`,
-              textAlign: layout?.justify ? "justify" : "start",
-              textAlignLast: layout?.justify ? "justify" : "auto",
-              whiteSpace: layout?.justify ? "normal" : "pre",
+              textAlign: "start",
+              textAlignLast: "auto",
+              whiteSpace: "pre",
               overflowWrap: "normal",
               wordBreak: "normal",
               unicodeBidi: "plaintext",
@@ -598,7 +713,7 @@ export function RichTextView({
                         color: colorToCss(style.color) ?? "black",
                         direction: style.dir,
                         unicodeBidi: "isolate",
-                        whiteSpace: layout?.justify ? "normal" : "pre",
+                        whiteSpace: "pre",
                       }}
                     >
                       {span.text}

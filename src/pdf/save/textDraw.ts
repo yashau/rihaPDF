@@ -54,11 +54,15 @@ function trimLeadingLineSpaces(line: RichDrawLine): RichDrawLine {
 function splitLineTokens(line: RichDrawLine): RichDrawLine {
   const tokens: RichDrawLine = [];
   for (const span of line) {
-    for (const part of span.text.split(/(\s+)/u)) {
+    for (const part of span.text.split(/(\s+|\d+(?:[./-]\d+)+|\d+|[()]+)/u)) {
       if (part.length > 0) tokens.push({ text: part, style: span.style });
     }
   }
   return tokens;
+}
+
+function isWhitespaceToken(span: RichTextSpan): boolean {
+  return span.text.length > 0 && span.text.trim().length === 0;
 }
 
 function spaceCount(line: RichDrawLine): number {
@@ -299,7 +303,7 @@ async function drawJustifiedRichLine(
 ): Promise<void> {
   const tokens = splitLineTokens(line);
   let cursorX = opts.isRtl ? opts.x + opts.width : opts.x;
-  for (const span of opts.isRtl ? [...tokens].reverse() : tokens) {
+  for (const span of tokens) {
     const style = mergeStyle(opts.baseStyle, span.style);
     const family = style.fontFamily ?? opts.fallbackFamily;
     const fontSizePt = style.fontSize ?? opts.fallbackSize;
@@ -321,6 +325,73 @@ async function drawJustifiedRichLine(
       cursorX += opts.isRtl
         ? -(widthPt + opts.extraSpace * spaces)
         : widthPt + opts.extraSpace * spaces;
+      continue;
+    }
+    const drawX = opts.isRtl ? cursorX - widthPt : cursorX;
+    await drawTextWithStyle(page, span.text, {
+      x: drawX,
+      y: opts.y,
+      size: fontSizePt,
+      font: pdfFont,
+      fontBytes,
+      family,
+      italic,
+      dir,
+      getFont: opts.getFont,
+      color: style.color,
+    });
+    drawDecorations(page, {
+      x: drawX,
+      y: opts.y,
+      width: widthPt,
+      size: fontSizePt,
+      underline: style.underline ?? opts.baseStyle.underline ?? false,
+      strikethrough: style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
+      color: style.color,
+    });
+    cursorX += opts.isRtl ? -widthPt : widthPt;
+  }
+}
+
+async function drawTokenizedRichLine(
+  page: PDFPage,
+  line: RichDrawLine,
+  opts: {
+    x: number;
+    y: number;
+    width: number;
+    isRtl: boolean;
+    baseStyle: EditStyle;
+    fallbackFamily: string;
+    fallbackSize: number;
+    fallbackBold: boolean;
+    fallbackItalic: boolean;
+    fallbackDir: "rtl" | "ltr" | undefined;
+    getFont: EmbeddedFontFactory;
+  },
+): Promise<void> {
+  const tokens = splitLineTokens(line);
+  let cursorX = opts.isRtl ? opts.x + opts.width : opts.x;
+  for (const span of tokens) {
+    const style = mergeStyle(opts.baseStyle, span.style);
+    const family = style.fontFamily ?? opts.fallbackFamily;
+    const fontSizePt = style.fontSize ?? opts.fallbackSize;
+    const bold = style.bold ?? opts.fallbackBold;
+    const italic = style.italic ?? opts.fallbackItalic;
+    const tokenHasRtl = /[֐-׿؀-ۿހ-޿]/u.test(span.text);
+    const dir = style.dir ?? (tokenHasRtl ? "rtl" : "ltr");
+    const { pdfFont, bytes: fontBytes } = await opts.getFont(family, bold, italic);
+    const widthPt = await measureTextWidth(
+      span.text,
+      pdfFont,
+      fontBytes,
+      family,
+      fontSizePt,
+      dir,
+      opts.getFont,
+    );
+    if (isWhitespaceToken(span)) {
+      cursorX += opts.isRtl ? -widthPt : widthPt;
       continue;
     }
     const drawX = opts.isRtl ? cursorX - widthPt : cursorX;
@@ -390,6 +461,22 @@ export async function drawRichTextBlock(
       opts.getFont,
     );
     const spaces = spaceCount(line);
+    if (isRtl) {
+      await drawTokenizedRichLine(page, line, {
+        x: lineX,
+        y: lineY,
+        width: targetWidth,
+        isRtl,
+        baseStyle: opts.baseStyle,
+        fallbackFamily: opts.fallbackFamily,
+        fallbackSize: opts.fallbackSize,
+        fallbackBold: opts.fallbackBold,
+        fallbackItalic: opts.fallbackItalic,
+        fallbackDir: opts.fallbackDir,
+        getFont: opts.getFont,
+      });
+      continue;
+    }
     if (layout?.justify && spaces > 0 && lineWidth < targetWidth) {
       await drawJustifiedRichLine(page, line, {
         x: lineX,

@@ -100,7 +100,7 @@ export async function buildPreviewBytes(
     // Slack on the x-extent: a few PDF units to forgive boundary
     // glyphs whose Tj-baseline x sits a hair outside the run's bounding
     // box (e.g. when the run was built from items with width=0).
-    const xSlackPdf = 4;
+    const xSlackPdf = Math.max(8, ...targetBoxes.map((box) => (box.xMax - box.xMin) * 0.03));
     for (const s of shows) {
       if (indicesToRemove.has(s.index)) continue;
       const ey = Math.round(s.textMatrix[5]);

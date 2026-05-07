@@ -5,6 +5,7 @@ import { chooseToolbarTop, hasStyle } from "./helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import { RichTextEditor } from "./RichTextEditor";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
+import { sourceEditGeometry } from "./sourceEditGeometry";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 const SLASH_NUMBER_RE = /\d+(?:\/\d+)+/gu;
@@ -84,15 +85,13 @@ export function EditField({
   };
   const isRtlEditor =
     defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && RTL_TEXT_RE.test(text));
-  const isParagraph = isSourceTextBlock(run) && run.isParagraph;
-  const widthPadding = isParagraph ? 32 : Math.max(96, run.height * 6);
-  const editorWidth = Math.min(
-    pageViewWidth - 8,
-    Math.max(run.bounds.width + widthPadding, isParagraph ? 120 : run.bounds.width + widthPadding),
-  );
-  const editorLeft = isRtlEditor
-    ? run.bounds.left + run.bounds.width + dx - editorWidth
-    : run.bounds.left + dx;
+  const geometry = sourceEditGeometry({
+    run,
+    pageViewWidth,
+    dx,
+    dy,
+    isRtlEditor,
+  });
   const sourceText = initial.richText?.text ?? initial.text;
   const displayText = displayTextForEditor(sourceText, isRtlEditor);
   const initialBlock = richTextOrPlain(
@@ -100,21 +99,13 @@ export function EditField({
     initial.richText ? initial.text : displayText,
     initial.style,
   );
-  const lineHeight =
-    isSourceTextBlock(run) && run.lineStep
-      ? run.lineStep
-      : isParagraph
-        ? Math.max(run.height * 1.45, run.height + 4)
-        : run.bounds.height;
-  const editorHeight = isParagraph
-    ? run.bounds.height
-    : Math.max(run.bounds.height + run.height, lineHeight * 1.75);
-  const editorTop = isParagraph
-    ? run.bounds.top + run.height * 0.25 + dy
-    : run.bounds.top - (editorHeight - run.bounds.height) * 0.5 + dy;
-  const editorBottom = editorTop + editorHeight;
+  const editorBottom = geometry.top + geometry.height;
   const textAlign =
-    isParagraph && isRtlEditor ? "justify" : isSourceTextBlock(run) ? run.textAlign : undefined;
+    geometry.isParagraph && isRtlEditor
+      ? "justify"
+      : isSourceTextBlock(run)
+        ? run.textAlign
+        : undefined;
 
   return (
     <RichTextEditor
@@ -122,19 +113,22 @@ export function EditField({
       initial={initialBlock}
       defaultStyle={defaultStyle}
       pageScale={pageScale}
-      left={editorLeft}
-      top={editorTop}
-      width={editorWidth}
-      minHeight={editorHeight}
-      maxHeight={isParagraph ? undefined : editorHeight}
-      lineHeight={lineHeight}
+      left={geometry.left}
+      top={geometry.top}
+      width={geometry.width}
+      minHeight={geometry.height}
+      maxHeight={geometry.isParagraph ? undefined : geometry.height}
+      lineHeight={geometry.lineHeight}
       textAlign={textAlign}
+      lineLayouts={geometry.lineLayouts}
+      lineLayoutOffsetX={geometry.lineLayoutOffsetX}
+      lineLayoutOffsetY={geometry.lineLayoutOffsetY}
       wrap={false}
-      scroll={isParagraph}
-      toolbarLeft={editorLeft}
+      scroll={geometry.isParagraph}
+      toolbarLeft={geometry.left}
       toolbarTop={chooseToolbarTop({
-        editorLeft,
-        editorTop,
+        editorLeft: geometry.left,
+        editorTop: geometry.top,
         editorBottom,
         blockers: toolbarBlockers,
         selfId: run.id,
