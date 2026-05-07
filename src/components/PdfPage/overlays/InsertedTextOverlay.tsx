@@ -17,7 +17,6 @@ import {
 } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
-import { OverlayDeleteButton } from "./OverlayDeleteButton";
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -227,10 +226,15 @@ export function InsertedTextOverlay({
           color={style.color}
           thaanaInput={thaanaInput}
           onThaanaInputChange={setThaanaInput}
+          boundaryWidth={page.viewWidth}
           onChange={(patch) => {
             // Toolbar already reports fontSize in PDF points — store
             // it directly on the insertion, no scale conversion.
             updateStyle(patch);
+          }}
+          onDelete={() => {
+            onDelete();
+            onClose();
           }}
         />
       ) : null}
@@ -373,15 +377,6 @@ export function InsertedTextOverlay({
             {ins.text || " "}
           </span>
         )}
-        {isEditing ? (
-          <OverlayDeleteButton
-            aria-label="Delete text"
-            onDelete={() => {
-              onDelete();
-              onClose();
-            }}
-          />
-        ) : null}
       </div>
       {renderPortal(
         {

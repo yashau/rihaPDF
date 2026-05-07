@@ -17,6 +17,9 @@ import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 
+const DESKTOP_TOOLBAR_WIDTH_PX = 520;
+const DESKTOP_TOOLBAR_MARGIN_PX = 4;
+
 /** Shared formatting toolbar — font picker, size, B / I / U toggles.
  *  Used by both the existing-run EditField and the InsertedTextOverlay
  *  so a brand-new text box has the exact same controls as an inline
@@ -41,6 +44,7 @@ export function EditTextToolbar({
   onThaanaInputChange,
   onChange,
   onDelete,
+  boundaryWidth,
 }: {
   /** Viewport-pixel position of the toolbar's top-left corner. */
   left: number;
@@ -78,6 +82,9 @@ export function EditTextToolbar({
    *  `deleted=true` on the stored EditValue; inserted-text deletion
    *  removes the entry from its slot bucket. */
   onDelete?: () => void;
+  /** Page-local width used to keep the desktop toolbar inside the
+   *  clipping page wrapper. Mobile portals to the body and ignores it. */
+  boundaryWidth?: number;
 }) {
   const isMobile = useIsMobile();
   // Mobile: pin to the visual-viewport bottom (above the keyboard,
@@ -90,6 +97,13 @@ export function EditTextToolbar({
   // layout near the editor.
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   useVisualViewportFollow(toolbarRef, "bottom", isMobile);
+  const desktopWouldOverflow =
+    boundaryWidth !== undefined &&
+    left + DESKTOP_TOOLBAR_WIDTH_PX + DESKTOP_TOOLBAR_MARGIN_PX > boundaryWidth;
+  const desktopMaxWidth =
+    boundaryWidth === undefined
+      ? undefined
+      : Math.max(0, boundaryWidth - DESKTOP_TOOLBAR_MARGIN_PX * 2);
   const baseStyle: React.CSSProperties = isMobile
     ? {
         position: "fixed",
@@ -107,10 +121,13 @@ export function EditTextToolbar({
       }
     : {
         position: "absolute",
-        left,
+        left: desktopWouldOverflow ? undefined : Math.max(DESKTOP_TOOLBAR_MARGIN_PX, left),
+        right: desktopWouldOverflow ? DESKTOP_TOOLBAR_MARGIN_PX : undefined,
         top,
         zIndex: 30,
         display: "flex",
+        maxWidth: desktopMaxWidth,
+        flexWrap: "wrap",
         gap: 4,
         padding: 4,
         borderRadius: 6,

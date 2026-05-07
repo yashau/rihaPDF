@@ -194,10 +194,10 @@ export function isFocusMovingToToolbar(next: EventTarget | null): boolean {
  *  Used by `chooseToolbarPosition` to decide if the default position
  *  (above the editor) would overlap a neighbouring run. The actual
  *  rendered toolbar grows slightly when a long font name is selected,
- *  but the dominant variability is the font dropdown — 432px covers
+ *  but the dominant variability is the font dropdown — 520px covers
  *  the usual case (Times New Roman / Faruma / etc.). */
 const TOOLBAR_HEIGHT_PX = 42;
-const TOOLBAR_WIDTH_PX = 432;
+const TOOLBAR_WIDTH_PX = 520;
 const TOOLBAR_GAP_PX = 6;
 
 /** Decide whether the formatting toolbar should sit above or below the

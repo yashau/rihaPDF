@@ -14,7 +14,6 @@ import {
   hasStyle,
   isFocusMovingToToolbar,
 } from "./helpers";
-import { OverlayDeleteButton } from "./overlays/OverlayDeleteButton";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
@@ -22,6 +21,7 @@ const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 export function EditField({
   run,
   pageScale,
+  pageViewWidth,
   toolbarBlockers,
   initial,
   initialCaretPoint,
@@ -33,6 +33,7 @@ export function EditField({
    *  toolbar's user-facing PDF-point size and the CSS pixel size for
    *  rendering. */
   pageScale: number;
+  pageViewWidth: number;
   /** Page-local rects the formatting toolbar must avoid — see
    *  `chooseToolbarTop`. The run being edited is included; the helper
    *  filters it out via `selfId`. */
@@ -177,6 +178,7 @@ export function EditField({
         color={style.color}
         thaanaInput={thaanaInput}
         onThaanaInputChange={setThaanaInput}
+        boundaryWidth={pageViewWidth}
         onChange={(patch) =>
           setStyle((s) => {
             const next: EditStyle = { ...s };
@@ -196,6 +198,7 @@ export function EditField({
             return next;
           })
         }
+        onDelete={onDelete}
       />
       <input
         ref={inputRef}
@@ -262,17 +265,6 @@ export function EditField({
           commit();
         }}
       />
-      {onDelete ? (
-        <OverlayDeleteButton
-          aria-label="Delete text"
-          positionClassName=""
-          style={{
-            left: editorLeft + width - 10,
-            top: editorTop + run.bounds.height + 8,
-          }}
-          onDelete={onDelete}
-        />
-      ) : null}
     </>
   );
 }

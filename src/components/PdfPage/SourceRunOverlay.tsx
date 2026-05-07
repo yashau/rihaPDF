@@ -135,6 +135,7 @@ export function SourceRunOverlay({
       <EditField
         run={run}
         pageScale={page.scale}
+        pageViewWidth={page.viewWidth}
         toolbarBlockers={toolbarBlockers}
         initial={editedValue ?? { text: run.text, style: undefined }}
         initialCaretPoint={initialCaretPoint}
