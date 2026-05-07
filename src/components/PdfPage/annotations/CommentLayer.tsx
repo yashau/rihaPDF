@@ -356,7 +356,7 @@ export function CommentLayer({
               />
             ) : (
               <div
-                className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap break-words overflow-hidden"
+                className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap wrap-break-word overflow-hidden"
                 style={{ fontSize: fontSizePx, lineHeight: 1.2, fontFamily: commentFontFamily }}
                 dir="auto"
               >
@@ -396,7 +396,7 @@ export function CommentLayer({
               }}
             >
               <div
-                className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap break-words overflow-hidden"
+                className="absolute inset-0 px-1 py-0.5 text-zinc-900 whitespace-pre-wrap wrap-break-word overflow-hidden"
                 style={{
                   fontSize: commentDragLive.fontSize * pageScale * displayScale,
                   lineHeight: 1.2,
