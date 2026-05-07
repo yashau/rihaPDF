@@ -74,7 +74,7 @@ function trimLeadingLineSpaces(line: RichDrawLine): RichDrawLine {
 function splitLineTokens(line: RichDrawLine): RichDrawToken[] {
   const tokens: RichDrawToken[] = [];
   for (const span of line) {
-    for (const part of span.text.split(/(\s+|\d+(?:[./-]\d+)+|\d+|[()]+)/u)) {
+    for (const part of span.text.split(/(\s+|\d+(?:[./:-]\d+)+|\d+|\p{P}+)/u)) {
       if (part.length > 0) tokens.push({ text: part, style: span.style });
     }
   }

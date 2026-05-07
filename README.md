@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-114%20e2e%20%2B%2034%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-114%20e2e%20%2B%2038%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -181,7 +181,7 @@ For focused unit coverage that does not need the dev server:
 pnpm test:coverage test/unit
 ```
 
-The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup.
+The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping, RTL source-edit display normalization, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup.
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 

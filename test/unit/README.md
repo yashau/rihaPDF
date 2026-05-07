@@ -17,7 +17,7 @@ pnpm test test/unit run redaction
 
 ## Coverage
 
-The suite currently has 34 unit tests.
+The suite currently has 38 unit tests.
 
 | File                               | What it covers                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------- |
@@ -27,6 +27,7 @@ The suite currently has 34 unit tests.
 | `redaction-geometry.test.ts`       | rectangle overlap semantics and PDF `/Rect` normalization                   |
 | `redaction-glyphs.test.ts`         | simple/composite font metrics, per-glyph rewrites, drops, and fallbacks     |
 | `redaction-save-internals.test.ts` | raster pixel sanitization, vector strip marking, and XObject pruning        |
+| `rtl-display-text.test.ts`         | RTL source-edit display normalization for dates, times, and punctuation     |
 | `text-run-builder.test.ts`         | RTL base/mark ordering, mixed digit placement, and source font ownership    |
 | `text-blocks.test.ts`              | source run grouping into editable paragraph blocks                          |
 

@@ -6,9 +6,24 @@ import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
 import { RichTextView } from "./RichTextEditor";
+import { cssTextDecoration } from "./helpers";
 import { sourceEditGeometry } from "./sourceEditGeometry";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
+
+function hasMeaningfulStyle(style: EditValue["style"]): boolean {
+  if (!style) return false;
+  return Object.values(style).some((value) => value !== undefined);
+}
+
+function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): boolean {
+  return (
+    value.deleted === true ||
+    value.text !== run.text ||
+    value.richText !== undefined ||
+    hasMeaningfulStyle(value.style)
+  );
+}
 
 function sourceCaretOffsetFromClick(
   run: TextRun,
@@ -92,6 +107,7 @@ export function SourceRunOverlay({
   // is the intent.
   if (editedValue?.deleted) return null;
   const edited = editedValue !== undefined;
+  const hasContentEdit = editedValue ? hasTextOrStyleEdit(run, editedValue) : false;
   const isDragging = drag?.runId === run.id;
   const isModified = edited || isDragging;
   // Live drag offset for THIS run (or the persisted offset if we're
@@ -172,7 +188,7 @@ export function SourceRunOverlay({
     );
   }
 
-  if (edited) {
+  if (edited && hasContentEdit) {
     const style = editedValue.style ?? {};
     const defaultFontSizePt = run.height / page.scale;
     const hasRtlText = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u.test(editedValue.text);
@@ -296,11 +312,13 @@ export function SourceRunOverlay({
       </span>
     );
   }
-  // Unedited and not currently dragging: a transparent click target
-  // sits on top of the canvas glyphs. While the user IS dragging it
-  // (live state) we render the text visibly so they can see what's
-  // moving — the preview canvas has already stripped the original
-  // from its source spot, so there's no double-rendering.
+  // Unedited and move-only runs keep the tight source box. The active
+  // edit geometry intentionally adds typing slack, but using that
+  // geometry for pure moves makes precise placement impossible.
+  const overlayText = editedValue?.text ?? run.text;
+  const tightFontSize = run.height;
+  const tightLineHeight =
+    "lineStep" in run && run.lineStep !== undefined ? run.lineStep : run.bounds.height;
   return (
     <span
       data-run-id={run.id}
@@ -309,7 +327,7 @@ export function SourceRunOverlay({
       dir="auto"
       role="button"
       tabIndex={0}
-      aria-label={`Edit text: ${run.text}`}
+      aria-label={`Edit text: ${overlayText}`}
       // `select-none` (was: `select-text`) prevents iOS from popping
       // the long-press copy menu over a drag-start — the menu would
       // otherwise eat the gesture and lock the run in selection
@@ -321,12 +339,16 @@ export function SourceRunOverlay({
         top: run.bounds.top + dy,
         width: Math.max(run.bounds.width, 12),
         height: run.bounds.height,
-        fontSize: `${run.height}px`,
-        lineHeight: `${run.bounds.height}px`,
+        fontFamily: `"${run.fontFamily}"`,
+        fontSize: `${tightFontSize}px`,
+        lineHeight: `${tightLineHeight}px`,
+        fontWeight: run.bold ? 700 : 400,
+        fontStyle: run.italic ? "italic" : "normal",
+        textDecoration: cssTextDecoration(run.underline ?? false, run.strikethrough ?? false),
         color: isModified ? "black" : "transparent",
         backgroundColor: "transparent",
         pointerEvents: "auto",
-        whiteSpace: "pre-wrap",
+        whiteSpace: "pre",
         overflow: "visible",
         // Same as the edited branch above — hide once the user has
         // moved so the body-portal preview can escape the page
@@ -340,8 +362,13 @@ export function SourceRunOverlay({
         touchAction: "pan-y pinch-zoom",
         WebkitUserSelect: "none",
       }}
-      title={run.text}
-      onPointerDown={(e) => startDrag(run.id, e, { dx: 0, dy: 0 })}
+      title={overlayText}
+      onPointerDown={(e) =>
+        startDrag(run.id, e, {
+          dx: editedValue?.dx ?? 0,
+          dy: editedValue?.dy ?? 0,
+        })
+      }
       onDoubleClick={(e) => {
         e.stopPropagation();
         onEditingChange(run.id);
@@ -355,7 +382,7 @@ export function SourceRunOverlay({
       }}
       onKeyDown={handleOverlayKeyDown}
     >
-      {run.text}
+      {overlayText}
     </span>
   );
 }

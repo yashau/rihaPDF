@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 import { useRef, useState } from "react";
 import type { EditValue } from "@/domain/editState";
-import type { RenderedPage } from "@/pdf/render/pdf";
+import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
+import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import { clickSuppressMs, useDragGesture } from "@/platform/hooks/useDragGesture";
 import { findPageAtPoint } from "./helpers";
 
@@ -54,6 +55,7 @@ export type RunDragState = {
 export function useRunDrag({
   page,
   pageIndex,
+  dragTargets,
   edits,
   onEdit,
   containerRef,
@@ -61,6 +63,7 @@ export function useRunDrag({
 }: {
   page: RenderedPage;
   pageIndex: number;
+  dragTargets: readonly (TextRun | SourceTextBlock)[];
   edits: Map<string, EditValue>;
   onEdit: (runId: string, value: EditValue) => void;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -96,7 +99,7 @@ export function useRunDrag({
   };
   const beginRunDrag = useDragGesture<RunDragCtx>({
     onStart: (ctx, e) => {
-      const run = page.textRuns.find((r) => r.id === ctx.runId);
+      const run = dragTargets.find((r) => r.id === ctx.runId);
       const rect = ctx.originRect;
       const ds = ctx.originDisplayScale;
       // Box dimensions match the edited-branch render (which uses
@@ -166,7 +169,7 @@ export function useRunDrag({
       setTimeout(() => {
         if (justDraggedRef.current === runId) justDraggedRef.current = null;
       }, suppressMs);
-      const run = page.textRuns.find((r) => r.id === runId);
+      const run = dragTargets.find((r) => r.id === runId);
       if (!run) return;
       const existing = edits.get(runId) ?? { text: run.text };
       // Cross-page detection: if the cursor landed on a different page

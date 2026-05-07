@@ -2,7 +2,8 @@ import { createPortal } from "react-dom";
 import { colorToCss } from "@/domain/color";
 import type { EditValue } from "@/domain/editState";
 import { richTextOrPlain } from "@/domain/richText";
-import type { RenderedPage } from "@/pdf/render/pdf";
+import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
+import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import { cssTextDecoration } from "./helpers";
 import { RichTextView } from "./RichTextEditor";
 import type { ImageDragState } from "./useImageDrag";
@@ -12,16 +13,20 @@ export function DragPreviews({
   drag,
   imageDrag,
   page,
+  dragTargets,
   edits,
 }: {
   drag: RunDragState | null;
   imageDrag: ImageDragState | null;
   page: RenderedPage;
+  dragTargets: readonly (TextRun | SourceTextBlock)[];
   edits: Map<string, EditValue>;
 }) {
   return (
     <>
-      {drag && drag.moved ? <RunDragPreview drag={drag} page={page} edits={edits} /> : null}
+      {drag && drag.moved ? (
+        <RunDragPreview drag={drag} page={page} dragTargets={dragTargets} edits={edits} />
+      ) : null}
       {imageDrag && imageDrag.corner === null && imageDrag.moved ? (
         <ImageDragPreview imageDrag={imageDrag} />
       ) : null}
@@ -32,13 +37,15 @@ export function DragPreviews({
 function RunDragPreview({
   drag,
   page,
+  dragTargets,
   edits,
 }: {
   drag: RunDragState;
   page: RenderedPage;
+  dragTargets: readonly (TextRun | SourceTextBlock)[];
   edits: Map<string, EditValue>;
 }) {
-  const dragRun = page.textRuns.find((r) => r.id === drag.runId);
+  const dragRun = dragTargets.find((r) => r.id === drag.runId);
   if (!dragRun || drag.width <= 0 || drag.height <= 0) return null;
 
   const editedValue = edits.get(dragRun.id);
@@ -64,7 +71,11 @@ function RunDragPreview({
   };
   const ds = drag.originDisplayScale;
   const fontSizeScreen = fontSizeNat * ds;
-  const lineHeightScreen = (dragRun.bounds.height + 4) * ds;
+  const lineHeightNat =
+    "lineStep" in dragRun && dragRun.lineStep !== undefined
+      ? dragRun.lineStep
+      : dragRun.bounds.height;
+  const lineHeightScreen = lineHeightNat * ds;
 
   return createPortal(
     <div

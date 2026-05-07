@@ -209,6 +209,13 @@ export function PdfPage({
     onEditingChange(next);
   };
 
+  const sourceTextBlocks = useMemo(
+    () => buildSourceTextBlocks(page.textRuns, page.pageNumber),
+    [page.pageNumber, page.textRuns],
+  );
+  const editableTextTargets =
+    tool === "highlight" || tool === "redact" ? page.textRuns : sourceTextBlocks;
+
   // Source-run drag gesture (in-place dx/dy + body-portal preview +
   // cross-page commit). `drag` drives the renderer; `startDrag` is
   // wired onto each run overlay's onPointerDown; `justDraggedRef`
@@ -216,6 +223,7 @@ export function PdfPage({
   const { drag, startDrag, justDraggedRef } = useRunDrag({
     page,
     pageIndex,
+    dragTargets: editableTextTargets,
     edits,
     onEdit,
     containerRef,
@@ -242,13 +250,6 @@ export function PdfPage({
     onRedactionAdd,
   });
   const toolbarBlockers = buildToolbarBlockers(page, edits, insertedTexts);
-  const sourceTextBlocks = useMemo(
-    () => buildSourceTextBlocks(page.textRuns, page.pageNumber),
-    [page.pageNumber, page.textRuns],
-  );
-  const editableTextTargets =
-    tool === "highlight" || tool === "redact" ? page.textRuns : sourceTextBlocks;
-
   return (
     <div
       ref={fitRef}
@@ -493,7 +494,13 @@ export function PdfPage({
           />
         </div>
       </div>
-      <DragPreviews drag={drag} imageDrag={imageDrag} page={page} edits={edits} />
+      <DragPreviews
+        drag={drag}
+        imageDrag={imageDrag}
+        page={page}
+        dragTargets={editableTextTargets}
+        edits={edits}
+      />
     </div>
   );
 }

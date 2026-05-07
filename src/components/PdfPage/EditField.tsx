@@ -6,44 +6,12 @@ import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import { RichTextEditor } from "./RichTextEditor";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import { sourceEditGeometry } from "./sourceEditGeometry";
+import { displayTextForEditor } from "./rtlDisplayText";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
-const SLASH_NUMBER_RE = /\d+(?:\/\d+)+/gu;
-const RTL_SLASH_DATE_GAP_RE = /(\/)\s+(\d+(?:\/\d+)+)/gu;
-const RTL_OPEN_PAREN_GAP_RE = /(\()\s+(?=[\d\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf])/gu;
-const RTL_CLOSE_PAREN_GAP_RE = /([\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf])\s+(\))/gu;
-const RTL_COMMA_GAP_RE = /([\d\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf])\s+([،,])/gu;
-const RTL_TRAILING_LIST_DOT_RE = /^(\s*)(\d+)(\s+)([\s\S]*?)(\s*)\.$/u;
-const RTL_LEADING_SECTION_MARKER_RE = /^(\s*)\.(\d)(\d)(\s+)/u;
 
 function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlock {
   return "isParagraph" in run;
-}
-
-function displayTextForEditor(text: string, rtl: boolean): string {
-  if (!rtl) return text;
-  return text
-    .split("\n")
-    .map((line) => {
-      const withSlashNumbers = line.replace(SLASH_NUMBER_RE, (value) =>
-        value.split("/").reverse().join("/"),
-      );
-      const withTightSlashDates = withSlashNumbers.replace(RTL_SLASH_DATE_GAP_RE, "$1$2");
-      const withTightPunctuation = withTightSlashDates
-        .replace(RTL_OPEN_PAREN_GAP_RE, "$1")
-        .replace(RTL_CLOSE_PAREN_GAP_RE, "$1$2")
-        .replace(RTL_COMMA_GAP_RE, "$1$2");
-      const withSectionMarker = withTightPunctuation.replace(
-        RTL_LEADING_SECTION_MARKER_RE,
-        (_match, lead: string, major: string, minor: string, gap: string) =>
-          `${lead}${minor}-${major}${gap}`,
-      );
-      const match = RTL_TRAILING_LIST_DOT_RE.exec(withSectionMarker);
-      if (!match || !RTL_TEXT_RE.test(match[4])) return withSectionMarker;
-      const [, lead, marker, gap, body, tailSpace] = match;
-      return `${lead}.${marker}${gap}${body}${tailSpace}`;
-    })
-    .join("\n");
 }
 
 export function EditField({
