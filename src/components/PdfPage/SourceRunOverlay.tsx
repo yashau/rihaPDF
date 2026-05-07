@@ -70,6 +70,7 @@ export function SourceRunOverlay({
   tool,
   isEditing,
   editedValue,
+  previewReady,
   drag,
   startDrag,
   justDraggedRef,
@@ -87,6 +88,7 @@ export function SourceRunOverlay({
   /** Persisted edit for this run (text override / position offset /
    *  style / deleted flag). undefined means the run is unedited. */
   editedValue: EditValue | undefined;
+  previewReady: boolean;
   /** Live drag state from `useRunDrag`. Non-null only while a run drag
    *  is in progress (which may or may not be THIS run). */
   drag: RunDragState | null;
@@ -109,7 +111,6 @@ export function SourceRunOverlay({
   const edited = editedValue !== undefined;
   const hasContentEdit = editedValue ? hasTextOrStyleEdit(run, editedValue) : false;
   const isDragging = drag?.runId === run.id;
-  const isModified = edited || isDragging;
   // Live drag offset for THIS run (or the persisted offset if we're
   // not currently dragging it).
   const dx = (isDragging ? drag.dx : editedValue?.dx) ?? 0;
@@ -158,6 +159,7 @@ export function SourceRunOverlay({
         toolbarBlockers={toolbarBlockers}
         initial={editedValue ?? { text: run.text, style: undefined }}
         initialCaretPoint={initialCaretPoint}
+        textVisible={previewReady}
         onCommit={(value) => {
           // Preserve any existing move offset (dx/dy) — the EditField
           // only owns text + style, so we layer back the persisted
@@ -345,7 +347,7 @@ export function SourceRunOverlay({
         fontWeight: run.bold ? 700 : 400,
         fontStyle: run.italic ? "italic" : "normal",
         textDecoration: cssTextDecoration(run.underline ?? false, run.strikethrough ?? false),
-        color: isModified ? "black" : "transparent",
+        color: edited ? "black" : "transparent",
         backgroundColor: "transparent",
         pointerEvents: "auto",
         whiteSpace: "pre",

@@ -79,7 +79,7 @@ export default function App() {
   });
   /** Map<slotId, currently-open runId> — populated by PdfPage's
    *  onEditingChange. Folded into the preview-strip spec so an open
-   *  editor immediately hides the original glyph behind it. */
+   *  editor hides the original glyph behind it. */
   const [editingByPage, setEditingByPage] = useState<Map<string, string>>(new Map());
   /** Tool mode for click-to-place actions ("select" = no insertion;
    *  "addText" = next click on a page drops a new text box; "addImage"

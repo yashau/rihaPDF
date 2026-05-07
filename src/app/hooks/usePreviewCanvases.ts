@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { PageStripSpec } from "@/pdf/render/preview";
 import type { PageSlot } from "@/domain/slots";
@@ -34,7 +34,7 @@ export function usePreviewCanvases({
    *  results when the user keeps editing during the rebuild. */
   const previewGenRef = useRef(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (sources.size === 0) return;
     type SourceBuckets = {
       runIdsByPage: Map<number, Set<string>>;
@@ -149,12 +149,24 @@ export function usePreviewCanvases({
       setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map<string, HTMLCanvasElement>()));
       return;
     }
+    if (editingByPage.size > 0) {
+      const pendingKeys = new Set(
+        tasks.flatMap((task) => task.specs.map((spec) => `${task.sourceKey}:${spec.pageIndex}`)),
+      );
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
+      setPreviewCanvases((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const key of pendingKeys) changed = next.delete(key) || changed;
+        return changed ? next : prev;
+      });
+    }
     const gen = ++previewGenRef.current;
     let cancelled = false;
-    // Mobile CPUs are slower; rebuild lag is more noticeable. Bump
-    // the debounce so the user finishes a sustained edit (e.g.
-    // typing in an EditField) before any rebuild kicks off.
-    const debounceMs = isMobile ? 250 : 150;
+    // Opening a source editor must strip immediately; otherwise the
+    // transparent editor text double-paints over the original canvas
+    // glyphs until the debounced preview arrives.
+    const debounceMs = editingByPage.size > 0 ? 0 : isMobile ? 250 : 150;
     const handle = window.setTimeout(async () => {
       try {
         const { buildPreviewBytes, renderPagePreviewCanvas } = await import("@/pdf/render/preview");

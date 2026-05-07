@@ -46,7 +46,7 @@ type Props = {
   annotations: Annotation[];
   redactions: Redaction[];
   /** Live-preview canvas — when present, paint this in place of
-   *  page.canvas. The preview has the currently-edited runs and moved
+   *  page.canvas. The preview has currently edited text and moved
    *  images stripped from its content stream so HTML overlays don't
    *  need a white cover to hide the originals. */
   previewCanvas: HTMLCanvasElement | null;
@@ -329,6 +329,7 @@ export function PdfPage({
               tool={tool}
               isEditing={editingId === run.id}
               editedValue={edits.get(run.id)}
+              previewReady={previewCanvas !== null}
               initialCaretPoint={
                 editingId === run.id && initialCaret?.id === run.id ? initialCaret.point : undefined
               }

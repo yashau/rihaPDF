@@ -642,7 +642,7 @@ function drawBoxForEdit(
   const text = edit.richText?.text ?? edit.newText;
   const isRtl = edit.style?.dir === "rtl" || (edit.style?.dir !== "ltr" && RTL_RE.test(text));
   if (!isRtl) return { left: runPdfX, width: runPdfWidth };
-  const widthPadding = Math.max(240, run.height * 14) / scale;
+  const widthPadding = Math.max(96, run.height * 6) / scale;
   const width = runPdfWidth + widthPadding;
   return {
     left: runPdfX + runPdfWidth - width,

@@ -21,6 +21,7 @@ export function EditField({
   toolbarBlockers,
   initial,
   initialCaretPoint,
+  textVisible,
   onCommit,
   onDelete,
 }: {
@@ -31,6 +32,7 @@ export function EditField({
   toolbarBlockers: readonly ToolbarBlocker[];
   initial: EditValue;
   initialCaretPoint?: InitialCaretPoint;
+  textVisible?: boolean;
   onCommit: (value: EditValue) => void;
   onDelete?: () => void;
 }) {
@@ -93,6 +95,7 @@ export function EditField({
       lineLayoutOffsetY={geometry.lineLayoutOffsetY}
       wrap={false}
       scroll={geometry.isParagraph}
+      textVisible={textVisible}
       toolbarLeft={geometry.left}
       toolbarTop={chooseToolbarTop({
         editorLeft: geometry.left,

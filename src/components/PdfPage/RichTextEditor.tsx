@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -306,10 +306,9 @@ function SourceLineLayoutPlugin({
   lineHeight: number;
 }) {
   const [editor] = useLexicalComposerContext();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!layouts || layouts.length === 0) return undefined;
-    const apply = () => {
-      const root = editor.getRootElement();
+    const apply = (root = editor.getRootElement()) => {
       if (!root) return;
       Array.from(root.children).forEach((child, index) => {
         if (!(child instanceof HTMLElement)) return;
@@ -330,7 +329,12 @@ function SourceLineLayoutPlugin({
       });
     };
     apply();
-    return editor.registerUpdateListener(() => apply());
+    const unregisterRoot = editor.registerRootListener((root) => apply(root));
+    const unregisterUpdate = editor.registerUpdateListener(() => apply());
+    return () => {
+      unregisterRoot();
+      unregisterUpdate();
+    };
   }, [editor, layouts, offsetX, offsetY, lineHeight]);
   return null;
 }
@@ -352,6 +356,7 @@ export function RichTextEditor({
   lineLayoutOffsetY,
   wrap,
   scroll,
+  textVisible = true,
   toolbarTop,
   toolbarLeft,
   boundaryWidth,
@@ -376,6 +381,7 @@ export function RichTextEditor({
   lineLayoutOffsetY?: number;
   wrap?: boolean;
   scroll?: boolean;
+  textVisible?: boolean;
   toolbarTop: number;
   toolbarLeft: number;
   boundaryWidth: number;
@@ -387,6 +393,7 @@ export function RichTextEditor({
   const editorRef = useRef<LexicalEditor | null>(null);
   const latestBlockRef = useRef<RichTextBlock>(initial);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const hasLineLayouts = !!lineLayouts && lineLayouts.length > 0;
   const [thaanaInput, setThaanaInput] = useState(true);
   const [activeStyle, setActiveStyle] = useState<EditStyle>(defaultStyle);
   useVisualViewportFollow(toolbarRef, "bottom", isMobile);
@@ -405,22 +412,19 @@ export function RichTextEditor({
       onError(error: Error) {
         throw error;
       },
-      editorState:
-        lineLayouts && lineLayouts.length > 0
-          ? createLineLayoutEditorState(
-              initial,
-              pageScale,
-              defaultStyle.dir === "rtl" ||
-                (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
-            )
-          : createInitialEditorState(
-              initial,
-              pageScale,
-              defaultStyle.dir === "rtl" ||
-                (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
-            ),
+      editorState: hasLineLayouts
+        ? createLineLayoutEditorState(
+            initial,
+            pageScale,
+            defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
+          )
+        : createInitialEditorState(
+            initial,
+            pageScale,
+            defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
+          ),
     }),
-    [defaultStyle.dir, id, initial, lineLayouts, pageScale],
+    [defaultStyle.dir, hasLineLayouts, id, initial, pageScale],
   );
 
   const commit = useCallback(() => {
@@ -498,6 +502,7 @@ export function RichTextEditor({
             aria-label="Edit text"
             data-editor
             data-rich-editor
+            data-text-visible={textVisible ? "true" : "false"}
             dir={editorDir}
             spellCheck={false}
             style={{
@@ -507,10 +512,11 @@ export function RichTextEditor({
               maxHeight: maxHeight ?? (scroll ? 360 : undefined),
               overflow:
                 lineLayouts && lineLayouts.length > 0 ? "visible" : scroll ? "auto" : "visible",
-              padding: lineLayouts && lineLayouts.length > 0 ? 0 : "0 4px",
+              padding: 0,
               outline: "2px solid rgb(59, 130, 246)",
-              background: "white",
-              color: colorToCss(activeStyle.color) ?? "black",
+              background: "transparent",
+              color: textVisible ? (colorToCss(activeStyle.color) ?? "black") : "transparent",
+              caretColor: "black",
               colorScheme: "light",
               fontFamily: `"${fontFamily}"`,
               fontSize: `${fontSize * pageScale}px`,

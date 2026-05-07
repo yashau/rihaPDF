@@ -47,5 +47,9 @@ body {
   margin: 0;
 }
 
+[data-rich-editor][data-text-visible="false"] * {
+  color: transparent !important;
+}
+
 /* `.thaana-stack`'s font-family is set inline from THAANA_FONT_STACK in
    fonts.ts, so it stays in sync with the registry automatically. */
