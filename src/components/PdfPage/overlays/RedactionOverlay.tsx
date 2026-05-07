@@ -7,6 +7,7 @@ import {
   screenDeltaToPdf,
   type ResizeCorner,
 } from "../geometry";
+import { OverlayDeleteButton } from "./OverlayDeleteButton";
 import { ResizeHandles } from "./ResizeHandle";
 
 /** Opaque black rectangle over a redacted region. In-editor preview
@@ -29,6 +30,7 @@ export function RedactionOverlay({
   isSelected,
   onChange,
   onSelect,
+  onDelete,
 }: {
   redaction: Redaction;
   page: RenderedPage;
@@ -38,6 +40,7 @@ export function RedactionOverlay({
   isSelected: boolean;
   onChange: (patch: Partial<Redaction>) => void;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const {
     left,
@@ -117,7 +120,16 @@ export function RedactionOverlay({
         }
       }}
     >
-      {isSelected ? <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} /> : null}
+      {isSelected ? (
+        <>
+          <OverlayDeleteButton
+            aria-label="Delete redaction"
+            positionClassName="-top-7 -right-2"
+            onDelete={onDelete}
+          />
+          <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} />
+        </>
+      ) : null}
     </div>
   );
 }

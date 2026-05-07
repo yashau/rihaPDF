@@ -57,6 +57,7 @@ export function PageWithToolbar({
   onSelectRedaction,
   onSelectHighlight,
   onSelectInk,
+  onDeleteSelection,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -108,6 +109,7 @@ export function PageWithToolbar({
   onSelectRedaction: (id: string) => void;
   onSelectHighlight: (id: string) => void;
   onSelectInk: (id: string) => void;
+  onDeleteSelection: () => void;
   crossPageArrivals: CrossPageArrival[];
   crossPageImageArrivals: CrossPageImageArrival[];
   onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
@@ -168,6 +170,7 @@ export function PageWithToolbar({
         onSelectRedaction={onSelectRedaction}
         onSelectHighlight={onSelectHighlight}
         onSelectInk={onSelectInk}
+        onDeleteSelection={onDeleteSelection}
         crossPageArrivals={crossPageArrivals}
         crossPageImageArrivals={crossPageImageArrivals}
         onSourceEdit={onSourceEdit}

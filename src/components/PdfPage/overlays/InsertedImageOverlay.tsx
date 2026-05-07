@@ -10,6 +10,7 @@ import {
 } from "../geometry";
 import { findPageAtPoint } from "../helpers";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
+import { OverlayDeleteButton } from "./OverlayDeleteButton";
 import { ResizeHandles } from "./ResizeHandle";
 
 /** Net-new image the user dropped onto the page. Drag to move; double-
@@ -180,7 +181,16 @@ export function InsertedImageOverlay({
           }
         }}
       >
-        {isSelected ? <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} /> : null}
+        {isSelected ? (
+          <>
+            <OverlayDeleteButton
+              aria-label="Delete inserted image"
+              positionClassName="-top-7 -right-2"
+              onDelete={onDelete}
+            />
+            <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} />
+          </>
+        ) : null}
       </div>
       {renderPortal({
         backgroundImage: `url(${dataUrl})`,

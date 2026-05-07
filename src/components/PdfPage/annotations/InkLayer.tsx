@@ -7,6 +7,7 @@ import {
   newAnnotationId,
 } from "@/domain/annotations";
 import type { ToolMode } from "@/domain/toolMode";
+import { OverlayDeleteButton } from "../overlays/OverlayDeleteButton";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
 import { findPageAtPoint } from "../helpers";
 import { rgba, vpY } from "./helpers";
@@ -30,6 +31,7 @@ export function InkLayer({
   onAnnotationChange,
   onAnnotationDelete,
   onSelectInk,
+  onDeleteSelection,
 }: {
   annotations: Annotation[];
   pageScale: number;
@@ -50,6 +52,7 @@ export function InkLayer({
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onSelectInk: (id: string) => void;
+  onDeleteSelection: () => void;
 }) {
   /** Stroke being captured by the ink tool. null when not drawing. The
    *  layer commits this as a fresh InkAnnotation on pointerup. */
@@ -137,6 +140,7 @@ export function InkLayer({
             onAnnotationChange={onAnnotationChange}
             onAnnotationDelete={onAnnotationDelete}
             onSelectInk={onSelectInk}
+            onDeleteSelection={onDeleteSelection}
           />
         ) : null,
       )}
@@ -178,6 +182,7 @@ function InkOverlay({
   onAnnotationChange,
   onAnnotationDelete,
   onSelectInk,
+  onDeleteSelection,
 }: {
   annotation: InkAnnotation;
   pageScale: number;
@@ -187,6 +192,7 @@ function InkOverlay({
   onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
   onAnnotationDelete: (id: string) => void;
   onSelectInk: (id: string) => void;
+  onDeleteSelection: () => void;
 }) {
   const [llx, lly, urx, ury] = annotationBBox(annotation);
   const bboxLeft = llx * pageScale;
@@ -310,6 +316,13 @@ function InkOverlay({
         }}
       >
         {svg}
+        {isSelected ? (
+          <OverlayDeleteButton
+            aria-label="Delete ink annotation"
+            positionClassName="-top-7 -right-2"
+            onDelete={onDeleteSelection}
+          />
+        ) : null}
       </div>
       {renderPortal({ pointerEvents: "none" }, svg)}
     </>

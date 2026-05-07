@@ -4,6 +4,7 @@ import type { RenderedPage } from "@/pdf/render/pdf";
 import { pdfRectToViewportRect } from "../geometry";
 import { cropCanvasToDataUrl } from "../helpers";
 import type { ResizeCorner } from "../types";
+import { OverlayDeleteButton } from "./OverlayDeleteButton";
 import { ResizeHandles, type ResizeHandlePosition } from "./ResizeHandle";
 
 /** Drag-movable image overlay. Two visual layers when moved:
@@ -31,6 +32,7 @@ export function ImageOverlay({
   onPointerDown,
   onResizeStart,
   onSelect,
+  onDelete,
 }: {
   img: import("@/pdf/source/sourceImages").ImageInstance;
   page: RenderedPage;
@@ -57,6 +59,7 @@ export function ImageOverlay({
     base: { dx: number; dy: number; dw: number; dh: number },
   ) => void;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   // PDF user-space → viewport: x scales directly; y flips around the
   // page bottom. CTM origin (pdfX, pdfY) is the bottom-left corner in
@@ -162,7 +165,14 @@ export function ImageOverlay({
       }}
     >
       {movable && isSelected ? (
-        <ResizeHandles parentW={boxW} parentH={boxH} onPointerDown={startResize} />
+        <>
+          <OverlayDeleteButton
+            aria-label="Delete image"
+            positionClassName="-top-7 -right-2"
+            onDelete={onDelete}
+          />
+          <ResizeHandles parentW={boxW} parentH={boxH} onPointerDown={startResize} />
+        </>
       ) : null}
     </div>
   );

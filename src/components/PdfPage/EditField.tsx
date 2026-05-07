@@ -14,6 +14,7 @@ import {
   hasStyle,
   isFocusMovingToToolbar,
 } from "./helpers";
+import { OverlayDeleteButton } from "./overlays/OverlayDeleteButton";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
@@ -262,6 +263,17 @@ export function EditField({
           commit();
         }}
       />
+      {onDelete ? (
+        <OverlayDeleteButton
+          aria-label="Delete text"
+          positionClassName=""
+          style={{
+            left: editorLeft + width - 10,
+            top: editorTop - 28,
+          }}
+          onDelete={onDelete}
+        />
+      ) : null}
     </>
   );
 }

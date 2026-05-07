@@ -56,6 +56,7 @@ export function PageList({
   onSelectRedaction,
   onSelectHighlight,
   onSelectInk,
+  onDeleteSelection,
   onFormFieldChange,
 }: {
   slots: PageSlot[];
@@ -103,6 +104,7 @@ export function PageList({
   onSelectRedaction: (slotId: string, id: string) => void;
   onSelectHighlight: (slotId: string, id: string) => void;
   onSelectInk: (slotId: string, id: string) => void;
+  onDeleteSelection: () => void;
   onFormFieldChange: (sourceKey: string, fullName: string, value: FormValue) => void;
 }) {
   // Group cross-page-targeted edits by their target slot so each
@@ -356,6 +358,7 @@ export function PageList({
             onSelectRedaction={(id) => onSelectRedaction(slot.id, id)}
             onSelectHighlight={(id) => onSelectHighlight(slot.id, id)}
             onSelectInk={(id) => onSelectInk(slot.id, id)}
+            onDeleteSelection={onDeleteSelection}
             crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
             crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
             onSourceEdit={onEdit}

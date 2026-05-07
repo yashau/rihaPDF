@@ -104,6 +104,7 @@ type Props = {
   onSelectRedaction: (id: string) => void;
   onSelectHighlight: (id: string) => void;
   onSelectInk: (id: string) => void;
+  onDeleteSelection: () => void;
   /** Source-page text runs that have been moved cross-page and now
    *  visually live on THIS slot. Built by PageList from the source-
    *  side `edits` map. Rendered as non-interactive styled spans at
@@ -184,6 +185,7 @@ export function PdfPage({
   onSelectRedaction,
   onSelectHighlight,
   onSelectInk,
+  onDeleteSelection,
   crossPageArrivals,
   crossPageImageArrivals,
   onSourceEdit,
@@ -303,6 +305,7 @@ export function PdfPage({
                 page={page}
                 isSelected={selectedShapeId === shape.id}
                 onSelect={() => onSelectShape(shape.id)}
+                onDelete={onDeleteSelection}
               />
             );
           })}
@@ -355,6 +358,7 @@ export function PdfPage({
                 onPointerDown={(e, base) => startImageDrag(img.id, e, base)}
                 onResizeStart={(corner, e, base) => startImageResize(img.id, img, corner, e, base)}
                 onSelect={() => onSelectImage(img.id)}
+                onDelete={onDeleteSelection}
               />
             );
           })}
@@ -393,7 +397,10 @@ export function PdfPage({
               displayScale={displayScale}
               isSelected={selectedInsertedImageId === ins.id}
               onChange={(patch) => onImageInsertChange(ins.id, patch)}
-              onDelete={() => onImageInsertDelete(ins.id)}
+              onDelete={() => {
+                if (selectedInsertedImageId === ins.id) onDeleteSelection();
+                else onImageInsertDelete(ins.id);
+              }}
               onSelect={() => onSelectInsertedImage(ins.id)}
             />
           ))}
@@ -410,6 +417,7 @@ export function PdfPage({
               isSelected={selectedRedactionId === r.id}
               onChange={(patch) => onRedactionChange(r.id, patch)}
               onSelect={() => onSelectRedaction(r.id)}
+              onDelete={onDeleteSelection}
             />
           ))}
           {/* Cross-page-arrived runs: source-page text the user dragged
@@ -461,6 +469,7 @@ export function PdfPage({
             onAnnotationDelete={onAnnotationDelete}
             onSelectHighlight={onSelectHighlight}
             onSelectInk={onSelectInk}
+            onDeleteSelection={onDeleteSelection}
           />
           {/* AcroForm fill overlays. Sits below the placement-mode
               capture layer (which has zIndex: 50) so addText / addImage

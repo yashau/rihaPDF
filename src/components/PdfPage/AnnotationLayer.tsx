@@ -47,6 +47,7 @@ type Props = {
   onAnnotationDelete: (id: string) => void;
   onSelectHighlight: (id: string) => void;
   onSelectInk: (id: string) => void;
+  onDeleteSelection: () => void;
 };
 
 export function AnnotationLayer({
@@ -66,6 +67,7 @@ export function AnnotationLayer({
   onAnnotationDelete,
   onSelectHighlight,
   onSelectInk,
+  onDeleteSelection,
 }: Props) {
   return (
     <>
@@ -77,6 +79,7 @@ export function AnnotationLayer({
         selectedHighlightId={selectedHighlightId}
         onAnnotationChange={onAnnotationChange}
         onSelectHighlight={onSelectHighlight}
+        onDeleteSelection={onDeleteSelection}
       />
       <InkLayer
         annotations={annotations}
@@ -92,6 +95,7 @@ export function AnnotationLayer({
         onAnnotationChange={onAnnotationChange}
         onAnnotationDelete={onAnnotationDelete}
         onSelectInk={onSelectInk}
+        onDeleteSelection={onDeleteSelection}
       />
       <CommentLayer
         annotations={annotations}

@@ -1,5 +1,6 @@
 import type { RenderedPage } from "@/pdf/render/pdf";
 import { pdfRectToViewportRect } from "../geometry";
+import { OverlayDeleteButton } from "./OverlayDeleteButton";
 
 /** Selectable hit-zone for a vector shape (line, rect, path) detected
  *  on the source page. v1 only supports delete — no move, no resize.
@@ -12,11 +13,13 @@ export function ShapeOverlay({
   page,
   isSelected,
   onSelect,
+  onDelete,
 }: {
   shape: import("@/pdf/source/sourceShapes").ShapeInstance;
   page: RenderedPage;
   isSelected: boolean;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const {
     left: visLeft,
@@ -64,6 +67,8 @@ export function ShapeOverlay({
           onSelect();
         }
       }}
-    />
+    >
+      {isSelected ? <OverlayDeleteButton aria-label="Delete shape" onDelete={onDelete} /> : null}
+    </div>
   );
 }

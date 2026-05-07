@@ -15,6 +15,7 @@ export function HighlightLayer({
   selectedHighlightId,
   onAnnotationChange,
   onSelectHighlight,
+  onDeleteSelection,
 }: {
   annotations: Annotation[];
   pageScale: number;
@@ -23,6 +24,7 @@ export function HighlightLayer({
   selectedHighlightId: string | null;
   onAnnotationChange: (id: string, patch: Partial<HighlightAnnotation>) => void;
   onSelectHighlight: (id: string) => void;
+  onDeleteSelection: () => void;
 }) {
   return (
     <>
@@ -41,6 +43,7 @@ export function HighlightLayer({
             resizable={i === 0}
             onChange={(patch) => onAnnotationChange(a.id, patch)}
             onSelect={() => onSelectHighlight(a.id)}
+            onDelete={onDeleteSelection}
           />
         ));
       })}

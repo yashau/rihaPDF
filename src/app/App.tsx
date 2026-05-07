@@ -162,6 +162,7 @@ export default function App() {
     onSelectRedaction,
     onSelectHighlight,
     onSelectInk,
+    onDeleteSelection,
   } = useSelection({
     recordHistory,
     setImageMoves,
@@ -467,6 +468,7 @@ export default function App() {
                 onSelectRedaction={onSelectRedaction}
                 onSelectHighlight={onSelectHighlight}
                 onSelectInk={onSelectInk}
+                onDeleteSelection={onDeleteSelection}
                 formValues={formValues}
                 onFormFieldChange={onFormFieldChange}
               />

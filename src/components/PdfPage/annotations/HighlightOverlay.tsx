@@ -1,5 +1,6 @@
 import type { HighlightAnnotation, Quad } from "@/domain/annotations";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
+import { OverlayDeleteButton } from "../overlays/OverlayDeleteButton";
 import { ResizeHandle } from "../overlays/ResizeHandle";
 import { rgba } from "./helpers";
 
@@ -25,6 +26,7 @@ export function HighlightOverlay({
   resizable,
   onChange,
   onSelect,
+  onDelete,
 }: {
   annotation: HighlightAnnotation;
   quad: Quad;
@@ -40,6 +42,7 @@ export function HighlightOverlay({
    *  caller is App's onAnnotationChange. */
   onChange: (patch: Partial<HighlightAnnotation>) => void;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   // Quad → screen-space rect. Quads in PDF user space (y-up) carry the
   // four corners as (TL, TR, BL, BR); the spec also allows arbitrary
@@ -157,6 +160,11 @@ export function HighlightOverlay({
     >
       {isSelected && resizable ? (
         <>
+          <OverlayDeleteButton
+            aria-label="Delete highlight"
+            positionClassName="-top-7 -right-2"
+            onDelete={onDelete}
+          />
           <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
           <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
           <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />

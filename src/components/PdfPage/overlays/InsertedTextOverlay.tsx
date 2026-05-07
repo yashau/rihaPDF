@@ -17,6 +17,7 @@ import {
 } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
+import { OverlayDeleteButton } from "./OverlayDeleteButton";
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -376,6 +377,16 @@ export function InsertedTextOverlay({
             {ins.text || " "}
           </span>
         )}
+        {isEditing ? (
+          <OverlayDeleteButton
+            aria-label="Delete inserted text"
+            positionClassName="-top-7 -right-2"
+            onDelete={() => {
+              onDelete();
+              onClose();
+            }}
+          />
+        ) : null}
       </div>
       {renderPortal(
         {
