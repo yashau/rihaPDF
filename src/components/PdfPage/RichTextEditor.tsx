@@ -476,3 +476,50 @@ export function uniformSpanStyle(block: RichTextBlock): EditStyle | undefined {
   if (nonEmpty.length !== 1) return undefined;
   return nonEmpty[0].style;
 }
+
+export function RichTextView({
+  block,
+  defaultStyle,
+  pageScale,
+  lineHeight,
+}: {
+  block: RichTextBlock;
+  defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
+    Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">;
+  pageScale: number;
+  lineHeight: number;
+}) {
+  const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
+  return (
+    <>
+      {spans.map((span, spanIndex) => {
+        const style = { ...defaultStyle, ...span.style };
+        const pieces = span.text.split("\n");
+        return pieces.map((piece, pieceIndex) => (
+          <span
+            // oxlint-disable-next-line react/no-array-index-key -- spans are render-only projections.
+            key={`${spanIndex}:${pieceIndex}`}
+            style={{
+              fontFamily: `"${style.fontFamily}"`,
+              fontSize: `${style.fontSize * pageScale}px`,
+              lineHeight: `${lineHeight}px`,
+              fontWeight: style.bold ? 700 : 400,
+              fontStyle: style.italic ? "italic" : "normal",
+              textDecoration: [
+                style.underline ? "underline" : "",
+                style.strikethrough ? "line-through" : "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              color: colorToCss(style.color) ?? "black",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {pieceIndex > 0 ? <br /> : null}
+            {piece}
+          </span>
+        ));
+      })}
+    </>
+  );
+}

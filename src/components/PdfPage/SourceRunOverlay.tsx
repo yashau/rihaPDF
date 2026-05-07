@@ -1,11 +1,11 @@
 import type { RefObject } from "react";
-import { colorToCss } from "@/domain/color";
 import type { EditValue } from "@/domain/editState";
+import { richTextOrPlain } from "@/domain/richText";
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
-import { cssTextDecoration } from "./helpers";
+import { RichTextView } from "./RichTextEditor";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
 
@@ -174,6 +174,17 @@ export function SourceRunOverlay({
 
   if (edited) {
     const style = editedValue.style ?? {};
+    const defaultFontSizePt = run.height / page.scale;
+    const defaultStyle = {
+      fontFamily: style.fontFamily ?? run.fontFamily,
+      fontSize: style.fontSize ?? defaultFontSizePt,
+      bold: style.bold ?? run.bold,
+      italic: style.italic ?? run.italic,
+      underline: style.underline ?? run.underline ?? false,
+      strikethrough: style.strikethrough ?? run.strikethrough ?? false,
+      dir: style.dir,
+      color: style.color,
+    };
     // Edited / dragged run: paint the new text where the user wants
     // it, with a white cover behind it. The preview canvas SHOULD
     // have the original glyphs stripped, but the strip is content-
@@ -250,23 +261,19 @@ export function SourceRunOverlay({
         <span
           dir={style.dir ?? "auto"}
           style={{
-            fontFamily: `"${style.fontFamily ?? run.fontFamily}"`,
-            fontSize: `${style.fontSize ?? run.height}px`,
             lineHeight: `${run.bounds.height}px`,
-            fontWeight: (style.bold ?? run.bold) ? 700 : 400,
-            fontStyle: (style.italic ?? run.italic) ? "italic" : "normal",
-            textDecoration: cssTextDecoration(
-              style.underline ?? run.underline ?? false,
-              style.strikethrough ?? run.strikethrough ?? false,
-            ),
-            color: colorToCss(style.color) ?? "black",
             width: "100%",
             whiteSpace: "pre-wrap",
             paddingLeft: padX,
             paddingRight: padX,
           }}
         >
-      {editedValue.text}
+          <RichTextView
+            block={richTextOrPlain(editedValue.richText, editedValue.text, style)}
+            defaultStyle={defaultStyle}
+            pageScale={page.scale}
+            lineHeight={run.bounds.height}
+          />
         </span>
       </span>
     );

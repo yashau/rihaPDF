@@ -1,8 +1,10 @@
 import { createPortal } from "react-dom";
 import { colorToCss } from "@/domain/color";
 import type { EditValue } from "@/domain/editState";
+import { richTextOrPlain } from "@/domain/richText";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import { cssTextDecoration } from "./helpers";
+import { RichTextView } from "./RichTextEditor";
 import type { ImageDragState } from "./useImageDrag";
 import type { RunDragState } from "./useRunDrag";
 
@@ -50,6 +52,16 @@ function RunDragPreview({
   const strikethrough = style.strikethrough ?? dragRun.strikethrough ?? false;
   const dir = style.dir ?? "auto";
   const cssColor = colorToCss(style.color) ?? "black";
+  const defaultStyle = {
+    fontFamily,
+    fontSize: fontSizeNat / page.scale,
+    bold,
+    italic,
+    underline,
+    strikethrough,
+    dir: style.dir,
+    color: style.color,
+  };
   const ds = drag.originDisplayScale;
   const fontSizeScreen = fontSizeNat * ds;
   const lineHeightScreen = (dragRun.bounds.height + 4) * ds;
@@ -88,7 +100,16 @@ function RunDragPreview({
           paddingRight: 2 * ds,
         }}
       >
-        {text}
+        {editedValue?.richText ? (
+          <RichTextView
+            block={richTextOrPlain(editedValue.richText, text, style)}
+            defaultStyle={defaultStyle}
+            pageScale={page.scale * ds}
+            lineHeight={lineHeightScreen}
+          />
+        ) : (
+          text
+        )}
       </span>
     </div>,
     document.body,

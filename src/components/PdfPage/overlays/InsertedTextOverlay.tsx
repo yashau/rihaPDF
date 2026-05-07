@@ -1,16 +1,14 @@
-import { colorToCss } from "@/domain/color";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
 import { richTextOrPlain } from "@/domain/richText";
 import { pdfBaselineToViewportBox } from "../geometry";
 import {
   chooseToolbarTop,
-  cssTextDecoration,
   findPageAtPoint,
 } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
-import { RichTextEditor, uniformSpanStyle } from "../RichTextEditor";
+import { RichTextEditor, RichTextView, uniformSpanStyle } from "../RichTextEditor";
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -60,10 +58,6 @@ export function InsertedTextOverlay({
   const italic = !!style.italic;
   const underline = !!style.underline;
   const strikethrough = !!style.strikethrough;
-  // Default to black when no color override is set — same as the
-  // pre-color-picker hardcoded behavior. `colorToCss` returns null
-  // for undefined so the `??` lets us fall back inline.
-  const cssColor = colorToCss(style.color) ?? "black";
   const fontSizePt = ins.fontSize;
   // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
   // viewport top of the box is baseline - fontSize, scaled. Match the
@@ -81,6 +75,16 @@ export function InsertedTextOverlay({
     viewHeight: page.viewHeight,
   });
   const fontSizePx = fontSizePt * page.scale;
+  const defaultStyle = {
+    fontFamily: family,
+    fontSize: fontSizePt,
+    bold,
+    italic,
+    underline,
+    strikethrough,
+    dir: style.dir,
+    color: style.color,
+  };
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
   const effectivePdfScale = page.scale * displayScale;
@@ -139,16 +143,7 @@ export function InsertedTextOverlay({
         <RichTextEditor
           id={ins.id}
           initial={richTextOrPlain(ins.richText, ins.text, ins.style)}
-          defaultStyle={{
-            fontFamily: family,
-            fontSize: fontSizePt,
-            bold,
-            italic,
-            underline,
-            strikethrough,
-            dir: style.dir,
-            color: style.color,
-          }}
+          defaultStyle={defaultStyle}
           pageScale={page.scale}
           left={left - 2}
           top={top}
@@ -253,21 +248,24 @@ export function InsertedTextOverlay({
           <span
             dir={style.dir ?? "auto"}
             style={{
-              fontFamily: `"${family}"`,
-              fontSize: `${fontSizePx}px`,
               lineHeight: `${height}px`,
-              fontWeight: bold ? 700 : 400,
-              fontStyle: italic ? "italic" : "normal",
-              textDecoration: cssTextDecoration(underline, strikethrough),
               paddingLeft: 4,
               paddingRight: 4,
-              color: cssColor,
               whiteSpace: "pre",
               width: "100%",
             }}
             title={ins.text || "(empty — click to type)"}
           >
-            {ins.text || " "}
+            {ins.text ? (
+              <RichTextView
+                block={richTextOrPlain(ins.richText, ins.text, style)}
+                defaultStyle={defaultStyle}
+                pageScale={page.scale}
+                lineHeight={height}
+              />
+            ) : (
+              " "
+            )}
           </span>
         )}
       </div>
@@ -281,24 +279,27 @@ export function InsertedTextOverlay({
         <span
           dir={style.dir ?? "auto"}
           style={{
-            fontFamily: `"${family}"`,
             // Match the in-parent visual size: in-parent uses NATURAL
             // px inside a `transform: scale(displayScale)` container;
             // the portal lives in document.body (no transform) so
             // multiply once here to land at the same on-screen size.
-            fontSize: `${fontSizePx * displayScale}px`,
             lineHeight: `${height * displayScale}px`,
-            fontWeight: bold ? 700 : 400,
-            fontStyle: italic ? "italic" : "normal",
-            textDecoration: cssTextDecoration(underline, strikethrough),
             paddingLeft: 4,
             paddingRight: 4,
-            color: cssColor,
             whiteSpace: "pre",
             width: "100%",
           }}
         >
-          {ins.text || " "}
+          {ins.text ? (
+            <RichTextView
+              block={richTextOrPlain(ins.richText, ins.text, style)}
+              defaultStyle={defaultStyle}
+              pageScale={page.scale * displayScale}
+              lineHeight={height * displayScale}
+            />
+          ) : (
+            " "
+          )}
         </span>,
       )}
     </>

@@ -8,6 +8,8 @@ import {
 } from "pdf-lib";
 import type { AnnotationColor } from "@/domain/annotations";
 import { DEFAULT_TEXT_COLOR } from "@/domain/color";
+import type { EditStyle } from "@/domain/editStyle";
+import { richTextOrPlain, type RichTextBlock, type RichTextSpan } from "@/domain/richText";
 import { DEFAULT_FONT_FAMILY, FONTS } from "@/pdf/text/fonts";
 import { drawShapedText, measureShapedWidth } from "@/pdf/text/shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "@/pdf/text/shapedBidi";
@@ -18,6 +20,24 @@ import {
   type LoadedSourceContext,
 } from "./context";
 import type { CrossSourceDrawPlan, SameSourceDrawPlan } from "./streamSurgery";
+
+type RichDrawLine = RichTextSpan[];
+
+function splitRichTextLines(block: RichTextBlock): RichDrawLine[] {
+  const lines: RichDrawLine[] = [[]];
+  for (const span of block.spans) {
+    const parts = span.text.split("\n");
+    parts.forEach((part, index) => {
+      if (index > 0) lines.push([]);
+      if (part.length > 0) lines[lines.length - 1].push({ text: part, style: span.style });
+    });
+  }
+  return lines.length > 0 ? lines : [[]];
+}
+
+function mergeStyle(base: EditStyle, override: EditStyle | undefined): EditStyle {
+  return { ...base, ...override, color: override?.color ?? base.color };
+}
 
 /** Emit underline / strikethrough rules under a freshly-drawn text run.
  *  Both decorations are simple thin horizontal lines:
@@ -203,6 +223,117 @@ export async function measureTextWidth(
   return measureShapedWidth(text, fontBytes, size, dir);
 }
 
+async function measureRichLine(
+  line: RichDrawLine,
+  baseStyle: EditStyle,
+  fallback: {
+    family: string;
+    fontSizePt: number;
+    bold: boolean;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+  },
+  getFont: EmbeddedFontFactory,
+): Promise<number> {
+  let width = 0;
+  for (const span of line) {
+    const style = mergeStyle(baseStyle, span.style);
+    const family = style.fontFamily ?? fallback.family;
+    const size = style.fontSize ?? fallback.fontSizePt;
+    const bold = style.bold ?? fallback.bold;
+    const italic = style.italic ?? fallback.italic;
+    const dir = style.dir ?? fallback.dir;
+    const { pdfFont, bytes } = await getFont(family, bold, italic);
+    width += await measureTextWidth(span.text, pdfFont, bytes, family, size, dir, getFont);
+  }
+  return width;
+}
+
+export async function drawRichTextBlock(
+  page: PDFPage,
+  block: RichTextBlock,
+  opts: {
+    x: number;
+    y: number;
+    width: number;
+    lineStep: number;
+    baseStyle: EditStyle;
+    fallbackFamily: string;
+    fallbackSize: number;
+    fallbackBold: boolean;
+    fallbackItalic: boolean;
+    fallbackDir: "rtl" | "ltr" | undefined;
+    getFont: EmbeddedFontFactory;
+  },
+): Promise<void> {
+  const lines = splitRichTextLines(block);
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const plain = line.map((span) => span.text).join("");
+    const isRtl =
+      opts.baseStyle.dir === "rtl" ||
+      (opts.baseStyle.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(plain));
+    const lineY = opts.y - opts.lineStep * lineIndex;
+    const lineWidth = await measureRichLine(
+      line,
+      opts.baseStyle,
+      {
+        family: opts.fallbackFamily,
+        fontSizePt: opts.fallbackSize,
+        bold: opts.fallbackBold,
+        italic: opts.fallbackItalic,
+        dir: opts.fallbackDir,
+      },
+      opts.getFont,
+    );
+    let cursorX = isRtl ? opts.x + opts.width : opts.x;
+    for (const span of isRtl ? [...line].reverse() : line) {
+      const style = mergeStyle(opts.baseStyle, span.style);
+      const family = style.fontFamily ?? opts.fallbackFamily;
+      const fontSizePt = style.fontSize ?? opts.fallbackSize;
+      const bold = style.bold ?? opts.fallbackBold;
+      const italic = style.italic ?? opts.fallbackItalic;
+      const dir = style.dir ?? opts.fallbackDir;
+      const { pdfFont, bytes: fontBytes } = await opts.getFont(family, bold, italic);
+      const widthPt = await measureTextWidth(
+        span.text,
+        pdfFont,
+        fontBytes,
+        family,
+        fontSizePt,
+        dir,
+        opts.getFont,
+      );
+      const drawX = isRtl ? cursorX - widthPt : cursorX;
+      await drawTextWithStyle(page, span.text, {
+        x: drawX,
+        y: lineY,
+        size: fontSizePt,
+        font: pdfFont,
+        fontBytes,
+        family,
+        italic,
+        dir,
+        getFont: opts.getFont,
+        color: style.color,
+      });
+      drawDecorations(page, {
+        x: drawX,
+        y: lineY,
+        width: widthPt,
+        size: fontSizePt,
+        underline: style.underline ?? opts.baseStyle.underline ?? false,
+        strikethrough: style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
+        color: style.color,
+      });
+      cursorX += isRtl ? -widthPt : widthPt;
+    }
+    if (line.length === 0 && lineWidth > 0) {
+      cursorX = isRtl ? opts.x + opts.width - lineWidth : opts.x + lineWidth;
+    }
+  }
+}
+
 export async function emitTextDraw(
   ctx: LoadedSourceContext,
   targetPageIndex: number,
@@ -232,6 +363,23 @@ export async function emitTextDraw(
   );
   const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
   const drawY = baselineYPdf;
+
+  if (edit.richText) {
+    await drawRichTextBlock(targetPage, richTextOrPlain(edit.richText, edit.newText, style), {
+      x: boxLeftPdf,
+      y: drawY,
+      width: runPdfWidth,
+      lineStep: plan.lineStepPdf ?? runPdfHeight * 1.4,
+      baseStyle: style,
+      fallbackFamily: family,
+      fallbackSize: fontSizePt,
+      fallbackBold: bold,
+      fallbackItalic: italic,
+      fallbackDir: dir,
+      getFont: ctx.getFont,
+    });
+    return;
+  }
 
   await drawTextWithStyle(targetPage, edit.newText, {
     x: baseX,

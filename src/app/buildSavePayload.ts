@@ -88,6 +88,7 @@ export function buildSavePayload({
         sourceRunIds: value.sourceRunIds,
         newText: value.text,
         style: value.style,
+        richText: value.richText,
         dx: value.dx,
         dy: value.dy,
         targetSourceKey,
@@ -153,6 +154,7 @@ export function buildSavePayload({
         fontSize: t.fontSize,
         text: t.text,
         style: t.style,
+        richText: t.richText,
       });
     }
   }

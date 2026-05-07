@@ -1,4 +1,5 @@
 import type { EditStyle } from "@/domain/editStyle";
+import type { RichTextBlock } from "@/domain/richText";
 export type { EditStyle } from "@/domain/editStyle";
 
 export type Edit = {
@@ -12,6 +13,7 @@ export type Edit = {
   sourceRunIds?: string[];
   newText: string;
   style?: EditStyle;
+  richText?: RichTextBlock;
   /** Move offset in viewport pixels — translates the new draw position
    *  by (dx / scale, -dy / scale) in PDF user space (y-flipped). */
   dx?: number;
@@ -89,6 +91,7 @@ export type TextInsert = {
   fontSize: number;
   text: string;
   style?: EditStyle;
+  richText?: RichTextBlock;
 };
 
 /** Net-new image dropped onto the page. */

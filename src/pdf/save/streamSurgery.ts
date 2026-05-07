@@ -8,6 +8,7 @@ import {
 } from "@/pdf/content/contentStream";
 import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
 import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
+import { buildSourceTextBlocks, type SourceTextBlock } from "@/pdf/text/textBlocks";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
 import { planRedactionStrip } from "./redactions/glyphs";
 import type { Edit, ImageMove, ShapeDelete } from "./types";
@@ -27,6 +28,7 @@ export type SameSourceDrawPlan = {
   baselineYPdf: number;
   runPdfWidth: number;
   runPdfHeight: number;
+  lineStepPdf?: number;
 };
 
 /** Plan for a cross-source draw: drawText on the TARGET source's doc,
@@ -40,6 +42,7 @@ export type CrossSourceDrawPlan = {
   baselineYPdf: number;
   runPdfWidth: number;
   runPdfHeight: number;
+  lineStepPdf?: number;
 };
 
 export type SameSourceImageDrawPlan = {
@@ -152,14 +155,17 @@ export async function applyStreamSurgeryForSource(
     const moveOps: Array<{ tjIndex: number; newTx: number; newTy: number }> = [];
 
     for (const edit of pageEdits) {
-      const run = rendered.textRuns.find((r) => r.id === edit.runId);
+      const run = resolveEditRun(rendered.textRuns, rendered.pageNumber, edit);
       if (!run) continue;
+      const sourceRuns = sourceRunsForEdit(rendered.textRuns, run, edit);
       const runPdfX = run.bounds.left / scale;
       const runPdfY = pageHeight - run.baselineY / scale;
       const runPdfWidth = run.bounds.width / scale;
       const runPdfHeight = run.height / scale;
+      const lineStepPdf = lineStepForRuns(sourceRuns, scale);
 
-      let matched = shows.filter((s) => run.contentStreamOpIndices.includes(s.index));
+      const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
+      let matched = shows.filter((s) => editOpIndices.has(s.index));
       if (matched.length === 0) {
         const tolY = Math.max(2, runPdfHeight * 0.4);
         const tolX = Math.max(2, runPdfHeight * 0.3);
@@ -179,9 +185,11 @@ export async function applyStreamSurgeryForSource(
       // the line never desyncs from the text. The redraw paths re-emit
       // a fresh decoration that tracks the new geometry.
       const stripDecoration = () => {
-        for (const range of run.decorationOpRanges ?? []) {
-          for (let k = range.qOpIndex; k <= range.QOpIndex; k++) {
-            indicesToRemove.add(k);
+        for (const sourceRun of sourceRuns) {
+          for (const range of sourceRun.decorationOpRanges ?? []) {
+            for (let k = range.qOpIndex; k <= range.QOpIndex; k++) {
+              indicesToRemove.add(k);
+            }
           }
         }
       };
@@ -207,6 +215,7 @@ export async function applyStreamSurgeryForSource(
             baselineYPdf: edit.targetPdfY ?? 0,
             runPdfWidth,
             runPdfHeight,
+            lineStepPdf,
           });
         } else {
           crossSourceDraws.push({
@@ -218,6 +227,7 @@ export async function applyStreamSurgeryForSource(
             baselineYPdf: edit.targetPdfY ?? 0,
             runPdfWidth,
             runPdfHeight,
+            lineStepPdf,
           });
         }
         continue;
@@ -262,6 +272,7 @@ export async function applyStreamSurgeryForSource(
         baselineYPdf: runPdfY + moveY,
         runPdfWidth,
         runPdfHeight,
+        lineStepPdf,
       });
     }
 
@@ -530,6 +541,41 @@ export async function applyStreamSurgeryForSource(
     }
     setPageContentBytes(doc.context, page.node, serializeContentStream(newOps));
   }
+}
+
+function resolveEditRun(
+  runs: TextRun[],
+  pageNumber: number,
+  edit: Edit,
+): TextRun | SourceTextBlock | undefined {
+  const direct = runs.find((r) => r.id === edit.runId);
+  if (direct) return direct;
+  return buildSourceTextBlocks(runs, pageNumber).find((b) => b.id === edit.runId);
+}
+
+function sourceRunsForEdit(
+  runs: TextRun[],
+  run: TextRun | SourceTextBlock,
+  edit: Edit,
+): TextRun[] {
+  const ids =
+    edit.sourceRunIds && edit.sourceRunIds.length > 0
+      ? edit.sourceRunIds
+      : "sourceRunIds" in run
+        ? run.sourceRunIds
+        : [run.id];
+  const byId = new Map(runs.map((r) => [r.id, r]));
+  return ids.map((id) => byId.get(id)).filter((r): r is TextRun => !!r);
+}
+
+function lineStepForRuns(runs: TextRun[], scale: number): number | undefined {
+  if (runs.length < 2) return undefined;
+  const deltas: number[] = [];
+  for (let i = 1; i < runs.length; i++) {
+    deltas.push(Math.abs(runs[i].baselineY - runs[i - 1].baselineY) / scale);
+  }
+  deltas.sort((a, b) => a - b);
+  return deltas[Math.floor(deltas.length / 2)];
 }
 
 function isCrossPageEdit(edit: Edit, sourceKey: string, pageIndex: number): boolean {

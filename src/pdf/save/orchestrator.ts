@@ -25,7 +25,13 @@ import {
 import { removeParsedSourceAnnotationsFromDoc } from "@/pdf/source/sourceAnnotations";
 import type { Edit, ImageInsert, ImageMove, ShapeDelete, TextInsert } from "./types";
 import { makeFontFactory, type LoadedSourceContext } from "./context";
-import { drawDecorations, drawTextWithStyle, emitTextDraw, measureTextWidth } from "./textDraw";
+import {
+  drawDecorations,
+  drawRichTextBlock,
+  drawTextWithStyle,
+  emitTextDraw,
+  measureTextWidth,
+} from "./textDraw";
 import {
   applyStreamSurgeryForSource,
   type CrossSourceDrawPlan,
@@ -254,6 +260,22 @@ export async function applyEditsAndSave(
     const isRtl =
       ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const dir: "rtl" | "ltr" | undefined = ins.style?.dir;
+    if (ins.richText) {
+      await drawRichTextBlock(page, ins.richText, {
+        x: ins.pdfX,
+        y: ins.pdfY,
+        width: ins.pdfWidth,
+        lineStep: fontSizePt * 1.4,
+        baseStyle: ins.style ?? {},
+        fallbackFamily: family,
+        fallbackSize: fontSizePt,
+        fallbackBold: bold,
+        fallbackItalic: italic,
+        fallbackDir: dir,
+        getFont: ctx.getFont,
+      });
+      continue;
+    }
     const widthPt = await measureTextWidth(
       ins.text,
       pdfFont,
