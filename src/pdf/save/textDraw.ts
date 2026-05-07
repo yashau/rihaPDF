@@ -140,6 +140,46 @@ function mergeStyle(base: EditStyle, override: EditStyle | undefined): EditStyle
   return { ...base, ...override, color: override?.color ?? base.color };
 }
 
+function styleOverridesFallback(
+  style: EditStyle | undefined,
+  fallback: {
+    family: string;
+    fontSizePt: number;
+    bold: boolean;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+  },
+): boolean {
+  if (!style) return false;
+  return (
+    (style.fontFamily !== undefined && style.fontFamily !== fallback.family) ||
+    (style.fontSize !== undefined && style.fontSize !== fallback.fontSizePt) ||
+    (style.bold !== undefined && style.bold !== fallback.bold) ||
+    (style.italic !== undefined && style.italic !== fallback.italic) ||
+    style.underline !== undefined ||
+    style.strikethrough !== undefined ||
+    style.color !== undefined ||
+    (style.dir !== undefined && style.dir !== fallback.dir)
+  );
+}
+
+function lineHasDrawStyleOverride(
+  line: RichDrawLine,
+  baseStyle: EditStyle,
+  fallback: {
+    family: string;
+    fontSizePt: number;
+    bold: boolean;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+  },
+): boolean {
+  return (
+    styleOverridesFallback(baseStyle, fallback) ||
+    line.some((span) => styleOverridesFallback(span.style, fallback))
+  );
+}
+
 /** Emit underline / strikethrough rules under a freshly-drawn text run.
  *  Both decorations are simple thin horizontal lines:
  *    underline    : ~0.08 × size below the baseline
@@ -350,76 +390,6 @@ async function measureRichLine(
   return width;
 }
 
-async function drawJustifiedRichLine(
-  page: PDFPage,
-  line: RichDrawLine,
-  opts: {
-    x: number;
-    y: number;
-    width: number;
-    extraSpace: number;
-    isRtl: boolean;
-    baseStyle: EditStyle;
-    fallbackFamily: string;
-    fallbackSize: number;
-    fallbackBold: boolean;
-    fallbackItalic: boolean;
-    fallbackDir: "rtl" | "ltr" | undefined;
-    getFont: EmbeddedFontFactory;
-  },
-): Promise<void> {
-  const tokens = splitLineTokens(line);
-  let cursorX = opts.isRtl ? opts.x + opts.width : opts.x;
-  for (const span of tokens) {
-    const style = mergeStyle(opts.baseStyle, span.style);
-    const family = style.fontFamily ?? opts.fallbackFamily;
-    const fontSizePt = style.fontSize ?? opts.fallbackSize;
-    const bold = style.bold ?? opts.fallbackBold;
-    const italic = style.italic ?? opts.fallbackItalic;
-    const dir = style.dir ?? opts.fallbackDir;
-    const { pdfFont, bytes: fontBytes } = await opts.getFont(family, bold, italic);
-    const widthPt = await measureTextWidth(
-      span.text,
-      pdfFont,
-      fontBytes,
-      family,
-      fontSizePt,
-      dir,
-      opts.getFont,
-    );
-    const spaces = span.text.match(/\s/gu)?.length ?? 0;
-    if (spaces > 0 && span.text.trim().length === 0) {
-      cursorX += opts.isRtl
-        ? -(widthPt + opts.extraSpace * spaces)
-        : widthPt + opts.extraSpace * spaces;
-      continue;
-    }
-    const drawX = opts.isRtl ? cursorX - widthPt : cursorX;
-    await drawTextWithStyle(page, span.text, {
-      x: drawX,
-      y: opts.y,
-      size: fontSizePt,
-      font: pdfFont,
-      fontBytes,
-      family,
-      italic,
-      dir,
-      getFont: opts.getFont,
-      color: style.color,
-    });
-    drawDecorations(page, {
-      x: drawX,
-      y: opts.y,
-      width: widthPt,
-      size: fontSizePt,
-      underline: style.underline ?? opts.baseStyle.underline ?? false,
-      strikethrough: style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
-      color: style.color,
-    });
-    cursorX += opts.isRtl ? -widthPt : widthPt;
-  }
-}
-
 async function drawTokenizedRichLine(
   page: PDFPage,
   line: RichDrawLine,
@@ -434,6 +404,7 @@ async function drawTokenizedRichLine(
     fallbackBold: boolean;
     fallbackItalic: boolean;
     fallbackDir: "rtl" | "ltr" | undefined;
+    extraSpace?: number;
     getFont: EmbeddedFontFactory;
   },
 ): Promise<void> {
@@ -450,6 +421,7 @@ async function drawTokenizedRichLine(
     style: EditStyle;
   }> = [];
   let totalWidth = 0;
+  let totalSpaces = 0;
   for (const span of tokens) {
     const style = mergeStyle(opts.baseStyle, span.style);
     const family = style.fontFamily ?? opts.fallbackFamily;
@@ -469,6 +441,7 @@ async function drawTokenizedRichLine(
       opts.getFont,
     );
     totalWidth += widthPt;
+    totalSpaces += span.text.match(/\s/gu)?.length ?? 0;
     tokenWidths.push({
       span,
       width: widthPt,
@@ -481,11 +454,13 @@ async function drawTokenizedRichLine(
       style,
     });
   }
-  let cursorX = opts.isRtl ? opts.x + opts.width - totalWidth : opts.x;
+  const extraWidth = (opts.extraSpace ?? 0) * totalSpaces;
+  let cursorX = opts.isRtl ? opts.x + opts.width - totalWidth - extraWidth : opts.x;
   for (const item of tokenWidths) {
     const span = item.span;
     if (isWhitespaceToken(span)) {
-      cursorX += item.width;
+      const spaces = span.text.match(/\s/gu)?.length ?? 0;
+      cursorX += item.width + (opts.extraSpace ?? 0) * spaces;
       continue;
     }
     const drawX = cursorX;
@@ -555,7 +530,14 @@ export async function drawRichTextBlock(
       opts.getFont,
     );
     const spaces = spaceCount(line);
-    if (isRtl) {
+    const hasFormattingOverride = lineHasDrawStyleOverride(line, opts.baseStyle, {
+      family: opts.fallbackFamily,
+      fontSizePt: opts.fallbackSize,
+      bold: opts.fallbackBold,
+      italic: opts.fallbackItalic,
+      dir: opts.fallbackDir,
+    });
+    if (layout?.justify && hasFormattingOverride && spaces > 0 && lineWidth < targetWidth) {
       await drawTokenizedRichLine(page, line, {
         x: lineX,
         y: lineY,
@@ -567,16 +549,16 @@ export async function drawRichTextBlock(
         fallbackBold: opts.fallbackBold,
         fallbackItalic: opts.fallbackItalic,
         fallbackDir: opts.fallbackDir,
+        extraSpace: (targetWidth - lineWidth) / spaces,
         getFont: opts.getFont,
       });
       continue;
     }
-    if (layout?.justify && spaces > 0 && lineWidth < targetWidth) {
-      await drawJustifiedRichLine(page, line, {
+    if (isRtl) {
+      await drawTokenizedRichLine(page, line, {
         x: lineX,
         y: lineY,
         width: targetWidth,
-        extraSpace: (targetWidth - lineWidth) / spaces,
         isRtl,
         baseStyle: opts.baseStyle,
         fallbackFamily: opts.fallbackFamily,
@@ -680,10 +662,10 @@ export async function emitTextDraw(
       lineStep: plan.lineStepPdf ?? runPdfHeight * 1.4,
       lineLayouts: plan.lineLayoutsPdf,
       baseStyle: style,
-      fallbackFamily: family,
-      fallbackSize: fontSizePt,
-      fallbackBold: bold,
-      fallbackItalic: italic,
+      fallbackFamily: run.fontFamily ?? DEFAULT_FONT_FAMILY,
+      fallbackSize: runPdfHeight,
+      fallbackBold: run.bold,
+      fallbackItalic: run.italic,
       fallbackDir: dir,
       getFont: ctx.getFont,
     });

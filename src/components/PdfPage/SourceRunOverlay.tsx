@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import type { EditValue } from "@/domain/editState";
-import { richTextOrPlain } from "@/domain/richText";
+import { richTextOrPlain, type RichTextBlock } from "@/domain/richText";
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
@@ -17,12 +17,21 @@ function hasMeaningfulStyle(style: EditValue["style"]): boolean {
   return Object.values(style).some((value) => value !== undefined);
 }
 
+function hasMeaningfulRichText(block: RichTextBlock | undefined, runText: string): boolean {
+  if (!block) return false;
+  return block.text !== runText || block.spans.some((span) => hasMeaningfulStyle(span.style));
+}
+
+function hasRichTextStyle(block: RichTextBlock | undefined): boolean {
+  return !!block?.spans.some((span) => hasMeaningfulStyle(span.style));
+}
+
 function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): boolean {
   return (
     value.deleted === true ||
     value.text !== run.text ||
-    value.richText !== undefined ||
-    hasMeaningfulStyle(value.style)
+    hasMeaningfulStyle(value.style) ||
+    hasMeaningfulRichText(value.richText, run.text)
   );
 }
 
@@ -192,7 +201,7 @@ export function SourceRunOverlay({
             sourceRunIds,
           };
           const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
-          if (value.text !== run.text || value.style || hasOffset) {
+          if (hasTextOrStyleEdit(run, merged) || hasOffset) {
             onEdit(run.id, merged);
           }
           onEditingChange(null);
@@ -330,6 +339,11 @@ export function SourceRunOverlay({
             lineLayouts={"lineLayouts" in run ? run.lineLayouts : undefined}
             lineLayoutOffsetX={geometry.lineLayoutOffsetX}
             lineLayoutOffsetY={geometry.lineLayoutOffsetY}
+            justifyLineLayouts={
+              "textAlign" in run &&
+              run.textAlign === "justify" &&
+              (hasMeaningfulStyle(style) || hasRichTextStyle(editedValue.richText))
+            }
           />
         </span>
       </span>

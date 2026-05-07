@@ -14,6 +14,10 @@ function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlo
   return "isParagraph" in run;
 }
 
+function hasRichTextStyle(richText: ReturnType<typeof richTextOrPlain>): boolean {
+  return richText.spans.some((span) => span.style && hasStyle(span.style));
+}
+
 export function EditField({
   run,
   pageScale,
@@ -108,11 +112,17 @@ export function EditField({
       initialCaretOffset={initialCaretPoint?.caretOffset}
       onCommit={(richText) => {
         const style = uniformSpanStyle(richText);
+        const hasUniformStyle = !!style && hasStyle(style);
+        const hasStyledSpans = hasRichTextStyle(richText);
         const unchangedText = richText.text === displayText && displayText !== sourceText;
+        const plainText = unchangedText ? sourceText : richText.text;
         onCommit({
-          text: unchangedText && !(style && hasStyle(style)) ? sourceText : richText.text,
-          richText: unchangedText && !(style && hasStyle(style)) ? undefined : richText,
-          style: style && hasStyle(style) ? style : undefined,
+          text: plainText,
+          richText:
+            (hasUniformStyle && !geometry.isParagraph) || (unchangedText && !hasStyledSpans)
+              ? undefined
+              : richText,
+          style: hasUniformStyle ? style : undefined,
         });
       }}
       onDelete={onDelete}

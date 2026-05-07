@@ -625,7 +625,7 @@ function lineLayoutsForRuns(
       xOffset: layout.left / scale,
       baselineOffset,
       width: layout.width / scale,
-      justify: false,
+      justify: layout.justify,
     };
   });
 }

@@ -336,11 +336,16 @@ function SourceLineLayoutPlugin({
   offsetX,
   offsetY,
   lineHeight,
+  defaultStyle,
+  pageScale,
 }: {
   layouts?: readonly SourceTextLineLayout[];
   offsetX?: number;
   offsetY?: number;
   lineHeight: number;
+  pageScale: number;
+  defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
+    Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">;
 }) {
   const [editor] = useLexicalComposerContext();
   useLayoutEffect(() => {
@@ -358,8 +363,23 @@ function SourceLineLayoutPlugin({
         child.style.width = typeof layout?.width === "number" ? `${layout.width}px` : "100%";
         child.style.minHeight = `${lineHeight}px`;
         child.style.lineHeight = `${lineHeight}px`;
-        child.style.textAlign = "start";
-        child.style.textAlignLast = "auto";
+        const hasFormattedDescendant =
+          !!child.querySelector(".font-bold, .italic, .underline, .line-through") ||
+          Array.from(child.querySelectorAll<HTMLElement>("[style]")).some((node) => {
+            const style = node.style;
+            return (
+              (style.fontFamily !== "" &&
+                style.fontFamily.replace(/^["']|["']$/g, "") !== defaultStyle.fontFamily) ||
+              (style.fontSize !== "" &&
+                cssSizeToPoints(style.fontSize, pageScale) !== defaultStyle.fontSize) ||
+              style.fontWeight !== "" ||
+              style.fontStyle !== "" ||
+              style.textDecoration !== "" ||
+              style.color !== ""
+            );
+          });
+        child.style.textAlign = layout?.justify && hasFormattedDescendant ? "justify" : "start";
+        child.style.textAlignLast = layout?.justify && hasFormattedDescendant ? "justify" : "auto";
         child.style.whiteSpace = "pre";
         child.style.overflowWrap = "normal";
         child.style.wordBreak = "normal";
@@ -383,8 +403,33 @@ function SourceLineLayoutPlugin({
       unregisterRoot();
       unregisterUpdate();
     };
-  }, [editor, layouts, offsetX, offsetY, lineHeight]);
+  }, [defaultStyle, editor, layouts, offsetX, offsetY, lineHeight, pageScale]);
   return null;
+}
+
+function styleOverridesDefault(
+  style: EditStyle | undefined,
+  defaults: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
+    Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">,
+): boolean {
+  if (!style) return false;
+  return (
+    (style.fontFamily !== undefined && style.fontFamily !== defaults.fontFamily) ||
+    (style.fontSize !== undefined && style.fontSize !== defaults.fontSize) ||
+    (style.bold !== undefined && style.bold !== defaults.bold) ||
+    (style.italic !== undefined && style.italic !== defaults.italic) ||
+    (style.underline !== undefined && style.underline !== defaults.underline) ||
+    (style.strikethrough !== undefined && style.strikethrough !== defaults.strikethrough) ||
+    style.color !== undefined
+  );
+}
+
+function lineHasFormattingOverride(
+  line: readonly RichTextSpan[],
+  defaults: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
+    Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">,
+): boolean {
+  return line.some((span) => styleOverridesDefault(span.style, defaults));
 }
 
 function textRectForLine(lineEl: HTMLElement): DOMRect | null {
@@ -606,6 +651,8 @@ export function RichTextEditor({
         offsetX={lineLayoutOffsetX}
         offsetY={lineLayoutOffsetY}
         lineHeight={lineHeight}
+        defaultStyle={defaultStyle}
+        pageScale={pageScale}
       />
       <TrailingBlankClickPlugin enabled={hasLineLayouts} />
       <HistoryPlugin />
@@ -760,6 +807,7 @@ export function RichTextView({
   lineLayouts,
   lineLayoutOffsetX = 0,
   lineLayoutOffsetY = 0,
+  justifyLineLayouts = false,
 }: {
   block: RichTextBlock;
   defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
@@ -771,6 +819,7 @@ export function RichTextView({
   lineLayouts?: readonly SourceTextLineLayout[];
   lineLayoutOffsetX?: number;
   lineLayoutOffsetY?: number;
+  justifyLineLayouts?: boolean;
 }) {
   const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
   const lines: RichTextSpan[][] = [[]];
@@ -784,7 +833,13 @@ export function RichTextView({
   if (lineLayouts && lineLayouts.length > 0) {
     const rows = lines.map((line, lineIndex) => {
       const layout = lineLayouts[lineIndex];
-      return { line: layout ? trimLeadingLineSpans(line) : line, layout };
+      return {
+        line: layout ? trimLeadingLineSpans(line) : line,
+        layout,
+        justify:
+          !!layout?.justify &&
+          (justifyLineLayouts || lineHasFormattingOverride(line, defaultStyle)),
+      };
     });
     const height = Math.max(
       lineHeight,
@@ -799,7 +854,7 @@ export function RichTextView({
           width: "100%",
         }}
       >
-        {rows.map(({ line, layout }, lineIndex) => (
+        {rows.map(({ line, layout, justify }, lineIndex) => (
           <span
             // oxlint-disable-next-line react/no-array-index-key -- render-only line projection.
             key={lineIndex}
@@ -811,8 +866,8 @@ export function RichTextView({
               width: layout?.width ?? "100%",
               minHeight: lineHeight,
               lineHeight: `${lineHeight}px`,
-              textAlign: "start",
-              textAlignLast: "auto",
+              textAlign: justify ? "justify" : "start",
+              textAlignLast: justify ? "justify" : "auto",
               whiteSpace: "pre",
               overflowWrap: "normal",
               wordBreak: "normal",
@@ -878,6 +933,7 @@ export function RichTextView({
             ? " "
             : line.map((span, spanIndex) => {
                 const style = { ...defaultStyle, ...span.style };
+                const explicitDir = span.style?.dir;
                 return (
                   <span
                     // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
@@ -895,8 +951,8 @@ export function RichTextView({
                         .filter(Boolean)
                         .join(" "),
                       color: colorToCss(style.color) ?? "black",
-                      direction: style.dir,
-                      unicodeBidi: "isolate",
+                      direction: explicitDir,
+                      unicodeBidi: explicitDir ? "isolate" : "normal",
                       whiteSpace: wrap ? "pre-wrap" : "pre",
                     }}
                   >
