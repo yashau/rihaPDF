@@ -419,6 +419,66 @@ describe("annotation round-trip", () => {
     expect(afterAnnots[0].contents).toBe(SENTINEL);
   }, 60_000);
 
+  test("resize a comment while editing → saved /Rect and text both update", async () => {
+    await loadFixture(h, FIXTURE.withImages);
+    const BEFORE_TEXT = "ANNOT_RESIZE_PROBE";
+    const AFTER_TEXT = "_AFTER";
+
+    await h.page.locator('[data-testid="tool-comment"]').click();
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.mouse.click(
+      pageBox!.x + pageBox!.width * 0.35,
+      pageBox!.y + pageBox!.height * 0.25,
+    );
+    await h.page.waitForTimeout(200);
+    await h.page.keyboard.type(BEFORE_TEXT);
+    await h.page.waitForTimeout(150);
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
+    await h.page.waitForTimeout(200);
+
+    const beforeSaved = await savePdf(h.page, "annotation-resize-before.pdf");
+    const beforeAnnots = (await readAnnotations(beforeSaved)).filter(
+      (a) => a.subtype === "FreeText",
+    );
+    expect(beforeAnnots).toHaveLength(1);
+    const beforeRect = beforeAnnots[0].rect!;
+
+    const commentBox = h.page.locator("[data-annotation-id]").first();
+    await commentBox.click();
+    await h.page.waitForTimeout(100);
+    const bottomRightHandle = commentBox.locator('[data-resize-handle="br"]');
+    const handleBB = await bottomRightHandle.boundingBox();
+    expect(handleBB).not.toBeNull();
+    const resizeStartX = handleBB!.x + handleBB!.width / 2;
+    const resizeStartY = handleBB!.y + handleBB!.height / 2;
+    await h.page.mouse.move(resizeStartX, resizeStartY);
+    await h.page.mouse.down();
+    await h.page.mouse.move(resizeStartX + 120, resizeStartY + 70, { steps: 8 });
+    await h.page.mouse.up();
+    await h.page.waitForTimeout(150);
+    await h.page.keyboard.press("End");
+    await h.page.keyboard.type(AFTER_TEXT);
+    await h.page.waitForTimeout(150);
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
+    await h.page.waitForTimeout(200);
+
+    const afterSaved = await savePdf(h.page, "annotation-resize-after.pdf");
+    const afterAnnots = (await readAnnotations(afterSaved)).filter((a) => a.subtype === "FreeText");
+    expect(afterAnnots).toHaveLength(1);
+    const afterRect = afterAnnots[0].rect!;
+
+    expect(
+      afterRect[2] - afterRect[0],
+      "/Rect width should grow after dragging the br handle",
+    ).toBeGreaterThan(beforeRect[2] - beforeRect[0] + 50);
+    expect(
+      afterRect[3] - afterRect[1],
+      "/Rect height should grow after dragging the br handle",
+    ).toBeGreaterThan(beforeRect[3] - beforeRect[1] + 30);
+    expect(afterAnnots[0].contents).toBe(`${BEFORE_TEXT}${AFTER_TEXT}`);
+  }, 60_000);
+
   test("same-session redaction clips newly drawn ink in the saved PDF", async () => {
     await loadFixture(h, FIXTURE.maldivian);
 

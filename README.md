@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-110%20e2e%20%2B%2029%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-114%20e2e%20%2B%2029%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -38,7 +38,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Undo / redo.** Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y. Coalesces typing and drags into single steps.
 - **Page sidebar.** Thumbnail per page; reorder, delete, insert blank, or insert pages from another PDF by picker or PDF drag-and-drop. External pages are first-class — every editing affordance works on them.
 - **230 bundled Thaana fonts.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`. Sources, attributions, and per-file credits in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
-- **Annotations.** Highlight, comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
+- **Annotations.** Highlight, resizable comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
 - **Redact.** Click a text run to drop an opaque black rectangle; drag corners to resize. On save the rect paints into the content stream AND the underlying content is destroyed: glyphs are stripped per-bbox, supported raster image XObjects are rewritten with covered pixels blacked out, fully covered / unsupported image or Form XObject draws are removed, vector paint ops under the rect are stripped, native annotations are clipped or removed on overlap, and overlapped AcroForm widgets are removed with their field values and appearances. The saved file has no recoverable text, page-level image/vector draw data, annotation content, or form-widget value data under the rect for supported layers.
 - **Fill AcroForm fields.** Open a form PDF — Maldivian gov applications, etc. — and the existing widgets become interactive overlays: text inputs (single-line, multiline, password), checkboxes, radio groups, combo / list boxes. Type Thaana via the same DV/EN phonetic keyboard the rest of the editor uses; saved PDFs write `/V` (UTF-16BE for Thaana, ASCII otherwise) and rebuild `/Root /AcroForm /Fields` after copyPages so the output stays interactive in Acrobat / Preview / Chrome / pdf.js. Reopening in rihaPDF re-extracts the same values. XFA, JS actions, `/AA`, and digital-signature creation are out of scope.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.

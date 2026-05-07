@@ -6,10 +6,14 @@ import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { isRtlScript } from "@/pdf/text/fonts";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { attachThaanaTransliteration } from "@/domain/thaanaKeyboard";
+import { resizePdfRectFromCorner, screenDeltaToPdf } from "../geometry";
 import { findPageAtPoint, isFocusMovingToToolbar } from "../helpers";
 import { MobileThaanaToggleBar } from "../MobileThaanaToggleBar";
 import { OverlayDeleteButton } from "../overlays/OverlayDeleteButton";
+import { ResizeHandles, type ResizeHandlePosition } from "../overlays/ResizeHandle";
 import { rgba, vpY } from "./helpers";
+
+const MIN_COMMENT_SIZE_PDF = 24;
 
 /** Comment-box layer. HTML divs (not SVG) so we can drop a real
  *  textarea over a box for inline editing without `<foreignObject>`
@@ -206,6 +210,40 @@ export function CommentLayer({
     onCancel: () => setCommentDragLive(null),
   });
 
+  type CommentResizeCtx = {
+    id: string;
+    corner: ResizeHandlePosition;
+    base: { x: number; y: number; w: number; h: number };
+  };
+  const beginCommentResize = useDragGesture<CommentResizeCtx>({
+    touchActivation: "immediate",
+    onMove: (ctx, info) => {
+      const { dxPdf, dyPdf } = screenDeltaToPdf(info.dxRaw, info.dyRaw, effectivePdfScale);
+      const next = resizePdfRectFromCorner(
+        ctx.base,
+        ctx.corner,
+        dxPdf,
+        dyPdf,
+        MIN_COMMENT_SIZE_PDF,
+      );
+      onAnnotationChange(ctx.id, {
+        pdfX: next.x,
+        pdfY: next.y,
+        pdfWidth: next.w,
+        pdfHeight: next.h,
+      });
+    },
+    onEnd: (ctx, info) => {
+      if (!info.moved) return;
+      justDraggedCommentRef.current = ctx.id;
+      setTimeout(() => {
+        if (justDraggedCommentRef.current === ctx.id) {
+          justDraggedCommentRef.current = null;
+        }
+      }, 50);
+    },
+  });
+
   // Close the inline editor when the user switches tool — keeps the
   // textarea from sticking around as a stale overlay during a tool change.
   useEffect(() => {
@@ -253,6 +291,14 @@ export function CommentLayer({
         // so the rendered text matches what the save path will pick
         // (saveAnnotations.ts also branches on `isRtlScript`).
         const commentFontFamily = isRtlScript(a.text) ? '"Faruma"' : '"Arial"';
+        const startResize = (corner: ResizeHandlePosition) => (e: React.PointerEvent) => {
+          if (tool !== "select") return;
+          beginCommentResize(e, {
+            id: a.id,
+            corner,
+            base: { x: a.pdfX, y: a.pdfY, w: a.pdfWidth, h: a.pdfHeight },
+          });
+        };
         return (
           <div
             key={a.id}
@@ -367,6 +413,14 @@ export function CommentLayer({
               <OverlayDeleteButton
                 aria-label="Delete comment"
                 onDelete={() => onAnnotationDelete(a.id)}
+              />
+            ) : null}
+            {tool === "select" ? (
+              <ResizeHandles
+                placement="outside"
+                parentW={w}
+                parentH={h}
+                onPointerDown={startResize}
               />
             ) : null}
           </div>

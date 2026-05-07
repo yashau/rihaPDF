@@ -15,14 +15,20 @@
  *  z-index 21 keeps the handle above the parent box's onPointerDown
  *  surface so the resize wins the hit-test over the translate drag. */
 export type ResizeHandlePosition = "tl" | "tr" | "bl" | "br";
+export type ResizeHandlePlacement = "inside" | "outside";
 
 export function ResizeHandle({
   position,
+  placement = "inside",
   parentW,
   parentH,
   onPointerDown,
 }: {
   position: ResizeHandlePosition;
+  /** `inside` preserves the established image/redaction behavior.
+   *  `outside` keeps the visible square out of editable text boxes
+   *  while retaining part of the hit target over the corner. */
+  placement?: ResizeHandlePlacement;
   /** Parent overlay's viewport-pixel width/height. Used to cap the
    *  hit pad so two corner pads don't meet in the centre. */
   parentW: number;
@@ -39,6 +45,7 @@ export function ResizeHandle({
   const fitH = parentH - VISIBLE - MIN_DRAG_GAP;
   const HIT = Math.max(VISIBLE, Math.min(MAX_HIT, Math.floor(Math.min(fitW, fitH))));
   const inset = (HIT - VISIBLE) / 2;
+  const offset = placement === "outside" ? VISIBLE + inset : inset;
   const padStyle: React.CSSProperties = {
     position: "absolute",
     width: HIT,
@@ -51,20 +58,20 @@ export function ResizeHandle({
     touchAction: "pinch-zoom",
   };
   if (position === "tl") {
-    padStyle.left = -inset;
-    padStyle.top = -inset;
+    padStyle.left = -offset;
+    padStyle.top = -offset;
     padStyle.cursor = "nwse-resize";
   } else if (position === "tr") {
-    padStyle.right = -inset;
-    padStyle.top = -inset;
+    padStyle.right = -offset;
+    padStyle.top = -offset;
     padStyle.cursor = "nesw-resize";
   } else if (position === "bl") {
-    padStyle.left = -inset;
-    padStyle.bottom = -inset;
+    padStyle.left = -offset;
+    padStyle.bottom = -offset;
     padStyle.cursor = "nesw-resize";
   } else {
-    padStyle.right = -inset;
-    padStyle.bottom = -inset;
+    padStyle.right = -offset;
+    padStyle.bottom = -offset;
     padStyle.cursor = "nwse-resize";
   }
   const dotStyle: React.CSSProperties = {
@@ -93,10 +100,12 @@ export function ResizeHandle({
 const HANDLE_POSITIONS: ResizeHandlePosition[] = ["tl", "tr", "bl", "br"];
 
 export function ResizeHandles({
+  placement,
   parentW,
   parentH,
   onPointerDown,
 }: {
+  placement?: ResizeHandlePlacement;
   parentW: number;
   parentH: number;
   onPointerDown: (position: ResizeHandlePosition) => (e: React.PointerEvent) => void;
@@ -107,6 +116,7 @@ export function ResizeHandles({
         <ResizeHandle
           key={position}
           position={position}
+          placement={placement}
           parentW={parentW}
           parentH={parentH}
           onPointerDown={onPointerDown(position)}
