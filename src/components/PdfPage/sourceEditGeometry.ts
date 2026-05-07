@@ -27,7 +27,11 @@ export function sourceEditGeometry({
   const layoutRight = hasSourceLineLayouts
     ? Math.max(...lineLayouts.map((layout) => layout.left + layout.width))
     : run.bounds.width;
-  const widthPadding = isParagraph ? 32 : Math.max(96, run.height * 6);
+  const singleLinePadding = Math.max(
+    run.height * 2,
+    Math.min(64, run.bounds.width * 0.25 + run.height * 1.5),
+  );
+  const widthPadding = isParagraph ? 32 : singleLinePadding;
   const maxWidth = hasSourceLineLayouts
     ? pageViewWidth + Math.max(96, run.height * 6)
     : pageViewWidth + Math.max(96, run.height * 6);
@@ -54,7 +58,7 @@ export function sourceEditGeometry({
     ? run.bounds.height + layoutPadTop + layoutPadBottom
     : isParagraph
       ? run.bounds.height + Math.max(8, run.height * 0.9)
-      : Math.max(run.bounds.height + run.height * 1.8, lineHeight * 2.15);
+      : Math.max(run.bounds.height + Math.max(8, run.height * 0.75), lineHeight * 1.75);
   const textTopNudge = run.height * 0.25;
   const top = hasSourceLineLayouts
     ? run.bounds.top - layoutPadTop + dy

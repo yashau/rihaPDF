@@ -86,4 +86,23 @@ describe("source text block grouping", () => {
     expect(blocks[0].textAlign).toBe("justify");
     expect(blocks[0].lineStep).toBe(28);
   });
+
+  it("does not merge adjacent table rows into a paragraph", () => {
+    const blocks = buildSourceTextBlocks(
+      [
+        run("p1-r0", "row 1 label", 80, 120),
+        run("p1-r1", "row 1 value", 260, 120),
+        run("p1-r2", "row 2 label", 80, 148),
+        run("p1-r3", "row 2 value", 260, 148),
+      ],
+      1,
+    );
+
+    expect(blocks.map((block) => block.sourceRunIds)).toEqual([
+      ["p1-r0"],
+      ["p1-r1"],
+      ["p1-r2"],
+      ["p1-r3"],
+    ]);
+  });
 });

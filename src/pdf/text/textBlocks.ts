@@ -120,6 +120,27 @@ function lineIndent(run: TextRun, rtl: boolean): number {
   return rtl ? run.bounds.left + run.bounds.width : run.bounds.left;
 }
 
+function sameRow(a: TextRun, b: TextRun): boolean {
+  const height = Math.max(a.bounds.height, b.bounds.height, a.height, b.height);
+  return Math.abs(a.baselineY - b.baselineY) <= height * 0.35;
+}
+
+function horizontallyDistinct(a: TextRun, b: TextRun): boolean {
+  const aLeft = a.bounds.left;
+  const aRight = a.bounds.left + a.bounds.width;
+  const bLeft = b.bounds.left;
+  const bRight = b.bounds.left + b.bounds.width;
+  const overlap = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
+  const smaller = Math.min(a.bounds.width, b.bounds.width);
+  return overlap < smaller * 0.8;
+}
+
+function hasSameRowNeighbour(run: TextRun, runs: readonly TextRun[]): boolean {
+  return runs.some(
+    (other) => other.id !== run.id && sameRow(run, other) && horizontallyDistinct(run, other),
+  );
+}
+
 function justifiedLineIndexes(lines: TextRun[]): Set<number> {
   if (lines.length < 3) return new Set();
   const first = lines[0];
@@ -150,8 +171,14 @@ function medianLineStep(lines: TextRun[]): number | undefined {
   return deltas[Math.floor(deltas.length / 2)];
 }
 
-function canJoinParagraph(prev: TextRun, next: TextRun, first: TextRun): boolean {
+function canJoinParagraph(
+  prev: TextRun,
+  next: TextRun,
+  first: TextRun,
+  allRuns: readonly TextRun[],
+): boolean {
   if (!sameInlineStyle(prev, next) || !sameInlineStyle(first, next)) return false;
+  if (hasSameRowNeighbour(prev, allRuns) || hasSameRowNeighbour(next, allRuns)) return false;
   const rtl = isRtl(first.text);
   if (isRtl(next.text) !== rtl) return false;
   const lineStep = Math.abs(next.baselineY - prev.baselineY);
@@ -232,7 +259,7 @@ export function buildSourceTextBlocks(
       continue;
     }
     const prev = bucket[bucket.length - 1];
-    if (canJoinParagraph(prev, run, bucket[0])) {
+    if (canJoinParagraph(prev, run, bucket[0], runs)) {
       bucket.push(run);
     } else {
       flush();

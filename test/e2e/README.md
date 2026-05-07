@@ -40,7 +40,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 116 e2e tests.
+The suite currently has 117 e2e tests.
 
 | File                                          | What it covers                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ The suite currently has 116 e2e tests.
 | `drag-autoscroll.test.ts`                     | edge auto-scroll uses the visual viewport during drags                           |
 | `edit-format-duplicate.test.ts`               | font-swap on Form-XObject text: outside-click commits, no duplicates             |
 | `edit-format.test.ts`                         | existing/inserted formatting overrides persist across close/reopen               |
-| `edit-text-includes-punct-maldivian2.test.ts` | punctuation clustering against maldivian2                                        |
+| `edit-text-includes-punct-maldivian2.test.ts` | punctuation clustering and table-cell non-merging against maldivian2             |
 | `edit-text-includes-punct.test.ts`            | parens / slash / digits land in the edit box                                     |
 | `external-first-class.test.ts`                | external pages: edit run, insert text/image, cross-source drag round-trip        |
 | `form-fill.test.ts`                           | AcroForm `/V` values round-trip and reopen with the same fills                   |
