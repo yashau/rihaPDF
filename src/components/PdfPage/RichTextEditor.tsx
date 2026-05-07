@@ -621,6 +621,10 @@ function trimLeadingLineSpans(line: RichTextSpan[]): RichTextSpan[] {
     .filter((span) => span.text.length > 0);
 }
 
+function displaySpanText(text: string, style: EditStyle): string {
+  return protectRtlNumericMarkers(text, style.dir === "rtl");
+}
+
 export function RichTextView({
   block,
   defaultStyle,
@@ -687,6 +691,7 @@ export function RichTextView({
               whiteSpace: "pre",
               overflowWrap: "normal",
               wordBreak: "normal",
+              direction: defaultStyle.dir,
               unicodeBidi: "plaintext",
             }}
           >
@@ -694,6 +699,7 @@ export function RichTextView({
               ? " "
               : line.map((span, spanIndex) => {
                   const style = { ...defaultStyle, ...span.style };
+                  const explicitDir = span.style?.dir;
                   return (
                     <span
                       // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
@@ -711,12 +717,12 @@ export function RichTextView({
                           .filter(Boolean)
                           .join(" "),
                         color: colorToCss(style.color) ?? "black",
-                        direction: style.dir,
-                        unicodeBidi: "isolate",
+                        direction: explicitDir,
+                        unicodeBidi: explicitDir ? "isolate" : "normal",
                         whiteSpace: "pre",
                       }}
                     >
-                      {span.text}
+                      {displaySpanText(span.text, style)}
                     </span>
                   );
                 })}
@@ -769,7 +775,7 @@ export function RichTextView({
                       whiteSpace: wrap ? "pre-wrap" : "pre",
                     }}
                   >
-                    {span.text}
+                    {displaySpanText(span.text, style)}
                   </span>
                 );
               })}

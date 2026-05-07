@@ -1,6 +1,6 @@
 # RTL Source Editing Checkpoint
 
-This is an implementation checkpoint, not a finished design. The source text editor is still not pixel-perfect against the PDF canvas. This note records what has been learned so the same failed paths do not get repeated.
+This is an implementation checkpoint, not a finished design. The source text editor is now much closer to WYSIWYG for the tested Thaana source-edit cases, but it is still a high-risk area. This note records what has been learned so the same failed paths do not get repeated.
 
 ## Current Goal
 
@@ -15,6 +15,10 @@ The editor must let users edit source PDF text while preserving the rendered app
 - RTL paragraph line breaks are preserved as explicit newlines. Browser wrapping is not trusted for source paragraphs.
 - For justified RTL lines, extra spaces are synthesized per line in `textBlocks.ts` to approximate source PDF word spacing. This is a compromise and is still not pixel-perfect.
 - Display-only text normalization in `EditField.tsx` fixes several common bidi/punctuation artifacts before the text is handed to Lexical.
+- Source edit geometry is shared between the live editor and the committed overlay through `sourceEditGeometry.ts`, so the edit box and committed HTML overlay use the same enlarged box, line height, and source-line offsets.
+- Multi-line source blocks render line-by-line using PDF-derived line layouts in both the live editor and committed overlay.
+- Saved RTL source edits now strip a wider set of original `Tj`/`TJ` operators around each edited line, then redraw replacement text token-by-token so dates, numeric markers, and parenthesized mixed text do not collapse into one malformed RTL shape.
+- The latest committed-overlay fix keeps line-level RTL plaintext behavior and avoids isolating every rendered span by default. This was necessary because per-span isolation made the committed render diverge from the edit box after deleting words.
 
 ## What Failed
 
@@ -51,6 +55,24 @@ Fix so far:
 
 - Do not prepend indent spaces for RTL blocks.
 - Instead, preserve explicit line breaks and add line-local spacing only for justified RTL lines.
+
+### Per-Span Isolation in the Committed Overlay
+
+The committed overlay briefly wrapped every rendered span in an isolated bidi context. That made text look stable in some simple cases, but it diverged from the live Lexical editor after editing/removing words in mixed RTL/LTR lines.
+
+Observed result:
+
+- Dates and parentheses could look correct in the edit box and saved PDF but shift in the committed HTML overlay.
+- Word removal could cause line content to reflow differently between edit and committed render.
+
+Fix so far:
+
+- Keep the line row itself in the RTL plaintext context.
+- Do not isolate every span by default.
+- Only isolate a span when it carries an explicit direction override from rich-text styling.
+- Continue protecting numeric/date markers for display so committed text keeps the same LTR-isolate behavior as the editor.
+
+Takeaway: bidi context must be line-level for source-layout overlays. Per-token or per-span isolation is too aggressive unless the user explicitly applied a directional style.
 
 ## Visual Testing Workflow
 
@@ -135,6 +157,12 @@ Current display cleanup:
 - Remove spaces after an opening parenthesis when followed by RTL text or a digit.
 - Remove spaces before a closing parenthesis when preceded by RTL text.
 
+Save-side note:
+
+- The saved PDF path cannot rely on browser bidi.
+- RTL rich lines are tokenized and passed through bidi-js visual ordering before PDF drawing.
+- Parentheses are mirrored only through bidi-level handling in the save path. A previous attempt to simply force parenthesis tokens to RTL made output worse.
+
 ### Commas
 
 There are two different comma-space cases and they must not be confused:
@@ -159,16 +187,32 @@ Current display cleanup:
   - Forces RTL direction when the initial text contains RTL.
   - Isolates numeric markers/dates without swallowing parentheses.
   - Does not use browser justification in the live contenteditable.
+  - For committed source-layout overlays, keeps line-level bidi context and avoids default per-span isolation.
+
+- `src/components/PdfPage/sourceEditGeometry.ts`
+  - Centralizes source edit box geometry so the live editor and committed overlay use the same width, height, line height, and line-layout offsets.
+  - Gives single-line source edit boxes extra width because contenteditable rendering is not byte-for-byte identical to source PDF text and needs breathing room.
 
 - `src/pdf/text/textBlocks.ts`
   - Groups source lines into paragraph blocks.
   - Avoids leading-indent spaces for RTL paragraphs.
   - Synthesizes extra word spacing for justified RTL lines as a current approximation.
 
+- `src/pdf/save/streamSurgery.ts`
+  - Expands multi-line source edit stripping by baseline and x-range, not only direct op indices.
+  - Uses the same widened RTL draw box for non-paragraph source edits so saved output matches the editor/overlay box.
+  - Disables save-side re-justification for source-layout lines because the UI now preserves the source line geometry instead.
+
+- `src/pdf/save/textDraw.ts`
+  - Draws RTL rich text token-by-token.
+  - Splits numeric/date tokens out of mixed RTL text so they can stay LTR in saved PDFs.
+  - Uses bidi-js visual token ordering for saved RTL rich lines to handle parentheses and mixed numeric text more like the browser editor.
+
 ## Known Remaining Work
 
-- Alignment is still not good enough. The editor does not yet replicate PDF line geometry precisely.
-- The synthetic-space approximation improves some RTL justified paragraphs but is not a real positioned-text layout.
-- Commit behavior after edits still needs careful visual and saved-PDF verification, especially when display-only normalization has changed the editor string.
+- Alignment is much closer for the tested `maldivian.pdf` blocks, but it is still not a formally proven pixel-perfect renderer.
+- The synthetic-space approximation remains a compromise. The better current path is preserving PDF-derived line boxes and avoiding browser justification for source-layout text.
+- Commit and save behavior after edits still need careful visual verification, especially when deleting words around dates, parentheses, section markers, and list markers.
+- The saved PDF path is now close for tested parenthesis/date cases, but it is a separate renderer and can still diverge from browser layout in untested mixed-script cases.
 - The visual testing workflow should be turned into a repeatable script/test if this work continues.
 - A future lower-layer approach may still be valid, but only if character-to-glyph pairing is proven against physical render boxes first.
