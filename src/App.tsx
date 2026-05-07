@@ -380,7 +380,7 @@ export default function App() {
                   slots={slots}
                   sources={sources}
                   onSlotsChange={onSlotsChange}
-                  onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
+                  onAddExternalPdfs={(files, insertAt) => void onAddExternalPdfs(files, insertAt)}
                   widthClass="w-full"
                   onSlotActivate={() => setMobileSidebarOpen(false)}
                 />
@@ -391,7 +391,7 @@ export default function App() {
               slots={slots}
               sources={sources}
               onSlotsChange={onSlotsChange}
-              onAddExternalPdfs={(files) => void onAddExternalPdfs(files)}
+              onAddExternalPdfs={(files, insertAt) => void onAddExternalPdfs(files, insertAt)}
             />
           ))}
         <main

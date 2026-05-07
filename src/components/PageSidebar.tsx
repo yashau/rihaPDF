@@ -29,7 +29,7 @@ type Props = {
    *  downscaling each source's already-rendered canvas. */
   sources: Map<string, LoadedSource>;
   onSlotsChange: (next: PageSlot[]) => void;
-  onAddExternalPdfs: (files: File[]) => void;
+  onAddExternalPdfs: (files: File[], insertAt?: number) => void;
   /** Tailwind width class for the <aside>. Defaults to a desktop-rail
    *  size; the mobile drawer wrapper passes "w-full" so the aside
    *  fills the drawer's own width budget. */
@@ -46,6 +46,27 @@ type Props = {
 // browser handles cleanly. Bitmap is rendered at this × DPR so device
 // pixels land 1:1 instead of being upscaled.
 const THUMB_TARGET_CSS_WIDTH = 360;
+const PDF_DROP_AUTOSCROLL_EDGE_PX = 56;
+const PDF_DROP_AUTOSCROLL_MAX_STEP = 18;
+
+function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function hasFileTransfer(dt: DataTransfer): boolean {
+  if (dt.items.length > 0) return Array.from(dt.items).some((item) => item.kind === "file");
+  return dt.files.length > 0 || Array.from(dt.types).includes("Files");
+}
+
+function dragMayContainPdf(dt: DataTransfer): boolean {
+  if (dt.items.length > 0) {
+    return Array.from(dt.items).some(
+      (item) => item.kind === "file" && (item.type === "application/pdf" || item.type === ""),
+    );
+  }
+  if (dt.files.length > 0) return Array.from(dt.files).some(isPdfFile);
+  return Array.from(dt.types).includes("Files");
+}
 
 export function PageSidebar({
   slots,
@@ -56,9 +77,13 @@ export function PageSidebar({
   onSlotActivate,
 }: Props) {
   const externalFileInputRef = useRef<HTMLInputElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const fileDragClientYRef = useRef<number | null>(null);
+  const fileDragScrollFrameRef = useRef<number | null>(null);
   /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are PNG
    *  data URLs so multiple <img> tags can share one entry. */
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const [pdfDropIndex, setPdfDropIndex] = useState<number | null>(null);
   // Tracks the LoadedSource object identity per sourceKey. We compare by
   // identity (not just key presence) because opening a new primary PDF
   // reuses PRIMARY_SOURCE_KEY — only the underlying source object
@@ -129,6 +154,15 @@ export function PageSidebar({
     // oxlint-disable-next-line react/exhaustive-deps
   }, [slots, sources]);
 
+  useEffect(
+    () => () => {
+      if (fileDragScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(fileDragScrollFrameRef.current);
+      }
+    },
+    [],
+  );
+
   const insertBlankAt = (i: number) => {
     // Match the size of the nearest neighbour so a blank inserted into
     // a Letter-size doc stays Letter, not A4.
@@ -172,9 +206,99 @@ export function PageSidebar({
 
   const sourcesLoaded = sources.size > 0;
 
+  const dropIndexForClientY = (clientY: number): number => {
+    const nodes = Array.from(
+      sidebarRef.current?.querySelectorAll<HTMLElement>("[data-sidebar-slot-index]") ?? [],
+    );
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      if (clientY < midpoint) return Number(node.dataset.sidebarSlotIndex ?? 0);
+    }
+    return slots.length;
+  };
+
+  const stopFileDragAutoScroll = () => {
+    fileDragClientYRef.current = null;
+    if (fileDragScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(fileDragScrollFrameRef.current);
+      fileDragScrollFrameRef.current = null;
+    }
+  };
+
+  const tickFileDragAutoScroll = () => {
+    const sidebar = sidebarRef.current;
+    const clientY = fileDragClientYRef.current;
+    if (!sidebar || clientY === null) {
+      fileDragScrollFrameRef.current = null;
+      return;
+    }
+
+    const rect = sidebar.getBoundingClientRect();
+    const topDistance = clientY - rect.top;
+    const bottomDistance = rect.bottom - clientY;
+    let step = 0;
+    if (topDistance < PDF_DROP_AUTOSCROLL_EDGE_PX) {
+      const t = Math.max(0, Math.min(1, 1 - topDistance / PDF_DROP_AUTOSCROLL_EDGE_PX));
+      step = -Math.ceil(t * PDF_DROP_AUTOSCROLL_MAX_STEP);
+    } else if (bottomDistance < PDF_DROP_AUTOSCROLL_EDGE_PX) {
+      const t = Math.max(0, Math.min(1, 1 - bottomDistance / PDF_DROP_AUTOSCROLL_EDGE_PX));
+      step = Math.ceil(t * PDF_DROP_AUTOSCROLL_MAX_STEP);
+    }
+
+    if (step !== 0) {
+      sidebar.scrollTop += step;
+      setPdfDropIndex(dropIndexForClientY(clientY));
+    }
+    fileDragScrollFrameRef.current = window.requestAnimationFrame(tickFileDragAutoScroll);
+  };
+
+  const startFileDragAutoScroll = (clientY: number) => {
+    fileDragClientYRef.current = clientY;
+    if (fileDragScrollFrameRef.current === null) {
+      fileDragScrollFrameRef.current = window.requestAnimationFrame(tickFileDragAutoScroll);
+    }
+  };
+
+  const handleFileDragOver = (e: React.DragEvent<HTMLElement>) => {
+    if (!hasFileTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    if (!sourcesLoaded || !dragMayContainPdf(e.dataTransfer)) {
+      e.dataTransfer.dropEffect = "none";
+      setPdfDropIndex(null);
+      stopFileDragAutoScroll();
+      return;
+    }
+    e.dataTransfer.dropEffect = "copy";
+    startFileDragAutoScroll(e.clientY);
+    setPdfDropIndex(dropIndexForClientY(e.clientY));
+  };
+
+  const handleFileDrop = (e: React.DragEvent<HTMLElement>) => {
+    if (!hasFileTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter(isPdfFile);
+    const insertAt = pdfDropIndex ?? dropIndexForClientY(e.clientY);
+    setPdfDropIndex(null);
+    stopFileDragAutoScroll();
+    if (!sourcesLoaded || files.length === 0) return;
+    onAddExternalPdfs(files, insertAt);
+  };
+
   return (
     <aside
+      ref={sidebarRef}
+      data-testid="page-sidebar"
       className={`flex-shrink-0 ${widthClass} h-full border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]`}
+      onDragOver={handleFileDragOver}
+      onDragLeave={(e) => {
+        const nextTarget = e.relatedTarget;
+        if (!(nextTarget instanceof Node) || !e.currentTarget.contains(nextTarget)) {
+          setPdfDropIndex(null);
+          stopFileDragAutoScroll();
+        }
+      }}
+      onDrop={handleFileDrop}
     >
       <div className="flex flex-col gap-2 px-3 mb-2">
         <span className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -217,8 +341,8 @@ export function PageSidebar({
         <SortableContext items={slots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col px-3">
             {slots.map((slot, idx) => (
-              <div key={slot.id}>
-                <InsertGap onClick={() => insertBlankAt(idx)} />
+              <div key={slot.id} data-sidebar-slot-index={idx}>
+                <InsertGap active={pdfDropIndex === idx} onClick={() => insertBlankAt(idx)} />
                 <SortableSlotThumb
                   slot={slot}
                   displayIndex={idx}
@@ -236,7 +360,10 @@ export function PageSidebar({
                 />
               </div>
             ))}
-            <InsertGap onClick={() => insertBlankAt(slots.length)} />
+            <InsertGap
+              active={pdfDropIndex === slots.length}
+              onClick={() => insertBlankAt(slots.length)}
+            />
           </div>
         </SortableContext>
       </DndContext>
@@ -244,7 +371,7 @@ export function PageSidebar({
   );
 }
 
-function InsertGap({ onClick }: { onClick: () => void }) {
+function InsertGap({ active, onClick }: { active: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -252,9 +379,16 @@ function InsertGap({ onClick }: { onClick: () => void }) {
       className="group flex items-center justify-center h-3 w-full text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
       aria-label="Insert blank page here"
     >
-      <span className="opacity-0 group-hover:opacity-100 text-[10px] leading-none border-t border-zinc-400 dark:border-zinc-600 w-full mx-2 relative">
+      <span
+        data-testid={active ? "pdf-drop-marker" : undefined}
+        className={`text-[10px] leading-none border-t w-full mx-2 relative ${
+          active
+            ? "opacity-100 border-blue-500 dark:border-blue-400 text-blue-700 dark:text-blue-300"
+            : "opacity-0 group-hover:opacity-100 border-zinc-400 dark:border-zinc-600"
+        }`}
+      >
         <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-50 dark:bg-zinc-900 px-1">
-          + Blank
+          {active ? "Drop PDF" : "+ Blank"}
         </span>
       </span>
     </button>

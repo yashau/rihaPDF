@@ -148,30 +148,39 @@ export function useDocumentIo({
   );
 
   const onAddExternalPdfs = useCallback(
-    async (files: File[]) => {
+    async (files: File[], insertAt?: number) => {
       if (files.length === 0) return;
       setBusy(true);
       try {
         const { loadSource } = await import("./loadSource");
         recordHistory(null);
+        const loaded: { source: LoadedSource; sourceSlots: PageSlot[] }[] = [];
         for (const file of files) {
           const sourceKey = nextExternalSourceKey(file);
           const source = await loadSource(file, renderScale, sourceKey);
           const sourceSlots = source.pages.map((_, i) => pageSlot(sourceKey, i));
-          setSources((prev) => {
-            const next = new Map(prev);
-            next.set(sourceKey, source);
-            return next;
-          });
-          setSlots((prev) => [...prev, ...sourceSlots]);
-          setAnnotations((prev) => {
-            const next = new Map(prev);
+          loaded.push({ source, sourceSlots });
+        }
+        setSources((prev) => {
+          const next = new Map(prev);
+          for (const { source } of loaded) next.set(source.sourceKey, source);
+          return next;
+        });
+        setSlots((prev) => {
+          const newSlots = loaded.flatMap(({ sourceSlots }) => sourceSlots);
+          const at =
+            insertAt === undefined ? prev.length : Math.max(0, Math.min(insertAt, prev.length));
+          return [...prev.slice(0, at), ...newSlots, ...prev.slice(at)];
+        });
+        setAnnotations((prev) => {
+          const next = new Map(prev);
+          for (const { source, sourceSlots } of loaded) {
             for (const [slotId, annots] of sourceAnnotationsForSlots(source, sourceSlots)) {
               next.set(slotId, annots);
             }
-            return next;
-          });
-        }
+          }
+          return next;
+        });
       } finally {
         setBusy(false);
       }

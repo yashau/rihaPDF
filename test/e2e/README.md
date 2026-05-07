@@ -40,7 +40,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 107 e2e tests.
+The suite currently has 110 e2e tests.
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -76,6 +76,7 @@ The suite currently has 107 e2e tests.
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction removes text/bytes      |
 | `save-redactions.test.ts`                     | image/vector/annotation/form content under redactions is sanitized            |
 | `signature.test.ts`                           | visual signature draw/import -> local library, cleanup, insert, save          |
+| `sidebar-pdf-drop.test.ts`                    | PDF file drops show a sidebar insertion marker and add pages at that gap      |
 | `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font         |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                      |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                         |
