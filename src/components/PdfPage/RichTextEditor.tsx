@@ -42,7 +42,7 @@ type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
   : never;
 
 const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
-const NUMERIC_MARKER_RE = /(^|\s)([()[\].-]*\d[\d()[\].-]*)(?=$|\s)/gu;
+const NUMERIC_MARKER_RE = /(^|\s)([()[\]./-]*\d[\d()[\]./-]*)(?=$|\s)/gu;
 const LRI = "\u2066";
 const PDI = "\u2069";
 
@@ -55,6 +55,10 @@ function protectRtlNumericMarkers(text: string, rtl: boolean): string {
 
 function stripBidiControls(text: string): string {
   return text.replace(BIDI_CONTROL_RE, "");
+}
+
+function hasRtlText(text: string): boolean {
+  return /[\u0590-\u08ff\u0780-\u07bf]/u.test(text);
 }
 
 function colorToCssValue(color: AnnotationColor | undefined): string | undefined {
@@ -254,7 +258,7 @@ export function RichTextEditor({
   minHeight,
   maxHeight,
   lineHeight,
-  textAlign,
+  textAlign: _textAlign,
   wrap,
   scroll,
   toolbarTop,
@@ -307,7 +311,11 @@ export function RichTextEditor({
       onError(error: Error) {
         throw error;
       },
-      editorState: createInitialEditorState(initial, pageScale, defaultStyle.dir === "rtl"),
+      editorState: createInitialEditorState(
+        initial,
+        pageScale,
+        defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && hasRtlText(initial.text)),
+      ),
     }),
     [defaultStyle.dir, id, initial, pageScale],
   );
@@ -357,7 +365,8 @@ export function RichTextEditor({
 
   const fontFamily = activeStyle.fontFamily ?? defaultStyle.fontFamily;
   const fontSize = activeStyle.fontSize ?? defaultStyle.fontSize;
-  const editorDir = activeStyle.dir ?? defaultStyle.dir ?? "auto";
+  const editorDir =
+    activeStyle.dir ?? defaultStyle.dir ?? (hasRtlText(initial.text) ? "rtl" : "auto");
   const editorNode = (
     <LexicalComposer initialConfig={initialConfig}>
       <EditorRefPlugin editorRef={editorRef} />
@@ -396,12 +405,13 @@ export function RichTextEditor({
               fontFamily: `"${fontFamily}"`,
               fontSize: `${fontSize * pageScale}px`,
               lineHeight: `${lineHeight}px`,
-              textAlign: textAlign === "justify" ? "justify" : "start",
+              textAlign: "start",
               textAlignLast: "auto",
               whiteSpace: wrap ? "pre-wrap" : "pre",
               overflowWrap: wrap ? "break-word" : "normal",
               wordBreak: "normal",
               boxSizing: "border-box",
+              direction: editorDir === "auto" ? undefined : editorDir,
               unicodeBidi: "plaintext",
             }}
             onKeyDown={(e) => {

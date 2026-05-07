@@ -53,9 +53,48 @@ function lineStartEdge(run: TextRun, rtl: boolean): number {
   return rtl ? run.bounds.left + run.bounds.width : run.bounds.left;
 }
 
-function textWithLineIndents(lines: TextRun[]): string {
+function textWidth(
+  text: string,
+  fontFamily: string,
+  fontSizePx: number,
+  bold: boolean,
+  italic: boolean,
+): number {
+  if (typeof document === "undefined") return text.length * fontSizePx * 0.5;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return text.length * fontSizePx * 0.5;
+  ctx.font = `${italic ? "italic " : ""}${bold ? "700" : "400"} ${fontSizePx}px "${fontFamily}"`;
+  return ctx.measureText(text).width;
+}
+
+function justifyRtlLineText(line: TextRun): string {
+  const text = line.text.trim();
+  const gaps = Array.from(text.matchAll(/\s+/gu));
+  if (gaps.length === 0) return text;
+  const naturalWidth = textWidth(text, line.fontFamily, line.height, line.bold, line.italic);
+  const extraWidth = line.bounds.width - naturalWidth;
+  if (extraWidth <= line.height * 0.25) return text;
+  const spaceWidth = cssSpaceWidth(line.fontFamily, line.height, line.bold, line.italic);
+  const extraSpaces = Math.max(0, Math.round(extraWidth / spaceWidth));
+  if (extraSpaces === 0) return text;
+  let gapIndex = 0;
+  return text.replace(/\s+/gu, (space) => {
+    const add =
+      Math.floor(extraSpaces / gaps.length) + (gapIndex < extraSpaces % gaps.length ? 1 : 0);
+    gapIndex++;
+    return `${space}${" ".repeat(add)}`;
+  });
+}
+
+function textWithLineIndents(lines: TextRun[], justifiedIndexes: Set<number>): string {
   const first = lines[0];
   const rtl = isRtl(first.text);
+  if (rtl) {
+    return lines
+      .map((line, index) => (justifiedIndexes.has(index) ? justifyRtlLineText(line) : line.text))
+      .join("\n");
+  }
   const firstStart = lineStartEdge(first, rtl);
   return lines
     .map((line, index) => {
@@ -85,6 +124,7 @@ function justifiedLineIndexes(lines: TextRun[]): Set<number> {
   if (lines.length < 3) return new Set();
   const first = lines[0];
   const bodyIndexes = lines.slice(0, -1).map((_, index) => index);
+  if (isRtl(first.text)) return new Set(bodyIndexes);
   const checkedIndexes =
     hasListMarker(first.text) && bodyIndexes.length > 2 ? bodyIndexes.slice(1) : bodyIndexes;
   const checkedLines = checkedIndexes.map((index) => lines[index]);
@@ -148,7 +188,7 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
     id: `p${pageNumber}-b${index}`,
     sourceIndices,
     contentStreamOpIndices: opIndices,
-    text: textWithLineIndents(lines),
+    text: textWithLineIndents(lines, justifiedIndexes),
     caretPositions: undefined,
     bounds: {
       left,

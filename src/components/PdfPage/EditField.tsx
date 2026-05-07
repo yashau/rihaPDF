@@ -7,9 +7,33 @@ import { RichTextEditor } from "./RichTextEditor";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
+const SLASH_NUMBER_RE = /\d+(?:\/\d+)+/gu;
+const RTL_TRAILING_LIST_DOT_RE = /^(\s*)(\d+)(\s+)([\s\S]*?)(\s*)\.$/u;
+const RTL_LEADING_SECTION_MARKER_RE = /^(\s*)\.(\d)(\d)(\s+)/u;
 
 function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlock {
   return "isParagraph" in run;
+}
+
+function displayTextForEditor(text: string, rtl: boolean): string {
+  if (!rtl) return text;
+  return text
+    .split("\n")
+    .map((line) => {
+      const withSlashNumbers = line.replace(SLASH_NUMBER_RE, (value) =>
+        value.split("/").reverse().join("/"),
+      );
+      const withSectionMarker = withSlashNumbers.replace(
+        RTL_LEADING_SECTION_MARKER_RE,
+        (_match, lead: string, major: string, minor: string, gap: string) =>
+          `${lead}${minor}-${major}${gap}`,
+      );
+      const match = RTL_TRAILING_LIST_DOT_RE.exec(withSectionMarker);
+      if (!match || !RTL_TEXT_RE.test(match[4])) return withSectionMarker;
+      const [, lead, marker, gap, body, tailSpace] = match;
+      return `${lead}.${marker}${gap}${body}${tailSpace}`;
+    })
+    .join("\n");
 }
 
 export function EditField({
@@ -60,7 +84,13 @@ export function EditField({
   const editorLeft = isRtlEditor
     ? run.bounds.left + run.bounds.width + dx - editorWidth
     : run.bounds.left + dx;
-  const initialBlock = richTextOrPlain(initial.richText, initial.text, initial.style);
+  const sourceText = initial.richText?.text ?? initial.text;
+  const displayText = displayTextForEditor(sourceText, isRtlEditor);
+  const initialBlock = richTextOrPlain(
+    initial.richText,
+    initial.richText ? initial.text : displayText,
+    initial.style,
+  );
   const lineHeight =
     isSourceTextBlock(run) && run.lineStep
       ? run.lineStep
@@ -74,7 +104,8 @@ export function EditField({
     ? run.bounds.top + run.height * 0.25 + dy
     : run.bounds.top - (editorHeight - run.bounds.height) * 0.5 + dy;
   const editorBottom = editorTop + editorHeight;
-  const textAlign = isSourceTextBlock(run) ? run.textAlign : undefined;
+  const textAlign =
+    isParagraph && isRtlEditor ? "justify" : isSourceTextBlock(run) ? run.textAlign : undefined;
 
   return (
     <RichTextEditor
@@ -103,9 +134,10 @@ export function EditField({
       initialCaretOffset={initialCaretPoint?.caretOffset}
       onCommit={(richText) => {
         const style = uniformSpanStyle(richText);
+        const unchangedText = richText.text === displayText && displayText !== sourceText;
         onCommit({
-          text: richText.text,
-          richText,
+          text: unchangedText && !(style && hasStyle(style)) ? sourceText : richText.text,
+          richText: unchangedText && !(style && hasStyle(style)) ? undefined : richText,
           style: style && hasStyle(style) ? style : undefined,
         });
       }}
