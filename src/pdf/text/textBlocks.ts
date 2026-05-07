@@ -18,6 +18,7 @@ export type SourceTextLineLayout = {
   top: number;
   width: number;
   justify: boolean;
+  visualPieces?: Array<{ text: string; left: number; width: number }>;
 };
 
 function isRtl(text: string): boolean {
@@ -85,6 +86,7 @@ function justifiedLineIndexes(lines: TextRun[]): Set<number> {
   if (lines.length < 3) return new Set();
   const first = lines[0];
   const bodyIndexes = lines.slice(0, -1).map((_, index) => index);
+  if (isRtl(first.text)) return new Set(bodyIndexes);
   const checkedIndexes =
     hasListMarker(first.text) && bodyIndexes.length > 2 ? bodyIndexes.slice(1) : bodyIndexes;
   const checkedLines = checkedIndexes.map((index) => lines[index]);
@@ -170,6 +172,7 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
       top: line.bounds.top - top,
       width: line.bounds.width,
       justify: justifiedIndexes.has(lineIndex),
+      visualPieces: line.visualPieces,
     })),
   };
 }
