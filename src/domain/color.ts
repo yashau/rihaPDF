@@ -4,7 +4,7 @@
 // parsing in between. CSS / hex conversion lives here so the toolbar
 // and overlays can render the same value back to the user.
 
-import type { AnnotationColor } from "./annotations";
+import type { AnnotationColor } from "@/domain/annotations";
 
 /** Single entry in a color-picker preset palette. Shared between the
  *  text-color (dark) and highlight-color (light) pickers so the same

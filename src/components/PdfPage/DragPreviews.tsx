@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { colorToCss } from "../../lib/color";
+import { colorToCss } from "@/domain/color";
 import type { RenderedPage } from "../../lib/pdf";
 import { cssTextDecoration } from "./helpers";
 import type { EditValue } from "./types";

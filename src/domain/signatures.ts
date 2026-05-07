@@ -1,5 +1,5 @@
-import type { AnnotationColor } from "./annotations";
-import { colorToHex } from "./color";
+import type { AnnotationColor } from "@/domain/annotations";
+import { colorToHex } from "@/domain/color";
 
 export type SignatureAsset = {
   id: string;

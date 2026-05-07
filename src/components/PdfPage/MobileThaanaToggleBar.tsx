@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@heroui/react";
-import { useVisualViewportFollow } from "../../lib/useVisualViewport";
+import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 
 export function MobileThaanaToggleBar({
   enabled,

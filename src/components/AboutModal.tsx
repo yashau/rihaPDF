@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Modal } from "@heroui/react";
 import { Globe, Mail } from "lucide-react";
-import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "../lib/polyfills";
+import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "@/platform/browser/polyfills";
 
 type BrowserId = "ios-safari" | "safari" | "firefox" | "chromium";
 

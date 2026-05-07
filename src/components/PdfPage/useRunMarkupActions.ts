@@ -1,7 +1,7 @@
-import type { Annotation, AnnotationColor } from "../../lib/annotations";
-import { HIGHLIGHT_LINE_PAD, lineMarkupRect, newAnnotationId } from "../../lib/annotations";
+import type { Annotation, AnnotationColor } from "@/domain/annotations";
+import { HIGHLIGHT_LINE_PAD, lineMarkupRect, newAnnotationId } from "@/domain/annotations";
 import type { RenderedPage, TextRun } from "../../lib/pdf";
-import { newRedactionId, REDACTION_LINE_PAD, type Redaction } from "../../lib/redactions";
+import { newRedactionId, REDACTION_LINE_PAD, type Redaction } from "@/domain/redactions";
 
 export function useRunMarkupActions({
   page,

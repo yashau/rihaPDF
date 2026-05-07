@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
-import { useIsMobile } from "../lib/useMediaQuery";
-import { useVisualViewportFollow } from "../lib/useVisualViewport";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
+import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 
 export function ToolOptionsBar({
   label,

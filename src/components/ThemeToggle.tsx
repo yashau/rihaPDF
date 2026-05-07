@@ -7,7 +7,7 @@
 
 import { Button } from "@heroui/react";
 import { Monitor, Moon, Sun } from "lucide-react";
-import type { ThemeMode } from "../lib/theme";
+import type { ThemeMode } from "@/platform/theme";
 
 type Props = {
   mode: ThemeMode;

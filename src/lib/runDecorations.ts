@@ -11,7 +11,7 @@
 // the run's underline; toggling underline OFF on a subsequent edit
 // strips both the text AND the decoration.
 
-import type { RenderedPage, TextRun } from "./pdf";
+import type { RenderedPage, TextRun } from "@/lib/pdf";
 
 /** In-place mutation: pairs each thin horizontal q…Q block with the
  *  run it decorates, drops paired shapes from `page.shapes`, and stamps

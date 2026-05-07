@@ -1,35 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePreviewCanvases } from "./lib/usePreviewCanvases";
-import { useSelection } from "./lib/useSelection";
-import type { ImageInsertion, TextInsertion } from "./lib/insertions";
+import { usePreviewCanvases } from "@/app/hooks/usePreviewCanvases";
+import { useSelection } from "@/app/hooks/useSelection";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import {
   type Annotation,
   type AnnotationColor,
   DEFAULT_COMMENT_COLOR,
   DEFAULT_HIGHLIGHT_COLOR,
   DEFAULT_INK_COLOR,
-} from "./lib/annotations";
-import type { Redaction } from "./lib/redactions";
-import type { EditValue, FormValue, ImageMoveValue } from "./components/PdfPage";
-import { CommentToolbar } from "./components/CommentToolbar";
-import { HighlightToolbar } from "./components/HighlightToolbar";
-import { InkToolbar } from "./components/InkToolbar";
-import { PageSidebar } from "./components/PageSidebar";
-import type { PageSlot } from "./lib/slots";
-import type { LoadedSource } from "./lib/loadSource";
-import { useTheme } from "./lib/theme";
-import { useIsMobile } from "./lib/useMediaQuery";
-import { useMobileChrome } from "./lib/useMobileChrome";
-import { MIN_DOCUMENT_ZOOM, useMobileDocumentZoom } from "./lib/useMobileDocumentZoom";
-import { useAppUndo } from "./lib/useAppUndo";
-import { useDocumentIo } from "./lib/useDocumentIo";
-import { useDocumentMutations } from "./lib/useDocumentMutations";
-import { useSaveStatus } from "./lib/useSaveStatus";
-import type { PendingImage, ToolMode } from "./lib/toolMode";
-import { AboutModal } from "./components/AboutModal";
-import { AppHeader, AppFileInputs } from "./components/AppHeader";
-import { PageList } from "./components/PageList";
-import { SignatureModal } from "./components/SignatureModal";
+} from "@/domain/annotations";
+import type { Redaction } from "@/domain/redactions";
+import type { EditValue, FormValue, ImageMoveValue } from "@/components/PdfPage";
+import { CommentToolbar } from "@/components/CommentToolbar";
+import { HighlightToolbar } from "@/components/HighlightToolbar";
+import { InkToolbar } from "@/components/InkToolbar";
+import { PageSidebar } from "@/components/PageSidebar";
+import type { PageSlot } from "@/domain/slots";
+import type { LoadedSource } from "@/lib/loadSource";
+import { useTheme } from "@/platform/theme";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
+import { useMobileChrome } from "@/app/hooks/useMobileChrome";
+import { MIN_DOCUMENT_ZOOM, useMobileDocumentZoom } from "@/app/hooks/useMobileDocumentZoom";
+import { useAppUndo } from "@/app/hooks/useAppUndo";
+import { useDocumentIo } from "@/app/hooks/useDocumentIo";
+import { useDocumentMutations } from "@/app/hooks/useDocumentMutations";
+import { useSaveStatus } from "@/app/hooks/useSaveStatus";
+import type { PendingImage, ToolMode } from "@/domain/toolMode";
+import { AboutModal } from "@/components/AboutModal";
+import { AppHeader, AppFileInputs } from "@/components/AppHeader";
+import { PageList } from "@/components/PageList";
+import { SignatureModal } from "@/components/SignatureModal";
 
 const RENDER_SCALE = 1.5;
 

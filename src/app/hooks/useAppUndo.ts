@@ -1,13 +1,13 @@
 import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
-import type { Annotation } from "./annotations";
-import type { FormValue } from "./formFields";
-import type { ImageInsertion, TextInsertion } from "./insertions";
-import type { LoadedSource } from "./loadSource";
-import type { Redaction } from "./redactions";
-import type { PageSlot } from "./slots";
-import { useUndoRedo } from "./useUndoRedo";
-import { useLatestRef } from "./useLatestRef";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+import type { Annotation } from "@/domain/annotations";
+import type { FormValue } from "@/domain/formFields";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
+import type { LoadedSource } from "@/lib/loadSource";
+import type { Redaction } from "@/domain/redactions";
+import type { PageSlot } from "@/domain/slots";
+import { useUndoRedo } from "@/platform/hooks/useUndoRedo";
+import { useLatestRef } from "@/platform/hooks/useLatestRef";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 type UndoSnapshot = {
   edits: Map<string, Map<string, EditValue>>;

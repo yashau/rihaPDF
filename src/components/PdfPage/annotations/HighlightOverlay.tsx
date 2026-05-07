@@ -1,5 +1,5 @@
-import type { HighlightAnnotation, Quad } from "../../../lib/annotations";
-import { useDragGesture } from "../../../lib/useDragGesture";
+import type { HighlightAnnotation, Quad } from "@/domain/annotations";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { ResizeHandle } from "../overlays/ResizeHandle";
 import { rgba } from "./helpers";
 

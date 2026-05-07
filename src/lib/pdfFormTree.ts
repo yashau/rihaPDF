@@ -9,7 +9,7 @@ import {
   PDFString,
   type PDFContext,
 } from "pdf-lib";
-import type { PdfRect } from "./pdfGeometry";
+import type { PdfRect } from "@/lib/pdfGeometry";
 
 export function decodePdfTextString(obj: PDFObject | undefined): string {
   if (!obj) return "";

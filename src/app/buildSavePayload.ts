@@ -4,15 +4,15 @@ import {
   type ImageMove,
   type ShapeDelete,
   type TextInsert,
-} from "./save/types";
-import type { Annotation } from "./annotations";
-import { blankSourceKey } from "./blankSource";
-import type { FormValue } from "./formFields";
-import type { FormFill } from "./saveFormFields";
-import type { ImageInsertion, TextInsertion } from "./insertions";
-import type { Redaction } from "./redactions";
-import type { PageSlot } from "./slots";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+} from "@/lib/save/types";
+import type { Annotation } from "@/domain/annotations";
+import { blankSourceKey } from "@/domain/blankSource";
+import type { FormValue } from "@/domain/formFields";
+import type { FormFill } from "@/lib/saveFormFields";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
+import type { Redaction } from "@/domain/redactions";
+import type { PageSlot } from "@/domain/slots";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 /** Translate the App's slotId-keyed edit / move / insert maps back
  *  to the (sourceKey, sourcePageIndex)-keyed flat arrays the per-

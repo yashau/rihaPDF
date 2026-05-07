@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { LoadedSource } from "./loadSource";
-import type { PageStripSpec } from "./preview";
-import type { PageSlot } from "./slots";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+import type { LoadedSource } from "@/lib/loadSource";
+import type { PageStripSpec } from "@/lib/preview";
+import type { PageSlot } from "@/domain/slots";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 /** Rebuild the per-page preview canvases whenever the set of edited
  *  runs or moved images changes. Per-source — every affected source's
@@ -137,7 +137,7 @@ export function usePreviewCanvases({
     const debounceMs = isMobile ? 250 : 150;
     const handle = window.setTimeout(async () => {
       try {
-        const { buildPreviewBytes, renderPagePreviewCanvas } = await import("./preview");
+        const { buildPreviewBytes, renderPagePreviewCanvas } = await import("@/lib/preview");
         const next = new Map<string, HTMLCanvasElement>();
         for (const { sourceKey, specs } of tasks) {
           const source = sources.get(sourceKey);

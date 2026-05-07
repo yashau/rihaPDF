@@ -1,15 +1,15 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
-import type { Annotation } from "./annotations";
-import { buildSavePayload } from "./buildSavePayload";
-import type { FormValue } from "./formFields";
-import { readImageFile, type ImageInsertion, type TextInsertion } from "./insertions";
-import type { LoadedSource } from "./loadSource";
-import type { Redaction } from "./redactions";
-import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./sourceKeys";
-import { pageSlot, slotsFromSource, type PageSlot } from "./slots";
-import type { PendingImage, ToolMode } from "./toolMode";
-import { MIN_DOCUMENT_ZOOM } from "./useMobileDocumentZoom";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+import type { Annotation } from "@/domain/annotations";
+import { buildSavePayload } from "@/app/buildSavePayload";
+import type { FormValue } from "@/domain/formFields";
+import { readImageFile, type ImageInsertion, type TextInsertion } from "@/domain/insertions";
+import type { LoadedSource } from "@/lib/loadSource";
+import type { Redaction } from "@/domain/redactions";
+import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
+import { pageSlot, slotsFromSource, type PageSlot } from "@/domain/slots";
+import type { PendingImage, ToolMode } from "@/domain/toolMode";
+import { MIN_DOCUMENT_ZOOM } from "@/app/hooks/useMobileDocumentZoom";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 function sourceAnnotationsForSlots(
   source: LoadedSource,
@@ -95,7 +95,7 @@ export function useDocumentIo({
     async (file: File) => {
       setBusy(true);
       try {
-        const { loadSource } = await import("./loadSource");
+        const { loadSource } = await import("@/lib/loadSource");
         const source = await loadSource(file, renderScale, PRIMARY_SOURCE_KEY);
         const nextSlots = slotsFromSource(source);
         setPrimaryFilename(file.name);
@@ -152,7 +152,7 @@ export function useDocumentIo({
       if (files.length === 0) return;
       setBusy(true);
       try {
-        const { loadSource } = await import("./loadSource");
+        const { loadSource } = await import("@/lib/loadSource");
         recordHistory(null);
         const loaded: { source: LoadedSource; sourceSlots: PageSlot[] }[] = [];
         for (const file of files) {
@@ -205,7 +205,7 @@ export function useDocumentIo({
     if (sources.size === 0 || !primaryFilename) return;
     setBusy(true);
     try {
-      const { applyEditsAndSave, downloadBlob } = await import("./save");
+      const { applyEditsAndSave, downloadBlob } = await import("@/lib/save");
       const {
         flatEdits,
         flatImageMoves,

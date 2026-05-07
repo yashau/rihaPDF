@@ -8,9 +8,9 @@ import {
   PDFPage,
   PDFRef,
 } from "pdf-lib";
-import { annotationBBox, type Annotation, type HighlightAnnotation } from "./annotations";
-import { rectsOverlap, type Redaction } from "./redactions";
-import type { PdfRect } from "./pdfGeometry";
+import { annotationBBox, type Annotation, type HighlightAnnotation } from "@/domain/annotations";
+import { rectsOverlap, type Redaction } from "@/domain/redactions";
+import type { PdfRect } from "@/lib/pdfGeometry";
 
 const EPS = 1e-6;
 

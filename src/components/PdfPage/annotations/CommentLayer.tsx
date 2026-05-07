@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
-import type { Annotation, AnnotationColor } from "../../../lib/annotations";
-import type { ToolMode } from "../../../lib/toolMode";
-import { useDragGesture } from "../../../lib/useDragGesture";
+import type { Annotation, AnnotationColor } from "@/domain/annotations";
+import type { ToolMode } from "@/domain/toolMode";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { isRtlScript } from "../../../lib/fonts";
-import { useIsMobile } from "../../../lib/useMediaQuery";
-import { attachThaanaTransliteration } from "../../../lib/thaanaKeyboard";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
+import { attachThaanaTransliteration } from "@/domain/thaanaKeyboard";
 import { findPageAtPoint, isFocusMovingToToolbar } from "../helpers";
 import { MobileThaanaToggleBar } from "../MobileThaanaToggleBar";
 import { rgba, vpY } from "./helpers";

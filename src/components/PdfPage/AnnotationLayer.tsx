@@ -14,8 +14,8 @@
 // (y-up). Sub-layers convert to NATURAL viewport pixels (y-down) for
 // layout, matching the rest of PdfPage's overlays.
 
-import type { Annotation, AnnotationColor } from "../../lib/annotations";
-import type { ToolMode } from "../../lib/toolMode";
+import type { Annotation, AnnotationColor } from "@/domain/annotations";
+import type { ToolMode } from "@/domain/toolMode";
 import { CommentLayer } from "./annotations/CommentLayer";
 import { HighlightLayer } from "./annotations/HighlightLayer";
 import { InkLayer } from "./annotations/InkLayer";

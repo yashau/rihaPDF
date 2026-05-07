@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useVisualViewportFollow } from "./useVisualViewport";
+import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 
 /** State for the mobile-only header + sidebar drawer chrome. The
  *  mobile header is `position: fixed` (so it survives pinch-zoom via

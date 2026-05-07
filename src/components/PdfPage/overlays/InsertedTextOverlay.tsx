@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { AnnotationColor } from "../../../lib/annotations";
-import { colorToCss } from "../../../lib/color";
+import type { AnnotationColor } from "@/domain/annotations";
+import { colorToCss } from "@/domain/color";
 import type { RenderedPage } from "../../../lib/pdf";
-import type { TextInsertion } from "../../../lib/insertions";
-import { useThaanaTransliteration } from "../../../lib/thaanaKeyboard";
-import { useCenterInVisibleViewport } from "../../../lib/useVisualViewport";
-import { useIsMobile } from "../../../lib/useMediaQuery";
+import type { TextInsertion } from "@/domain/insertions";
+import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
+import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { EditTextToolbar } from "../EditTextToolbar";
 import { pdfBaselineToViewportBox } from "../geometry";
 import {

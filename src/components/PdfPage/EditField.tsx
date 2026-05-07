@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { colorToCss } from "../../lib/color";
+import { colorToCss } from "@/domain/color";
 import type { TextRun } from "../../lib/pdf";
 import type { EditStyle } from "../../lib/save";
-import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
-import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
-import { useIsMobile } from "../../lib/useMediaQuery";
+import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
+import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { EditTextToolbar } from "./EditTextToolbar";
 import {
   chooseToolbarTop,

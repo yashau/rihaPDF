@@ -20,7 +20,7 @@ import { applyEditsAndSave } from "../../src/lib/save";
 import type { LoadedSource } from "../../src/lib/loadSource";
 import { extractPageImages } from "../../src/lib/sourceImages";
 import { extractPageShapes } from "../../src/lib/sourceShapes";
-import type { Annotation } from "../../src/lib/annotations";
+import type { Annotation } from "../../src/domain/annotations";
 import { FIXTURE } from "../helpers/browser";
 
 const PRIMARY_SOURCE_KEY = "primary";

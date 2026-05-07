@@ -18,8 +18,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { PageSlot } from "../lib/slots";
-import { blankSlot } from "../lib/slots";
+import type { PageSlot } from "@/domain/slots";
+import { blankSlot } from "@/domain/slots";
 import type { LoadedSource } from "../lib/loadSource";
 
 type Props = {

@@ -5,8 +5,8 @@ import {
   type AnnotationColor,
   type InkAnnotation,
   newAnnotationId,
-} from "../../../lib/annotations";
-import type { ToolMode } from "../../../lib/toolMode";
+} from "@/domain/annotations";
+import type { ToolMode } from "@/domain/toolMode";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
 import { findPageAtPoint } from "../helpers";
 import { rgba, vpY } from "./helpers";

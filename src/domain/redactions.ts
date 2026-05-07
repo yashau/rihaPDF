@@ -15,9 +15,9 @@
 // Coordinates: PDF user space (y-up), matching insertions and
 // annotations. (pdfX, pdfY) is the BOTTOM-LEFT of the rect.
 
-import type { LineMarkupExtents } from "./annotations";
-import type { PdfRect } from "./pdfGeometry";
-export { rectsOverlap } from "./pdfGeometry";
+import type { LineMarkupExtents } from "@/domain/annotations";
+import type { PdfRect } from "@/lib/pdfGeometry";
+export { rectsOverlap } from "@/lib/pdfGeometry";
 
 export type Redaction = PdfRect & {
   id: string;

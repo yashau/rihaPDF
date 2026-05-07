@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import type { RenderedPage } from "../../lib/pdf";
-import type { ToolMode } from "../../lib/toolMode";
+import type { ToolMode } from "@/domain/toolMode";
 
 export function PlacementCaptureLayer({
   containerRef,

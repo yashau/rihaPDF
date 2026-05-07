@@ -1,14 +1,14 @@
 import { PageWithToolbar } from "./PageWithToolbar";
 import type { EditValue, FormValue, ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
-import type { Annotation, AnnotationColor } from "../lib/annotations";
-import { blankRenderedPage, blankSourceKey } from "../lib/blankSource";
-import type { ImageInsertion, TextInsertion } from "../lib/insertions";
+import type { Annotation, AnnotationColor } from "@/domain/annotations";
+import { blankRenderedPage, blankSourceKey } from "@/domain/blankSource";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { LoadedSource } from "../lib/loadSource";
 import type { RenderedPage } from "../lib/pdf";
-import type { Redaction } from "../lib/redactions";
-import type { PageSlot } from "../lib/slots";
-import type { ToolMode } from "../lib/toolMode";
+import type { Redaction } from "@/domain/redactions";
+import type { PageSlot } from "@/domain/slots";
+import type { ToolMode } from "@/domain/toolMode";
 
 export type Selection =
   | { kind: "image"; slotId: string; imageId: string }

@@ -1,15 +1,15 @@
 import { useMemo } from "react";
-import type { Annotation } from "./annotations";
-import type { FormValue } from "./formFields";
-import type { ImageInsertion, TextInsertion } from "./insertions";
-import type { LoadedSource } from "./loadSource";
-import { PRIMARY_SOURCE_KEY } from "./sourceKeys";
-import type { Redaction } from "./redactions";
-import type { PageSlot } from "./slots";
-import type { PendingImage, ToolMode } from "./toolMode";
-import { annotationArraysEquivalent } from "./sourceAnnotations";
-import { sumMapArrayLengths, sumMapSetSizes, sumMapSizes } from "./collectionCounts";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+import type { Annotation } from "@/domain/annotations";
+import type { FormValue } from "@/domain/formFields";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
+import type { LoadedSource } from "@/lib/loadSource";
+import { PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
+import type { Redaction } from "@/domain/redactions";
+import type { PageSlot } from "@/domain/slots";
+import type { PendingImage, ToolMode } from "@/domain/toolMode";
+import { annotationArraysEquivalent } from "@/lib/sourceAnnotations";
+import { sumMapArrayLengths, sumMapSetSizes, sumMapSizes } from "@/domain/collectionCounts";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 function countAnnotationChanges(
   sources: Map<string, LoadedSource>,

@@ -7,6 +7,6 @@ export type {
   ImageMove,
   ShapeDelete,
   TextInsert,
-} from "./save/types";
+} from "@/lib/save/types";
 export { applyEditsAndSave } from "./save/orchestrator";
 export { downloadBlob } from "./save/download";

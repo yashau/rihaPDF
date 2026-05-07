@@ -1,5 +1,5 @@
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
-import type { Redaction } from "../redactions";
+import type { Redaction } from "@/domain/redactions";
 import { type Mat6, transformPoint } from "../pdfGeometry";
 import { lookupPageXObjectRef } from "./xobjects";
 

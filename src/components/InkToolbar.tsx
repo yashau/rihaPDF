@@ -1,4 +1,4 @@
-import type { AnnotationColor } from "../lib/annotations";
+import type { AnnotationColor } from "@/domain/annotations";
 import { ColorPickerPopover } from "./PdfPage/ColorPickerPopover";
 import { ToolOptionsBar } from "./ToolOptionsBar";
 

@@ -1,4 +1,4 @@
-import type { AnnotationColor } from "../../../lib/annotations";
+import type { AnnotationColor } from "@/domain/annotations";
 
 /** rgba() css string from our 0..1 RGB tuple plus an alpha. Used by
  *  highlight rects (translucent fill) and ink strokes (full alpha). */

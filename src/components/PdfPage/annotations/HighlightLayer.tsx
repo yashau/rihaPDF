@@ -1,4 +1,4 @@
-import type { Annotation, HighlightAnnotation } from "../../../lib/annotations";
+import type { Annotation, HighlightAnnotation } from "@/domain/annotations";
 import { HighlightOverlay } from "./HighlightOverlay";
 
 /** Fan-out: one HighlightOverlay per quad. Each overlay handles its

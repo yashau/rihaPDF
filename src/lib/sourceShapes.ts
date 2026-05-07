@@ -33,7 +33,7 @@ import {
   VECTOR_PAINT_OPS,
   VECTOR_PATH_END_OPS,
 } from "./pdfPathOps";
-import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "./pdfGeometry";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/lib/pdfGeometry";
 
 export type ShapeInstance = {
   /** Stable id: "p<pageNumber>-s<index>". */

@@ -6,8 +6,8 @@ import {
   pushGraphicsState,
   rgb,
 } from "pdf-lib";
-import type { AnnotationColor } from "../annotations";
-import { DEFAULT_TEXT_COLOR } from "../color";
+import type { AnnotationColor } from "@/domain/annotations";
+import { DEFAULT_TEXT_COLOR } from "@/domain/color";
 import { DEFAULT_FONT_FAMILY, FONTS } from "../fonts";
 import { drawShapedText, measureShapedWidth } from "../shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "../shapedBidi";

@@ -1,6 +1,6 @@
 import type { RenderedPage } from "../../../lib/pdf";
-import type { Redaction } from "../../../lib/redactions";
-import { useDragGesture } from "../../../lib/useDragGesture";
+import type { Redaction } from "@/domain/redactions";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import {
   pdfRectToViewportRect,
   resizePdfRectFromCorner,

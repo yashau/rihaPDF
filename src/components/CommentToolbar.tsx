@@ -1,5 +1,5 @@
-import type { AnnotationColor } from "../lib/annotations";
-import { HIGHLIGHT_COLOR_PRESETS } from "../lib/color";
+import type { AnnotationColor } from "@/domain/annotations";
+import { HIGHLIGHT_COLOR_PRESETS } from "@/domain/color";
 import { ColorPickerPopover } from "./PdfPage/ColorPickerPopover";
 import { ToolOptionsBar } from "./ToolOptionsBar";
 

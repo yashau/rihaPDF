@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { RenderedPage } from "../../../lib/pdf";
-import type { ImageInsertion } from "../../../lib/insertions";
-import { useDragGesture } from "../../../lib/useDragGesture";
+import type { ImageInsertion } from "@/domain/insertions";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import {
   pdfRectToViewportRect,
   resizePdfRectFromCorner,

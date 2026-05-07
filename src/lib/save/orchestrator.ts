@@ -9,15 +9,15 @@ import {
   rgb,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import type { PageSlot } from "../slots";
+import type { PageSlot } from "@/domain/slots";
 import type { LoadedSource } from "../loadSource";
-import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "../blankSource";
-import type { Annotation } from "../annotations";
+import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "@/domain/blankSource";
+import type { Annotation } from "@/domain/annotations";
 import { applyAnnotationsToDoc } from "../saveAnnotations";
 import { applyFormFillsToDoc, rebuildOutputAcroForm, type FormFill } from "../saveFormFields";
 import { applyRedactionsToFormWidgets } from "../redactFormFields";
 import { DEFAULT_FONT_FAMILY } from "../fonts";
-import { type Redaction } from "../redactions";
+import { type Redaction } from "@/domain/redactions";
 import {
   applyRedactionsToNewAnnotations,
   applyRedactionsToPageAnnotations,

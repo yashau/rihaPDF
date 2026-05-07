@@ -24,7 +24,7 @@
 import { PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
 import { parseContentStream, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
-import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "./pdfGeometry";
+import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "@/lib/pdfGeometry";
 
 export type ImageInstance = {
   /** Stable id for UI / save plumbing: "p<pageNumber>-i<index>". */

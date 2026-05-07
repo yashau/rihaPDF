@@ -1,5 +1,5 @@
 import type { RenderedPage } from "../../lib/pdf";
-import type { TextInsertion } from "../../lib/insertions";
+import type { TextInsertion } from "@/domain/insertions";
 import type { EditValue, ToolbarBlocker } from "./types";
 
 export function buildToolbarBlockers(

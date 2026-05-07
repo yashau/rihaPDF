@@ -1,11 +1,11 @@
 import { PdfPage, type EditValue, type FormValue, type ImageMoveValue } from "./PdfPage";
 import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
-import type { Annotation, AnnotationColor } from "../lib/annotations";
-import type { FormField } from "../lib/formFields";
-import type { ImageInsertion, TextInsertion } from "../lib/insertions";
+import type { Annotation, AnnotationColor } from "@/domain/annotations";
+import type { FormField } from "@/domain/formFields";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { RenderedPage } from "../lib/pdf";
-import type { Redaction } from "../lib/redactions";
-import type { ToolMode } from "../lib/toolMode";
+import type { Redaction } from "@/domain/redactions";
+import type { ToolMode } from "@/domain/toolMode";
 
 export function PageWithToolbar({
   slotId,

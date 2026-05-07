@@ -1,9 +1,9 @@
 import { Button, Modal, Tabs } from "@heroui/react";
 import { Eraser, Image as ImageIcon, Plus, Signature, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import type { AnnotationColor } from "../lib/annotations";
-import { colorToHex, colorsEqual, SIGNATURE_COLOR_PRESETS } from "../lib/color";
-import { useIsMobile } from "../lib/useMediaQuery";
+import type { AnnotationColor } from "@/domain/annotations";
+import { colorToHex, colorsEqual, SIGNATURE_COLOR_PRESETS } from "@/domain/color";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import {
   deleteSignatureAsset,
   listSignatureAssets,
@@ -13,7 +13,7 @@ import {
   saveSignatureAsset,
   signatureAssetToPendingImage,
   type SignatureAsset,
-} from "../lib/signatures";
+} from "@/domain/signatures";
 
 type PendingSignatureImage = {
   bytes: Uint8Array;

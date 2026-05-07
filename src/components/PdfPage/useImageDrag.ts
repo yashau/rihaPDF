@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import { useState } from "react";
 import type { RenderedPage } from "../../lib/pdf";
 import type { ImageInstance } from "../../lib/sourceImages";
-import { useDragGesture } from "../../lib/useDragGesture";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { cropCanvasToDataUrl, findPageAtPoint } from "./helpers";
 import type { ImageMoveValue, ResizeCorner } from "./types";
 

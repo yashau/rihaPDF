@@ -1,4 +1,4 @@
-import { FONTS, resolveFamilyFromHint } from "./fonts";
+import { FONTS, resolveFamilyFromHint } from "@/lib/fonts";
 import { scriptOf } from "./pdfTextScript";
 import type { TextItem, TextRun } from "./pdfTypes";
 import type { FontShow } from "./sourceFonts";

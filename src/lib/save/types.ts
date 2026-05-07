@@ -1,4 +1,4 @@
-import type { AnnotationColor } from "../annotations";
+import type { AnnotationColor } from "@/domain/annotations";
 
 export type EditStyle = {
   /** Override of which Dhivehi font to render with. Defaults to the

@@ -33,15 +33,15 @@ import {
   PDFRef,
   PDFString,
 } from "pdf-lib";
-import type { FormValue } from "./formFields";
-import { isRtlScript } from "./fonts";
+import type { FormValue } from "@/domain/formFields";
+import { isRtlScript } from "@/lib/fonts";
 import {
   collectWidgetDicts,
   discoverWidgetOnState,
   inheritedOwner,
   isFieldKid,
   partialFieldName,
-} from "./pdfFormTree";
+} from "@/lib/pdfFormTree";
 import {
   encodePdfTextString,
   makeAcroFormFontSetup,

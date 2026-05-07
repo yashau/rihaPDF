@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 
 function stripHarfbuzzNodeFsBranch(): Plugin {
   return {
@@ -22,6 +23,11 @@ function stripHarfbuzzNodeFsBranch(): Plugin {
 
 export default defineConfig({
   plugins: [stripHarfbuzzNodeFsBranch(), react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   build: {
     chunkSizeWarningLimit: 1400,
   },

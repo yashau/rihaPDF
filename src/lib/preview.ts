@@ -16,7 +16,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import type { RenderedPage } from "./pdf";
+import type { RenderedPage } from "@/lib/pdf";
 import { parseContentStream, serializeContentStream, findTextShows } from "./contentStream";
 import { getPageContentBytes, setPageContentBytes } from "./pageContent";
 

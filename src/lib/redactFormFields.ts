@@ -1,6 +1,6 @@
 import { PDFArray, PDFContext, PDFDict, PDFName, PDFObject, PDFPage, PDFRef } from "pdf-lib";
-import { rectsOverlap, type Redaction } from "./redactions";
-import { isWidgetDict, readPdfRect, resolvePdfDict } from "./pdfFormTree";
+import { rectsOverlap, type Redaction } from "@/domain/redactions";
+import { isWidgetDict, readPdfRect, resolvePdfDict } from "@/lib/pdfFormTree";
 
 type FieldId = string;
 

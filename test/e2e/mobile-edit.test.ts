@@ -147,8 +147,8 @@ async function seedSignatureStorage(): Promise<void> {
     // oxlint-disable-next-line typescript/no-implied-eval
     const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
     const sig = (await importer(
-      "/src/lib/signatures.ts",
-    )) as typeof import("../../src/lib/signatures");
+      "/src/domain/signatures.ts",
+    )) as typeof import("../../src/domain/signatures");
     const canvas = document.createElement("canvas");
     canvas.width = 260;
     canvas.height = 120;

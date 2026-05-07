@@ -6,15 +6,15 @@ import {
   COMMENT_DEFAULT_HEIGHT,
   COMMENT_DEFAULT_WIDTH,
   newAnnotationId,
-} from "./annotations";
-import { blankSourceKey } from "./blankSource";
-import type { FormValue } from "./formFields";
-import type { ImageInsertion, TextInsertion } from "./insertions";
-import type { Redaction } from "./redactions";
-import type { PageSlot } from "./slots";
-import type { PendingImage, ToolMode } from "./toolMode";
-import type { Selection } from "./useSelection";
-import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+} from "@/domain/annotations";
+import { blankSourceKey } from "@/domain/blankSource";
+import type { FormValue } from "@/domain/formFields";
+import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
+import type { Redaction } from "@/domain/redactions";
+import type { PageSlot } from "@/domain/slots";
+import type { PendingImage, ToolMode } from "@/domain/toolMode";
+import type { Selection } from "@/app/hooks/useSelection";
+import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
 
 type SlotBucketItem = {
   id: string;

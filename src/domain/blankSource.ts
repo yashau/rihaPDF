@@ -12,8 +12,8 @@
 // it, and copies that page into the output instead of the bare
 // `output.addPage(slot.size)` we used before.
 
-import type { PageSlot } from "./slots";
-import type { RenderedPage } from "./pdf";
+import type { PageSlot } from "@/domain/slots";
+import type { RenderedPage } from "@/lib/pdf";
 
 const BLANK_SOURCE_PREFIX = "__blank__:";
 

@@ -19,7 +19,7 @@ import {
   type HighlightAnnotation,
   type InkAnnotation,
   type Quad,
-} from "./annotations";
+} from "@/domain/annotations";
 
 const SUPPORTED_SOURCE_SUBTYPES = new Set(["Highlight", "FreeText", "Ink"]);
 

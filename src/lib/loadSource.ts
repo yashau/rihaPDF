@@ -9,7 +9,7 @@
 // keeps every page first-class for editing the moment it appears.
 
 import { PDFDocument } from "pdf-lib";
-import { loadPdf, renderPage, type RenderedPage } from "./pdf";
+import { loadPdf, renderPage, type RenderedPage } from "@/lib/pdf";
 import { extractPageFontShows, type FontShow } from "./sourceFonts";
 import { extractPageGlyphMaps } from "./glyphMap";
 import { extractPageImages } from "./sourceImages";
@@ -17,10 +17,10 @@ import type { ImageInstance } from "./sourceImages";
 import { extractPageShapes } from "./sourceShapes";
 import type { ShapeInstance } from "./sourceShapes";
 import { pairDecorationsWithRuns } from "./runDecorations";
-import { extractFormFields, type FormField } from "./formFields";
-import { extractSourceAnnotations } from "./sourceAnnotations";
-import type { Annotation } from "./annotations";
-export { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./sourceKeys";
+import { extractFormFields, type FormField } from "@/domain/formFields";
+import { extractSourceAnnotations } from "@/lib/sourceAnnotations";
+import type { Annotation } from "@/domain/annotations";
+export { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 
 export type LoadedSource = {
   /** Stable id used everywhere as the source identity. The primary uses

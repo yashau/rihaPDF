@@ -47,8 +47,8 @@ import {
   type CommentAnnotation,
   type HighlightAnnotation,
   type InkAnnotation,
-} from "./annotations";
-import { isRtlScript } from "./fonts";
+} from "@/domain/annotations";
+import { isRtlScript } from "@/lib/fonts";
 import { encodeUtf16BE, makeAcroFormFontSetup, type EmbeddedFontFactory } from "./pdfAcroForm";
 import { buildShapedTextOps, measureShapedWidth } from "./shapedDraw";
 

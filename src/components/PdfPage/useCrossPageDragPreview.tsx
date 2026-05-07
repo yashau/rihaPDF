@@ -1,8 +1,8 @@
 import type { ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DragGestureEndInfo, DragGestureInfo } from "../../lib/useDragGesture";
-import { useDragGesture } from "../../lib/useDragGesture";
+import type { DragGestureEndInfo, DragGestureInfo } from "@/platform/hooks/useDragGesture";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 
 /** Screen-pixel state captured at gesture-start so the body-portal
  *  preview can mount a `position: fixed` clone that escapes the page

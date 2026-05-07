@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
-import type { AnnotationColor } from "../../lib/annotations";
+import type { AnnotationColor } from "@/domain/annotations";
 import { FONTS } from "../../lib/fonts";
-import { useIsMobile } from "../../lib/useMediaQuery";
-import { useVisualViewportFollow } from "../../lib/useVisualViewport";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
+import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 
 /** Shared formatting toolbar — font picker, size, B / I / U toggles.

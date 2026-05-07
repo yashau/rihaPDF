@@ -8,7 +8,7 @@ import {
 } from "../contentStream";
 import { getPageContentBytes, setPageContentBytes } from "../pageContent";
 import { DEFAULT_FONT_FAMILY } from "../fonts";
-import { rectsOverlap, type Redaction } from "../redactions";
+import { rectsOverlap, type Redaction } from "@/domain/redactions";
 import { planRedactionStrip } from "../redactGlyphs";
 import type { Edit, ImageMove, ShapeDelete } from "./types";
 import type { LoadedSourceContext } from "./context";

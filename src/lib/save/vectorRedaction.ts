@@ -6,7 +6,7 @@ import {
   VECTOR_PAINT_OPS,
   VECTOR_PATH_END_OPS,
 } from "../pdfPathOps";
-import { rectsOverlap, type Redaction } from "../redactions";
+import { rectsOverlap, type Redaction } from "@/domain/redactions";
 import { mulCm, type Mat6, transformPoint } from "../pdfGeometry";
 
 export function markVectorPaintOpsForRedaction(

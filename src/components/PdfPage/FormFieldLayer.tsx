@@ -16,11 +16,11 @@ import type {
   FormValue,
   RadioFormField,
   TextFormField,
-} from "../../lib/formFields";
+} from "@/domain/formFields";
 import { isRtlScript } from "../../lib/fonts";
-import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
-import { useIsMobile } from "../../lib/useMediaQuery";
-import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
+import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
+import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";
 import { pdfRectArrayToViewportRect } from "./geometry";
 import { isFocusMovingToToolbar } from "./helpers";
 import { MobileThaanaToggleBar } from "./MobileThaanaToggleBar";

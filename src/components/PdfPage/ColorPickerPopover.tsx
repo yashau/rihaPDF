@@ -8,9 +8,9 @@ import {
   colorsEqual,
   hexToColor,
   type ColorPreset,
-} from "../../lib/color";
-import type { AnnotationColor } from "../../lib/annotations";
-import { useIsMobile } from "../../lib/useMediaQuery";
+} from "@/domain/color";
+import type { AnnotationColor } from "@/domain/annotations";
+import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 
 /** Universal color picker — the trigger button IS the swatch (whole
  *  face filled with the current color), clicking opens a popover with
