@@ -30,6 +30,7 @@ import { colorToCss, hexToColor } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
 import { normalizeRichTextBlock, type RichTextBlock, type RichTextSpan } from "@/domain/richText";
 import { thaanaForLatin } from "@/domain/thaanaKeyboard";
+import type { SourceTextLineLayout } from "@/pdf/text/textBlocks";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { EditTextToolbar } from "./EditTextToolbar";
@@ -39,6 +40,22 @@ type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
 ) => void
   ? P
   : never;
+
+const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
+const NUMERIC_MARKER_RE = /(^|\s)([()[\].-]*\d[\d()[\].-]*)(?=$|\s)/gu;
+const LRI = "\u2066";
+const PDI = "\u2069";
+
+function protectRtlNumericMarkers(text: string, rtl: boolean): string {
+  if (!rtl) return text;
+  return text.replace(NUMERIC_MARKER_RE, (_match, prefix: string, marker: string) => {
+    return `${prefix}${LRI}${marker}${PDI}`;
+  });
+}
+
+function stripBidiControls(text: string): string {
+  return text.replace(BIDI_CONTROL_RE, "");
+}
 
 function colorToCssValue(color: AnnotationColor | undefined): string | undefined {
   return colorToCss(color) ?? undefined;
@@ -100,14 +117,14 @@ function styleFromTextNode(node: ReturnType<typeof $createTextNode>, pageScale: 
   };
 }
 
-function createInitialEditorState(block: RichTextBlock, pageScale: number) {
+function createInitialEditorState(block: RichTextBlock, pageScale: number, rtl: boolean) {
   return () => {
     const root = $getRoot();
     root.clear();
     const paragraph = $createParagraphNode();
     const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
     for (const span of spans) {
-      const pieces = span.text.split("\n");
+      const pieces = protectRtlNumericMarkers(span.text, rtl).split("\n");
       pieces.forEach((piece, index) => {
         if (index > 0) paragraph.append($createLineBreakNode());
         if (piece.length === 0) return;
@@ -139,7 +156,7 @@ function editorStateToRichText(editorState: EditorState, pageScale: number): Ric
           spans.push({ text: "\n" });
         } else if ($isTextNode(child)) {
           spans.push({
-            text: child.getTextContent(),
+            text: stripBidiControls(child.getTextContent()),
             style: styleFromTextNode(child, pageScale),
           });
         }
@@ -235,7 +252,11 @@ export function RichTextEditor({
   top,
   width,
   minHeight,
+  maxHeight,
   lineHeight,
+  textAlign,
+  wrap,
+  scroll,
   toolbarTop,
   toolbarLeft,
   boundaryWidth,
@@ -252,7 +273,11 @@ export function RichTextEditor({
   top: number;
   width: number;
   minHeight: number;
+  maxHeight?: number;
   lineHeight: number;
+  textAlign?: "justify" | "start";
+  wrap?: boolean;
+  scroll?: boolean;
   toolbarTop: number;
   toolbarLeft: number;
   boundaryWidth: number;
@@ -282,9 +307,9 @@ export function RichTextEditor({
       onError(error: Error) {
         throw error;
       },
-      editorState: createInitialEditorState(initial, pageScale),
+      editorState: createInitialEditorState(initial, pageScale, defaultStyle.dir === "rtl"),
     }),
-    [id, initial, pageScale],
+    [defaultStyle.dir, id, initial, pageScale],
   );
 
   const commit = useCallback(() => {
@@ -332,6 +357,7 @@ export function RichTextEditor({
 
   const fontFamily = activeStyle.fontFamily ?? defaultStyle.fontFamily;
   const fontSize = activeStyle.fontSize ?? defaultStyle.fontSize;
+  const editorDir = activeStyle.dir ?? defaultStyle.dir ?? "auto";
   const editorNode = (
     <LexicalComposer initialConfig={initialConfig}>
       <EditorRefPlugin editorRef={editorRef} />
@@ -354,13 +380,14 @@ export function RichTextEditor({
             aria-label="Edit text"
             data-editor
             data-rich-editor
-            dir={activeStyle.dir ?? "auto"}
+            dir={editorDir}
             spellCheck={false}
             style={{
               width,
+              height: maxHeight === minHeight ? minHeight : undefined,
               minHeight,
-              maxHeight: 360,
-              overflow: "auto",
+              maxHeight: maxHeight ?? (scroll ? 360 : undefined),
+              overflow: scroll ? "auto" : "visible",
               padding: "0 4px",
               outline: "2px solid rgb(59, 130, 246)",
               background: "white",
@@ -369,9 +396,13 @@ export function RichTextEditor({
               fontFamily: `"${fontFamily}"`,
               fontSize: `${fontSize * pageScale}px`,
               lineHeight: `${lineHeight}px`,
-              whiteSpace: "pre-wrap",
+              textAlign: textAlign === "justify" ? "justify" : "start",
+              textAlignLast: "auto",
+              whiteSpace: wrap ? "pre-wrap" : "pre",
+              overflowWrap: wrap ? "break-word" : "normal",
               wordBreak: "normal",
               boxSizing: "border-box",
+              unicodeBidi: "plaintext",
             }}
             onKeyDown={(e) => {
               if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
@@ -457,17 +488,35 @@ function InitialFocusPlugin({ offset }: { offset?: number }) {
   return null;
 }
 
+function trimLeadingLineSpans(line: RichTextSpan[]): RichTextSpan[] {
+  let trimming = true;
+  return line
+    .map((span) => {
+      if (!trimming) return span;
+      const text = span.text.replace(/^\s+/, "");
+      if (text.length > 0) trimming = false;
+      return { ...span, text };
+    })
+    .filter((span) => span.text.length > 0);
+}
+
 export function RichTextView({
   block,
   defaultStyle,
   pageScale,
   lineHeight,
+  textAlign,
+  wrap = true,
+  lineLayouts,
 }: {
   block: RichTextBlock;
   defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
     Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">;
   pageScale: number;
   lineHeight: number;
+  textAlign?: "justify" | "start";
+  wrap?: boolean;
+  lineLayouts?: readonly SourceTextLineLayout[];
 }) {
   const spans = block.spans.length > 0 ? block.spans : [{ text: block.text }];
   const lines: RichTextSpan[][] = [[]];
@@ -478,6 +527,80 @@ export function RichTextView({
       if (part.length > 0) lines[lines.length - 1].push({ text: part, style: span.style });
     });
   }
+  if (lineLayouts && lineLayouts.length > 0) {
+    const rows = lines.map((line, lineIndex) => {
+      const layout = lineLayouts[lineIndex];
+      return { line: layout ? trimLeadingLineSpans(line) : line, layout };
+    });
+    const height = Math.max(
+      lineHeight,
+      ...rows.map(({ layout }) => (layout ? layout.top + lineHeight : lineHeight)),
+    );
+    return (
+      <span
+        style={{
+          display: "block",
+          position: "relative",
+          height,
+          width: "100%",
+        }}
+      >
+        {rows.map(({ line, layout }, lineIndex) => (
+          <span
+            // oxlint-disable-next-line react/no-array-index-key -- render-only line projection.
+            key={lineIndex}
+            style={{
+              display: "block",
+              position: "absolute",
+              left: layout?.left ?? 0,
+              top: layout?.top ?? lineHeight * lineIndex,
+              width: layout?.width ?? "100%",
+              minHeight: lineHeight,
+              lineHeight: `${lineHeight}px`,
+              textAlign: layout?.justify ? "justify" : "start",
+              textAlignLast: layout?.justify ? "justify" : "auto",
+              whiteSpace: layout?.justify ? "normal" : "pre",
+              overflowWrap: "normal",
+              wordBreak: "normal",
+              unicodeBidi: "plaintext",
+            }}
+          >
+            {line.length === 0
+              ? " "
+              : line.map((span, spanIndex) => {
+                  const style = { ...defaultStyle, ...span.style };
+                  return (
+                    <span
+                      // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
+                      key={spanIndex}
+                      style={{
+                        fontFamily: `"${style.fontFamily}"`,
+                        fontSize: `${style.fontSize * pageScale}px`,
+                        lineHeight: `${lineHeight}px`,
+                        fontWeight: style.bold ? 700 : 400,
+                        fontStyle: style.italic ? "italic" : "normal",
+                        textDecoration: [
+                          style.underline ? "underline" : "",
+                          style.strikethrough ? "line-through" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" "),
+                        color: colorToCss(style.color) ?? "black",
+                        direction: style.dir,
+                        unicodeBidi: "isolate",
+                        whiteSpace: layout?.justify ? "normal" : "pre",
+                      }}
+                    >
+                      {span.text}
+                    </span>
+                  );
+                })}
+          </span>
+        ))}
+      </span>
+    );
+  }
+
   return (
     <>
       {lines.map((line, lineIndex) => (
@@ -488,7 +611,11 @@ export function RichTextView({
             display: "block",
             minHeight: lineHeight,
             lineHeight: `${lineHeight}px`,
-            whiteSpace: "pre-wrap",
+            textAlign: textAlign === "justify" ? "justify" : "start",
+            textAlignLast:
+              textAlign === "justify" && lineIndex < lines.length - 1 ? "justify" : "auto",
+            whiteSpace: wrap ? "pre-wrap" : "pre",
+            unicodeBidi: "plaintext",
           }}
         >
           {line.length === 0
@@ -512,7 +639,9 @@ export function RichTextView({
                         .filter(Boolean)
                         .join(" "),
                       color: colorToCss(style.color) ?? "black",
-                      whiteSpace: "pre-wrap",
+                      direction: style.dir,
+                      unicodeBidi: "isolate",
+                      whiteSpace: wrap ? "pre-wrap" : "pre",
                     }}
                   >
                     {span.text}

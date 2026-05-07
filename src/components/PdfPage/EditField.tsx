@@ -4,8 +4,13 @@ import type { TextRun } from "@/pdf/render/pdf";
 import { chooseToolbarTop, hasStyle } from "./helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import { RichTextEditor } from "./RichTextEditor";
+import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
+
+function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlock {
+  return "isParagraph" in run;
+}
 
 export function EditField({
   run,
@@ -32,6 +37,8 @@ export function EditField({
   const baseStyle = initial.style ?? {};
   const text = initial.richText?.text ?? initial.text;
   const defaultFontSizePt = run.height / pageScale;
+  const sourceRtl =
+    (baseStyle.dir === undefined || baseStyle.dir === "rtl") && RTL_TEXT_RE.test(text);
   const defaultStyle = {
     fontFamily: baseStyle.fontFamily ?? run.fontFamily,
     fontSize: baseStyle.fontSize ?? defaultFontSizePt,
@@ -39,23 +46,35 @@ export function EditField({
     italic: baseStyle.italic ?? run.italic,
     underline: baseStyle.underline ?? run.underline ?? false,
     strikethrough: baseStyle.strikethrough ?? run.strikethrough ?? false,
-    dir: baseStyle.dir,
+    dir: baseStyle.dir ?? (sourceRtl ? "rtl" : undefined),
     color: baseStyle.color,
   };
   const isRtlEditor =
     defaultStyle.dir === "rtl" || (defaultStyle.dir !== "ltr" && RTL_TEXT_RE.test(text));
-  const isParagraph = "isParagraph" in run && run.isParagraph;
+  const isParagraph = isSourceTextBlock(run) && run.isParagraph;
+  const widthPadding = isParagraph ? 32 : Math.max(96, run.height * 6);
   const editorWidth = Math.min(
     pageViewWidth - 8,
-    Math.max(run.bounds.width + (isParagraph ? 32 : 0), 120),
+    Math.max(run.bounds.width + widthPadding, isParagraph ? 120 : run.bounds.width + widthPadding),
   );
   const editorLeft = isRtlEditor
     ? run.bounds.left + run.bounds.width + dx - editorWidth
     : run.bounds.left + dx;
-  const editorTop = run.bounds.top + run.height * 0.25 + dy;
-  const editorBottom = editorTop + run.bounds.height;
   const initialBlock = richTextOrPlain(initial.richText, initial.text, initial.style);
-  const lineHeight = isParagraph ? Math.max(run.height * 1.45, run.height + 4) : run.bounds.height;
+  const lineHeight =
+    isSourceTextBlock(run) && run.lineStep
+      ? run.lineStep
+      : isParagraph
+        ? Math.max(run.height * 1.45, run.height + 4)
+        : run.bounds.height;
+  const editorHeight = isParagraph
+    ? run.bounds.height
+    : Math.max(run.bounds.height + run.height, lineHeight * 1.75);
+  const editorTop = isParagraph
+    ? run.bounds.top + run.height * 0.25 + dy
+    : run.bounds.top - (editorHeight - run.bounds.height) * 0.5 + dy;
+  const editorBottom = editorTop + editorHeight;
+  const textAlign = isSourceTextBlock(run) ? run.textAlign : undefined;
 
   return (
     <RichTextEditor
@@ -66,8 +85,12 @@ export function EditField({
       left={editorLeft}
       top={editorTop}
       width={editorWidth}
-      minHeight={run.bounds.height}
+      minHeight={editorHeight}
+      maxHeight={isParagraph ? undefined : editorHeight}
       lineHeight={lineHeight}
+      textAlign={textAlign}
+      wrap={false}
+      scroll={isParagraph}
       toolbarLeft={editorLeft}
       toolbarTop={chooseToolbarTop({
         editorLeft,

@@ -43,5 +43,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
+[data-rich-editor] p {
+  margin: 0;
+}
+
 /* `.thaana-stack`'s font-family is set inline from THAANA_FONT_STACK in
    fonts.ts, so it stays in sync with the registry automatically. */

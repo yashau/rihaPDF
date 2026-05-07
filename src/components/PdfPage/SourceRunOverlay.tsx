@@ -175,9 +175,12 @@ export function SourceRunOverlay({
   if (edited) {
     const style = editedValue.style ?? {};
     const isParagraph = "isParagraph" in run && run.isParagraph;
-    const overlayLineHeight = isParagraph
-      ? Math.max(run.height * 1.45, run.height + 4)
-      : run.bounds.height;
+    const overlayLineHeight =
+      isParagraph && "lineStep" in run && run.lineStep
+        ? run.lineStep
+        : isParagraph
+          ? Math.max(run.height * 1.45, run.height + 4)
+          : run.bounds.height;
     const defaultFontSizePt = run.height / page.scale;
     const defaultStyle = {
       fontFamily: style.fontFamily ?? run.fontFamily,
@@ -277,6 +280,9 @@ export function SourceRunOverlay({
             defaultStyle={defaultStyle}
             pageScale={page.scale}
             lineHeight={overlayLineHeight}
+            textAlign={"textAlign" in run ? run.textAlign : undefined}
+            wrap={false}
+            lineLayouts={"lineLayouts" in run ? run.lineLayouts : undefined}
           />
         </span>
       </span>

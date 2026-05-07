@@ -29,6 +29,7 @@ export type SameSourceDrawPlan = {
   runPdfWidth: number;
   runPdfHeight: number;
   lineStepPdf?: number;
+  lineLayoutsPdf?: RichTextLineLayoutPdf[];
 };
 
 /** Plan for a cross-source draw: drawText on the TARGET source's doc,
@@ -43,6 +44,14 @@ export type CrossSourceDrawPlan = {
   runPdfWidth: number;
   runPdfHeight: number;
   lineStepPdf?: number;
+  lineLayoutsPdf?: RichTextLineLayoutPdf[];
+};
+
+export type RichTextLineLayoutPdf = {
+  xOffset: number;
+  baselineOffset: number;
+  width: number;
+  justify: boolean;
 };
 
 export type SameSourceImageDrawPlan = {
@@ -163,6 +172,7 @@ export async function applyStreamSurgeryForSource(
       const runPdfWidth = run.bounds.width / scale;
       const runPdfHeight = run.height / scale;
       const lineStepPdf = lineStepForRuns(sourceRuns, scale);
+      const lineLayoutsPdf = lineLayoutsForRuns(sourceRuns, run, scale);
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
       let matched = shows.filter((s) => editOpIndices.has(s.index));
@@ -216,6 +226,7 @@ export async function applyStreamSurgeryForSource(
             runPdfWidth,
             runPdfHeight,
             lineStepPdf,
+            lineLayoutsPdf,
           });
         } else {
           crossSourceDraws.push({
@@ -228,6 +239,7 @@ export async function applyStreamSurgeryForSource(
             runPdfWidth,
             runPdfHeight,
             lineStepPdf,
+            lineLayoutsPdf,
           });
         }
         continue;
@@ -273,6 +285,7 @@ export async function applyStreamSurgeryForSource(
         runPdfWidth,
         runPdfHeight,
         lineStepPdf,
+        lineLayoutsPdf,
       });
     }
 
@@ -572,6 +585,26 @@ function lineStepForRuns(runs: TextRun[], scale: number): number | undefined {
   }
   deltas.sort((a, b) => a - b);
   return deltas[Math.floor(deltas.length / 2)];
+}
+
+function lineLayoutsForRuns(
+  sourceRuns: TextRun[],
+  run: TextRun | SourceTextBlock,
+  scale: number,
+): RichTextLineLayoutPdf[] | undefined {
+  if (!("lineLayouts" in run) || !run.lineLayouts || run.lineLayouts.length === 0) return undefined;
+  const sourceById = new Map(sourceRuns.map((sourceRun) => [sourceRun.id, sourceRun]));
+  return run.lineLayouts.map((layout, index) => {
+    const sourceRunId = "sourceRunIds" in run ? run.sourceRunIds[index] : undefined;
+    const sourceRun = sourceRunId ? sourceById.get(sourceRunId) : sourceRuns[index];
+    const baselineOffset = sourceRun ? (sourceRun.baselineY - run.baselineY) / scale : 0;
+    return {
+      xOffset: layout.left / scale,
+      baselineOffset,
+      width: layout.width / scale,
+      justify: layout.justify,
+    };
+  });
 }
 
 function isCrossPageEdit(edit: Edit, sourceKey: string, pageIndex: number): boolean {

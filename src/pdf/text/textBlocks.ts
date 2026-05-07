@@ -1,19 +1,30 @@
 import type { TextRun } from "@/pdf/render/pdfTypes";
 
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u;
-const LIST_MARKER_RE = /^[\s\d.()[\]/-]+[A-Za-z\u0780-\u07bf]/u;
+const LIST_MARKER_RE =
+  /(?:^[\s\d.()[\]/-]+[A-Za-z\u0780-\u07bf]|[A-Za-z\u0780-\u07bf][\s\d.()[\]/-]+$)/u;
 
 export type SourceTextBlock = TextRun & {
   sourceRunIds: string[];
   lines: TextRun[];
   isParagraph: boolean;
+  textAlign?: "justify" | "start";
+  lineStep?: number;
+  lineLayouts?: SourceTextLineLayout[];
+};
+
+export type SourceTextLineLayout = {
+  left: number;
+  top: number;
+  width: number;
+  justify: boolean;
 };
 
 function isRtl(text: string): boolean {
   return RTL_RE.test(text);
 }
 
-function startsWithListMarker(text: string): boolean {
+function hasListMarker(text: string): boolean {
   return LIST_MARKER_RE.test(text);
 }
 
@@ -70,6 +81,35 @@ function lineIndent(run: TextRun, rtl: boolean): number {
   return rtl ? run.bounds.left + run.bounds.width : run.bounds.left;
 }
 
+function justifiedLineIndexes(lines: TextRun[]): Set<number> {
+  if (lines.length < 3) return new Set();
+  const first = lines[0];
+  const bodyIndexes = lines.slice(0, -1).map((_, index) => index);
+  const checkedIndexes =
+    hasListMarker(first.text) && bodyIndexes.length > 2 ? bodyIndexes.slice(1) : bodyIndexes;
+  const checkedLines = checkedIndexes.map((index) => lines[index]);
+  if (checkedLines.length < 2) return new Set();
+  const left = Math.min(...checkedLines.map((line) => line.bounds.left));
+  const right = Math.max(...checkedLines.map((line) => line.bounds.left + line.bounds.width));
+  const tolerance = Math.max(...checkedLines.map((line) => line.height)) * 0.75;
+  const justified = checkedLines.every((line) => {
+    const lineLeft = line.bounds.left;
+    const lineRight = line.bounds.left + line.bounds.width;
+    return Math.abs(lineLeft - left) <= tolerance && Math.abs(lineRight - right) <= tolerance;
+  });
+  return justified ? new Set(checkedIndexes) : new Set();
+}
+
+function medianLineStep(lines: TextRun[]): number | undefined {
+  if (lines.length < 2) return undefined;
+  const deltas: number[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    deltas.push(Math.abs(lines[i].baselineY - lines[i - 1].baselineY));
+  }
+  deltas.sort((a, b) => a - b);
+  return deltas[Math.floor(deltas.length / 2)];
+}
+
 function canJoinParagraph(prev: TextRun, next: TextRun, first: TextRun): boolean {
   if (!sameInlineStyle(prev, next) || !sameInlineStyle(first, next)) return false;
   const rtl = isRtl(first.text);
@@ -78,9 +118,7 @@ function canJoinParagraph(prev: TextRun, next: TextRun, first: TextRun): boolean
   const nominalLineHeight = Math.max(first.bounds.height, prev.bounds.height, next.bounds.height);
   if (lineStep < nominalLineHeight * 0.65 || lineStep > nominalLineHeight * 1.8) return false;
   const indentDelta = Math.abs(lineIndent(next, rtl) - lineIndent(first, rtl));
-  const indentLimit = startsWithListMarker(first.text)
-    ? nominalLineHeight * 4
-    : nominalLineHeight * 1.25;
+  const indentLimit = hasListMarker(first.text) ? nominalLineHeight * 8 : nominalLineHeight * 1.25;
   if (indentDelta > indentLimit) return false;
   return true;
 }
@@ -104,6 +142,7 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
     (a, b) => a - b,
   );
   const decorationOpRanges = lines.flatMap((line) => line.decorationOpRanges ?? []);
+  const justifiedIndexes = justifiedLineIndexes(lines);
   return {
     ...first,
     id: `p${pageNumber}-b${index}`,
@@ -124,6 +163,14 @@ function makeBlock(pageNumber: number, index: number, lines: TextRun[]): SourceT
     sourceRunIds: lines.map((line) => line.id),
     lines,
     isParagraph: true,
+    textAlign: justifiedIndexes.size > 0 ? "justify" : "start",
+    lineStep: medianLineStep(lines),
+    lineLayouts: lines.map((line, lineIndex) => ({
+      left: line.bounds.left - left,
+      top: line.bounds.top - top,
+      width: line.bounds.width,
+      justify: justifiedIndexes.has(lineIndex),
+    })),
   };
 }
 

@@ -17,7 +17,7 @@ pnpm test test/unit run redaction
 
 ## Coverage
 
-The suite currently has 33 unit tests.
+The suite currently has 34 unit tests.
 
 | File                               | What it covers                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------- |

@@ -23,6 +23,10 @@ function run(id: string, text: string, left: number, baselineY: number): TextRun
   };
 }
 
+function withWidth(base: TextRun, width: number): TextRun {
+  return { ...base, bounds: { ...base.bounds, width } };
+}
+
 describe("source text block grouping", () => {
   it("groups same-indent consecutive lines into one editable paragraph block", () => {
     const blocks = buildSourceTextBlocks(
@@ -34,6 +38,7 @@ describe("source text block grouping", () => {
     expect(blocks[0]).toMatchObject({
       id: "p1-b0",
       isParagraph: true,
+      lineStep: 28,
       sourceRunIds: ["p1-r0", "p1-r1"],
       text: "first wrapped line\nsecond wrapped line",
     });
@@ -66,5 +71,19 @@ describe("source text block grouping", () => {
     );
 
     expect(blocks[0].text.split("\n")[1]).toMatch(/^\s+continuation line$/);
+  });
+
+  it("detects justified paragraphs from aligned body line edges", () => {
+    const blocks = buildSourceTextBlocks(
+      [
+        withWidth(run("p1-r0", "6.2 list marker line", 80, 120), 520),
+        withWidth(run("p1-r1", "body line one", 120, 148), 500),
+        withWidth(run("p1-r2", "body line two", 121, 176), 499),
+        withWidth(run("p1-r3", "short final line", 220, 204), 200),
+      ],
+      1,
+    );
+    expect(blocks[0].textAlign).toBe("justify");
+    expect(blocks[0].lineStep).toBe(28);
   });
 });

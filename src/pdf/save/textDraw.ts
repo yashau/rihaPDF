@@ -19,7 +19,11 @@ import {
   type EmbeddedFontFactory,
   type LoadedSourceContext,
 } from "./context";
-import type { CrossSourceDrawPlan, SameSourceDrawPlan } from "./streamSurgery";
+import type {
+  CrossSourceDrawPlan,
+  RichTextLineLayoutPdf,
+  SameSourceDrawPlan,
+} from "./streamSurgery";
 
 type RichDrawLine = RichTextSpan[];
 
@@ -33,6 +37,32 @@ function splitRichTextLines(block: RichTextBlock): RichDrawLine[] {
     });
   }
   return lines.length > 0 ? lines : [[]];
+}
+
+function trimLeadingLineSpaces(line: RichDrawLine): RichDrawLine {
+  let trimming = true;
+  return line
+    .map((span) => {
+      if (!trimming) return span;
+      const text = span.text.replace(/^\s+/, "");
+      if (text.length > 0) trimming = false;
+      return { ...span, text };
+    })
+    .filter((span) => span.text.length > 0);
+}
+
+function splitLineTokens(line: RichDrawLine): RichDrawLine {
+  const tokens: RichDrawLine = [];
+  for (const span of line) {
+    for (const part of span.text.split(/(\s+)/u)) {
+      if (part.length > 0) tokens.push({ text: part, style: span.style });
+    }
+  }
+  return tokens;
+}
+
+function spaceCount(line: RichDrawLine): number {
+  return line.reduce((sum, span) => sum + (span.text.match(/\s/gu)?.length ?? 0), 0);
 }
 
 function mergeStyle(base: EditStyle, override: EditStyle | undefined): EditStyle {
@@ -249,6 +279,76 @@ async function measureRichLine(
   return width;
 }
 
+async function drawJustifiedRichLine(
+  page: PDFPage,
+  line: RichDrawLine,
+  opts: {
+    x: number;
+    y: number;
+    width: number;
+    extraSpace: number;
+    isRtl: boolean;
+    baseStyle: EditStyle;
+    fallbackFamily: string;
+    fallbackSize: number;
+    fallbackBold: boolean;
+    fallbackItalic: boolean;
+    fallbackDir: "rtl" | "ltr" | undefined;
+    getFont: EmbeddedFontFactory;
+  },
+): Promise<void> {
+  const tokens = splitLineTokens(line);
+  let cursorX = opts.isRtl ? opts.x + opts.width : opts.x;
+  for (const span of opts.isRtl ? [...tokens].reverse() : tokens) {
+    const style = mergeStyle(opts.baseStyle, span.style);
+    const family = style.fontFamily ?? opts.fallbackFamily;
+    const fontSizePt = style.fontSize ?? opts.fallbackSize;
+    const bold = style.bold ?? opts.fallbackBold;
+    const italic = style.italic ?? opts.fallbackItalic;
+    const dir = style.dir ?? opts.fallbackDir;
+    const { pdfFont, bytes: fontBytes } = await opts.getFont(family, bold, italic);
+    const widthPt = await measureTextWidth(
+      span.text,
+      pdfFont,
+      fontBytes,
+      family,
+      fontSizePt,
+      dir,
+      opts.getFont,
+    );
+    const spaces = span.text.match(/\s/gu)?.length ?? 0;
+    if (spaces > 0 && span.text.trim().length === 0) {
+      cursorX += opts.isRtl
+        ? -(widthPt + opts.extraSpace * spaces)
+        : widthPt + opts.extraSpace * spaces;
+      continue;
+    }
+    const drawX = opts.isRtl ? cursorX - widthPt : cursorX;
+    await drawTextWithStyle(page, span.text, {
+      x: drawX,
+      y: opts.y,
+      size: fontSizePt,
+      font: pdfFont,
+      fontBytes,
+      family,
+      italic,
+      dir,
+      getFont: opts.getFont,
+      color: style.color,
+    });
+    drawDecorations(page, {
+      x: drawX,
+      y: opts.y,
+      width: widthPt,
+      size: fontSizePt,
+      underline: style.underline ?? opts.baseStyle.underline ?? false,
+      strikethrough: style.strikethrough ?? opts.baseStyle.strikethrough ?? false,
+      color: style.color,
+    });
+    cursorX += opts.isRtl ? -widthPt : widthPt;
+  }
+}
+
 export async function drawRichTextBlock(
   page: PDFPage,
   block: RichTextBlock,
@@ -257,6 +357,7 @@ export async function drawRichTextBlock(
     y: number;
     width: number;
     lineStep: number;
+    lineLayouts?: RichTextLineLayoutPdf[];
     baseStyle: EditStyle;
     fallbackFamily: string;
     fallbackSize: number;
@@ -268,11 +369,14 @@ export async function drawRichTextBlock(
 ): Promise<void> {
   const lines = splitRichTextLines(block);
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex];
+    const layout = opts.lineLayouts?.[lineIndex];
+    const line = layout ? trimLeadingLineSpaces(lines[lineIndex]) : lines[lineIndex];
     const plain = line.map((span) => span.text).join("");
     const isRtl =
       opts.baseStyle.dir === "rtl" || (opts.baseStyle.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(plain));
-    const lineY = opts.y - opts.lineStep * lineIndex;
+    const lineX = opts.x + (layout?.xOffset ?? 0);
+    const lineY = opts.y - (layout?.baselineOffset ?? opts.lineStep * lineIndex);
+    const targetWidth = layout?.width ?? opts.width;
     const lineWidth = await measureRichLine(
       line,
       opts.baseStyle,
@@ -285,7 +389,25 @@ export async function drawRichTextBlock(
       },
       opts.getFont,
     );
-    let cursorX = isRtl ? opts.x + opts.width : opts.x;
+    const spaces = spaceCount(line);
+    if (layout?.justify && spaces > 0 && lineWidth < targetWidth) {
+      await drawJustifiedRichLine(page, line, {
+        x: lineX,
+        y: lineY,
+        width: targetWidth,
+        extraSpace: (targetWidth - lineWidth) / spaces,
+        isRtl,
+        baseStyle: opts.baseStyle,
+        fallbackFamily: opts.fallbackFamily,
+        fallbackSize: opts.fallbackSize,
+        fallbackBold: opts.fallbackBold,
+        fallbackItalic: opts.fallbackItalic,
+        fallbackDir: opts.fallbackDir,
+        getFont: opts.getFont,
+      });
+      continue;
+    }
+    let cursorX = isRtl ? lineX + targetWidth : lineX;
     for (const span of isRtl ? [...line].reverse() : line) {
       const style = mergeStyle(opts.baseStyle, span.style);
       const family = style.fontFamily ?? opts.fallbackFamily;
@@ -328,7 +450,7 @@ export async function drawRichTextBlock(
       cursorX += isRtl ? -widthPt : widthPt;
     }
     if (line.length === 0 && lineWidth > 0) {
-      cursorX = isRtl ? opts.x + opts.width - lineWidth : opts.x + lineWidth;
+      cursorX = isRtl ? lineX + targetWidth - lineWidth : lineX + lineWidth;
     }
   }
 }
@@ -369,6 +491,7 @@ export async function emitTextDraw(
       y: drawY,
       width: runPdfWidth,
       lineStep: plan.lineStepPdf ?? runPdfHeight * 1.4,
+      lineLayouts: plan.lineLayoutsPdf,
       baseStyle: style,
       fallbackFamily: family,
       fallbackSize: fontSizePt,
