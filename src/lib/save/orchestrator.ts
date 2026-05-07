@@ -474,10 +474,8 @@ export async function applyEditsAndSave(
   // from the widgets that came across with copyPages. copyPages deep-
   // copies widget dicts and their /Parent → field chains, but doesn't
   // carry /Root /AcroForm itself, so without this step the saved file
-  // would have the field tree populated but unreachable — viewers
-  // would render the (now-stripped) /AP and ignore /V on reopen.
-  if (formFills.length > 0) {
-    rebuildOutputAcroForm(output);
-  }
+  // would have the field tree populated but unreachable. The helper is
+  // a no-op when the output has no widget annotations.
+  rebuildOutputAcroForm(output);
   return output.save();
 }

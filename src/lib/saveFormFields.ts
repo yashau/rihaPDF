@@ -405,6 +405,8 @@ export function rebuildOutputAcroForm(doc: {
       }
     }
   }
+  if (topFieldRefs.size === 0) return;
+
   // Detach top-level fields from any dangling /Parent left over from
   // the source's intermediate field-tree nodes.
   for (const dict of topFieldDicts.values()) {

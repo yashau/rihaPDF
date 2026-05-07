@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-105%20e2e-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-106%20e2e-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -115,7 +115,6 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 - **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q…Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
 - **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
 - **Annotation and form redaction is geometry-first.** Text markup quads and ink strokes are clipped/split so portions outside the redaction survive. Text-bearing, unsupported annotation types, and overlapped AcroForm widgets are removed on overlap because their dictionaries can carry recoverable `/Contents`, `/V`, `/DV`, or appearance data. Partial form-field value redaction is not attempted; overlapping a widget removes the whole field.
-- **Form widgets need a touched-field save path today.** Filled fields save with `/V` and rebuild `/Root /AcroForm /Fields`, but a form PDF saved after unrelated edits with no form-field changes may keep copied widget annotations without a rebuilt AcroForm field tree. Until the save path rebuilds AcroForm whenever copied widgets exist, make at least one form-field change before saving a fillable document that must remain interactive.
 
 ## Scripts
 
@@ -173,6 +172,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
+| `acroform-save.test.ts`                       | unrelated saves of fillable PDFs rebuild `/Root /AcroForm /Fields`            |
 | `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
 | `caret-at-click.test.ts`                      | source-glyph click on Maldivian 6.2 line opens caret at matching text offset  |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
@@ -221,7 +221,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 - [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/lib/shapedDraw.ts) / [shapedBidi.ts](src/lib/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
 - [ ] **Partial form-widget redaction.** Redaction removes an overlapped AcroForm field as the safe default. A future version could split visual widget appearances or preserve non-overlapped widgets from the same field when that can be done without leaving `/V`/`/DV` recoverable.
-- [ ] **Rebuild AcroForm on any saved output containing widgets.** `rebuildOutputAcroForm` currently runs when form fills are present. It should also run for unrelated saves of fillable PDFs so `copyPages` output keeps widgets reachable through `/Root /AcroForm /Fields`.
 
 ### Overlay / interaction
 
