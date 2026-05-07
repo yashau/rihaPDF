@@ -7,17 +7,17 @@
 
 # rihaPDF
 
-[![CI](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-105%20e2e-2ea44f)
-![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111111)
-![HeroUI](https://img.shields.io/badge/HeroUI-3-000000)
-![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-4-6e9f18?logo=vitest&logoColor=white)
-![Playwright](https://img.shields.io/badge/Playwright-e2e-2ead33?logo=playwright&logoColor=white)
-![Oxlint](https://img.shields.io/badge/Oxlint-1.63-cc5a2f)
-![Oxfmt](https://img.shields.io/badge/Oxfmt-0.48-cc5a2f)
-![pnpm](https://img.shields.io/badge/pnpm-11-f69220?logo=pnpm&logoColor=white)
+[![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-105%20e2e-2ea44f?style=for-the-badge)
+![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
+![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
+![Vite](https://img.shields.io/badge/Vite-8-646cff?style=for-the-badge&logo=vite&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-4-6e9f18?style=for-the-badge&logo=vitest&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-e2e-2ead33?style=for-the-badge&logo=playwright&logoColor=white)
+![Oxlint](https://img.shields.io/badge/Oxlint-1.63-cc5a2f?style=for-the-badge)
+![Oxfmt](https://img.shields.io/badge/Oxfmt-0.48-cc5a2f?style=for-the-badge)
+![pnpm](https://img.shields.io/badge/pnpm-11-f69220?style=for-the-badge&logo=pnpm&logoColor=white)
 
 Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edit in place, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
 
