@@ -20,7 +20,7 @@ describe("source font detection", () => {
       if (!host) return null;
       for (const el of host.querySelectorAll<HTMLElement>("[data-run-id]")) {
         const text = el.textContent || "";
-        if (text.includes("އޖ/2026/1/14")) {
+        if (text.replace(/\s+/g, "").includes("އޖ/2026/1/14")) {
           return {
             id: el.dataset.runId,
             family: el.dataset.fontFamily,
