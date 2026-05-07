@@ -10,6 +10,7 @@
 import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import path from "path";
 
 export const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -232,6 +233,93 @@ export async function loadFixture(
 /** Click the named toolbar button by its visible label. */
 export async function clickToolbarButton(page: Page, label: RegExp): Promise<void> {
   await page.locator("button").filter({ hasText: label }).click();
+}
+
+export async function pageBox(page: Page, pageIndex: number) {
+  const box = await page.locator(`[data-page-index="${pageIndex}"]`).boundingBox();
+  if (!box) throw new Error(`page ${pageIndex} not in DOM`);
+  return box;
+}
+
+/** Save via the toolbar and return the downloaded file path under
+ *  test/e2e/screenshots. */
+export async function saveAndDownload(
+  page: Page,
+  name: string,
+  options: { timeout?: number } = {},
+): Promise<string> {
+  const dlPromise = page.waitForEvent("download", { timeout: options.timeout ?? 12_000 });
+  await page.locator("button").filter({ hasText: /^Save/ }).click();
+  const dl = await dlPromise;
+  const out = path.join(SCREENSHOTS, name);
+  await dl.saveAs(out);
+  return out;
+}
+
+/** Per-page text content via the app's pdf.js wrapper. */
+export async function extractTextByPage(page: Page, pdfPath: string): Promise<string[]> {
+  const b64 = fs.readFileSync(pdfPath).toString("base64");
+  return page.evaluate(async (b64) => {
+    // oxlint-disable-next-line typescript/no-implied-eval
+    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
+    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const doc = await pdfMod.loadPdf(bytes.buffer);
+    const out: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const p = await doc.getPage(i);
+      const content = await p.getTextContent();
+      out.push(
+        content.items
+          .filter((it) => "str" in it)
+          .map((it) => (it as { str: string }).str)
+          .join(" "),
+      );
+    }
+    return out;
+  }, b64);
+}
+
+export async function extractImageCountsByPage(page: Page, pdfPath: string): Promise<number[]> {
+  const b64 = fs.readFileSync(pdfPath).toString("base64");
+  return page.evaluate(async (b64) => {
+    // oxlint-disable-next-line typescript/no-implied-eval
+    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
+    const mod = (await importer(
+      "/src/lib/sourceImages.ts",
+    )) as typeof import("../../src/lib/sourceImages");
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const all = await mod.extractPageImages(bytes.buffer);
+    return all.map((p) => p.length);
+  }, b64);
+}
+
+export async function captureImages(page: Page, pdfPath: string) {
+  const b64 = fs.readFileSync(pdfPath).toString("base64");
+  return page.evaluate(async (b64) => {
+    // oxlint-disable-next-line typescript/no-implied-eval
+    const importer = new Function("p", "return import(p)") as (
+      p: string,
+    ) => Promise<typeof import("../../src/lib/sourceImages")>;
+    const mod = await importer("/src/lib/sourceImages.ts");
+    const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+    const all = await mod.extractPageImages(buf);
+    return all.map((perPage) =>
+      perPage.map((i) => ({
+        id: i.id,
+        resourceName: i.resourceName,
+        pdfX: i.pdfX,
+        pdfY: i.pdfY,
+        w: i.pdfWidth,
+        h: i.pdfHeight,
+      })),
+    );
+  }, b64);
+}
+
+export async function captureImageCount(page: Page, pdfPath: string): Promise<number> {
+  const counts = await extractImageCountsByPage(page, pdfPath);
+  return counts.reduce((sum, n) => sum + n, 0);
 }
 
 /** Format the captured pageerror / console buffer for inclusion in a

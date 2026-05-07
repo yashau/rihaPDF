@@ -9,7 +9,10 @@ import path from "path";
 import {
   FIXTURE,
   SCREENSHOTS,
+  captureImageCount,
+  extractTextByPage,
   loadFixture,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -38,7 +41,7 @@ describe("inserting net-new content", () => {
   test("insert text + image, save, reload — both persist", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
 
-    const before = await captureImageCount(FIXTURE.withImages);
+    const before = await captureImageCount(h.page, FIXTURE.withImages);
 
     // Drop the image fixture into a temp file the file-input can read.
     const tmpPng = path.join(SCREENSHOTS, "insert-pixel.png");
@@ -84,52 +87,14 @@ describe("inserting net-new content", () => {
     });
 
     // Save + reload.
-    const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-    await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-    const dl = await dlPromise;
-    const saved = path.join(SCREENSHOTS, "insert.pdf");
-    await dl.saveAs(saved);
+    const saved = await saveAndDownload(h.page, "insert.pdf");
 
     await loadFixture(h.page, saved);
 
     // Verify text + image count via the app's own modules.
-    const checks = await h.page.evaluate(async (b64) => {
-      // oxlint-disable-next-line typescript/no-implied-eval
-      const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const sourceImages = (await importer(
-        "/src/lib/sourceImages.ts",
-      )) as typeof import("../../src/lib/sourceImages");
-      const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
-      const imagesByPage = await sourceImages.extractPageImages(bytes.buffer);
-      const doc = await pdfMod.loadPdf(bytes.buffer.slice(0));
-      const p = await doc.getPage(1);
-      const content = await p.getTextContent();
-      const text = content.items
-        .filter((it) => "str" in it)
-        .map((it) => (it as { str: string }).str)
-        .join(" ");
-      return {
-        page1ImageCount: imagesByPage[0]?.length ?? 0,
-        page1Text: text,
-      };
-    }, fs.readFileSync(saved).toString("base64"));
-
-    expect(checks.page1Text).toContain(SENTINEL);
-    expect(checks.page1ImageCount).toBe(before + 1);
+    const text = await extractTextByPage(h.page, saved);
+    const imageCount = await captureImageCount(h.page, saved);
+    expect(text[0]).toContain(SENTINEL);
+    expect(imageCount).toBe(before + 1);
   });
 });
-
-async function captureImageCount(pdfPath: string): Promise<number> {
-  const bytes = fs.readFileSync(pdfPath);
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const mod = (await importer(
-      "/src/lib/sourceImages.ts",
-    )) as typeof import("../../src/lib/sourceImages");
-    const images = await mod.extractPageImages(bytes.buffer);
-    return images[0]?.length ?? 0;
-  }, bytes.toString("base64"));
-}

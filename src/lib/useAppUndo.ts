@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  type Dispatch,
-  type RefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { Annotation } from "./annotations";
 import type { FormValue } from "./formFields";
 import type { ImageInsertion, TextInsertion } from "./insertions";
@@ -13,6 +6,7 @@ import type { LoadedSource } from "./loadSource";
 import type { Redaction } from "./redactions";
 import type { PageSlot } from "./slots";
 import { useUndoRedo } from "./useUndoRedo";
+import { useLatestRef } from "./useLatestRef";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
 
 type UndoSnapshot = {
@@ -71,44 +65,16 @@ export function useAppUndo({
   setSlots: Dispatch<SetStateAction<PageSlot[]>>;
   setSources: Dispatch<SetStateAction<Map<string, LoadedSource>>>;
 }) {
-  const editsRef = useRef(edits);
-  const imageMovesRef = useRef(imageMoves);
-  const insertedTextsRef = useRef(insertedTexts);
-  const insertedImagesRef = useRef(insertedImages);
-  const shapeDeletesRef = useRef(shapeDeletes);
-  const annotationsRef = useRef(annotations);
-  const redactionsRef = useRef(redactions);
-  const formValuesRef = useRef(formValues);
-  const sourcesRef = useRef(sources);
+  const editsRef = useLatestRef(edits);
+  const imageMovesRef = useLatestRef(imageMoves);
+  const insertedTextsRef = useLatestRef(insertedTexts);
+  const insertedImagesRef = useLatestRef(insertedImages);
+  const shapeDeletesRef = useLatestRef(shapeDeletes);
+  const annotationsRef = useLatestRef(annotations);
+  const redactionsRef = useLatestRef(redactions);
+  const formValuesRef = useLatestRef(formValues);
+  const sourcesRef = useLatestRef(sources);
   const selectionSetterRef = useRef<(s: null) => void>(() => {});
-
-  useEffect(() => {
-    editsRef.current = edits;
-  }, [edits]);
-  useEffect(() => {
-    imageMovesRef.current = imageMoves;
-  }, [imageMoves]);
-  useEffect(() => {
-    insertedTextsRef.current = insertedTexts;
-  }, [insertedTexts]);
-  useEffect(() => {
-    insertedImagesRef.current = insertedImages;
-  }, [insertedImages]);
-  useEffect(() => {
-    shapeDeletesRef.current = shapeDeletes;
-  }, [shapeDeletes]);
-  useEffect(() => {
-    annotationsRef.current = annotations;
-  }, [annotations]);
-  useEffect(() => {
-    redactionsRef.current = redactions;
-  }, [redactions]);
-  useEffect(() => {
-    formValuesRef.current = formValues;
-  }, [formValues]);
-  useEffect(() => {
-    sourcesRef.current = sources;
-  }, [sources]);
 
   const captureSnapshot = useCallback(
     (): UndoSnapshot => ({
@@ -123,7 +89,18 @@ export function useAppUndo({
       slots: slotsRef.current,
       sources: sourcesRef.current,
     }),
-    [slotsRef],
+    [
+      annotationsRef,
+      editsRef,
+      formValuesRef,
+      imageMovesRef,
+      insertedImagesRef,
+      insertedTextsRef,
+      redactionsRef,
+      shapeDeletesRef,
+      slotsRef,
+      sourcesRef,
+    ],
   );
 
   const restoreSnapshot = useCallback(

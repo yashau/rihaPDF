@@ -8,6 +8,7 @@ import type { Redaction } from "./redactions";
 import type { PageSlot } from "./slots";
 import type { PendingImage, ToolMode } from "./toolMode";
 import { annotationArraysEquivalent } from "./sourceAnnotations";
+import { sumMapArrayLengths, sumMapSetSizes, sumMapSizes } from "./collectionCounts";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
 
 function countAnnotationChanges(
@@ -57,26 +58,14 @@ export function useSaveStatus({
   pendingImage: PendingImage | null;
 }) {
   const totalChangeCount = useMemo(() => {
-    const totalEdits = Array.from(edits.values()).reduce((sum, m) => sum + m.size, 0);
-    const totalImageMoves = Array.from(imageMoves.values()).reduce((sum, m) => sum + m.size, 0);
-    const totalInsertedTexts = Array.from(insertedTexts.values()).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
-    const totalInsertedImages = Array.from(insertedImages.values()).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
-    const totalShapeDeletes = Array.from(shapeDeletes.values()).reduce(
-      (sum, set) => sum + set.size,
-      0,
-    );
+    const totalEdits = sumMapSizes(edits);
+    const totalImageMoves = sumMapSizes(imageMoves);
+    const totalInsertedTexts = sumMapArrayLengths(insertedTexts);
+    const totalInsertedImages = sumMapArrayLengths(insertedImages);
+    const totalShapeDeletes = sumMapSetSizes(shapeDeletes);
     const totalAnnotationChanges = countAnnotationChanges(sources, slots, annotations);
-    const totalRedactions = Array.from(redactions.values()).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
-    const totalFormFills = Array.from(formValues.values()).reduce((sum, m) => sum + m.size, 0);
+    const totalRedactions = sumMapArrayLengths(redactions);
+    const totalFormFills = sumMapSizes(formValues);
 
     const primarySource = sources.get(PRIMARY_SOURCE_KEY);
     const primaryPageCount = primarySource?.pages.length ?? 0;

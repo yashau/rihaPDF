@@ -9,18 +9,17 @@
 //
 // Pure read — never mutates the doc.
 
-import {
-  PDFArray,
-  PDFDict,
-  PDFDocument,
-  PDFHexString,
-  PDFName,
-  PDFNumber,
-  PDFObject,
-  PDFRef,
-  PDFString,
-} from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from "pdf-lib";
 import { isRtlScript } from "./fonts";
+import {
+  decodePdfTextString,
+  discoverWidgetOnState,
+  fullyQualifiedFieldName,
+  inheritedObject,
+  isFieldKid,
+  readPdfNumber,
+  readPdfRectArray,
+} from "./pdfFormTree";
 
 export type FormFieldWidget = {
   /** Stable id: `<sourceKey>:<fullName>:<widgetIndex>`. */
@@ -136,48 +135,6 @@ const FF_CH_COMBO = 1 << 17;
 const FF_CH_MULTI_SELECT = 1 << 21;
 void FF_NO_EXPORT; // surfaced via type but currently unused at extract time
 
-/** Decode a PDF text-string entry — handles UTF-16BE BOM and
- *  PDFDocEncoding via pdf-lib's built-in `decodeText`. Returns "" for
- *  anything else (e.g. null entries). */
-function decodeText(obj: PDFObject | undefined): string {
-  if (!obj) return "";
-  if (obj instanceof PDFString || obj instanceof PDFHexString) return obj.decodeText();
-  if (obj instanceof PDFName) return obj.asString().replace(/^\//, "");
-  return "";
-}
-
-function readNumber(obj: PDFObject | undefined): number | null {
-  if (obj instanceof PDFNumber) return obj.asNumber();
-  return null;
-}
-
-/** Walk the field's `/Parent` chain and return the first non-null
- *  value of `key`. /FT, /Ff, /V, /DA are all inheritable per spec. */
-function inherited(dict: PDFDict, key: PDFName): PDFObject | undefined {
-  let node: PDFDict | null = dict;
-  while (node) {
-    const direct = node.lookup(key);
-    if (direct !== undefined) return direct;
-    const parent: PDFObject | undefined = node.lookup(PDFName.of("Parent"));
-    node = parent instanceof PDFDict ? parent : null;
-  }
-  return undefined;
-}
-
-/** Concat /T from root to this dict with `.` per spec — fields without
- *  a /T are anonymous and their kids inherit the parent's name. */
-function fullyQualifiedName(dict: PDFDict): string {
-  const parts: string[] = [];
-  let node: PDFDict | null = dict;
-  while (node) {
-    const partial = decodeText(node.lookup(PDFName.of("T")));
-    if (partial) parts.unshift(partial);
-    const parent: PDFObject | undefined = node.lookup(PDFName.of("Parent"));
-    node = parent instanceof PDFDict ? parent : null;
-  }
-  return parts.join(".");
-}
-
 /** Parse the size token out of a `/DA` string. Pdf spec: `/Helv 10 Tf …`
  *  — the number right before `Tf`. Returns null when /DA is missing or
  *  doesn't carry an explicit size (some forms use 0 to mean "auto"). */
@@ -191,23 +148,8 @@ function parseDaFontSize(da: string | null): number | null {
 }
 
 function readDa(dict: PDFDict): string | null {
-  const da = inherited(dict, PDFName.of("DA"));
+  const da = inheritedObject(dict, PDFName.of("DA"));
   if (da instanceof PDFString || da instanceof PDFHexString) return da.decodeText();
-  return null;
-}
-
-/** A widget's `/AP /N` keys list its on-state names. The non-`Off` key
- *  is the one /V / /AS use when the box / radio is selected. Returns
- *  the first non-`Off` key, or null if only `Off` is present. */
-function discoverOnState(widgetDict: PDFDict): string | null {
-  const ap = widgetDict.lookup(PDFName.of("AP"));
-  if (!(ap instanceof PDFDict)) return null;
-  const n = ap.lookup(PDFName.of("N"));
-  if (!(n instanceof PDFDict)) return null;
-  for (const [key] of n.entries()) {
-    const name = key.asString().replace(/^\//, "");
-    if (name && name !== "Off") return name;
-  }
   return null;
 }
 
@@ -216,17 +158,7 @@ function discoverOnState(widgetDict: PDFDict): string | null {
  *  render off-page in the overlay layer, which is the right fail-safe
  *  (don't crash, don't paint nonsense). */
 function readRect(dict: PDFDict): [number, number, number, number] {
-  const r = dict.lookup(PDFName.of("Rect"));
-  if (!(r instanceof PDFArray) || r.size() < 4) return [0, 0, 0, 0];
-  const nums: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const v = r.get(i);
-    nums.push(v instanceof PDFNumber ? v.asNumber() : 0);
-  }
-  // PDF spec allows /Rect to encode opposite corners in any order;
-  // normalise so [llx, lly, urx, ury] really has lower-left first.
-  const [a, b, c, d] = nums;
-  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+  return readPdfRectArray(dict) ?? [0, 0, 0, 0];
 }
 
 /** Build a Map<PDFRef, pageIndex> by walking each page's /Annots. The
@@ -249,20 +181,20 @@ function buildWidgetPageMap(doc: PDFDocument): Map<PDFRef, number> {
 /** Decode /V for a text field. Acrobat / Preview write Thaana as
  *  UTF-16BE-with-BOM; pdf-lib's `decodeText` handles that natively. */
 function readTextValue(dict: PDFDict): string {
-  const v = inherited(dict, PDFName.of("V"));
-  return decodeText(v);
+  const v = inheritedObject(dict, PDFName.of("V"));
+  return decodePdfTextString(v);
 }
 
 /** /V for a Btn checkbox is a name (`/Yes` / `/Off`) or absent. */
 function readCheckboxChosenState(dict: PDFDict): string {
-  const v = inherited(dict, PDFName.of("V"));
+  const v = inheritedObject(dict, PDFName.of("V"));
   if (v instanceof PDFName) return v.asString().replace(/^\//, "");
   return "Off";
 }
 
 /** /V for a radio group is the chosen widget's appearance state name. */
 function readRadioChosen(dict: PDFDict): string | null {
-  const v = inherited(dict, PDFName.of("V"));
+  const v = inheritedObject(dict, PDFName.of("V"));
   if (!(v instanceof PDFName)) return null;
   const name = v.asString().replace(/^\//, "");
   return name === "Off" ? null : name;
@@ -270,7 +202,7 @@ function readRadioChosen(dict: PDFDict): string | null {
 
 /** /V for a Ch field is a string or array of strings (multi-select). */
 function readChoiceChosen(dict: PDFDict): string[] {
-  const v = inherited(dict, PDFName.of("V"));
+  const v = inheritedObject(dict, PDFName.of("V"));
   if (v instanceof PDFString || v instanceof PDFHexString) return [v.decodeText()];
   if (v instanceof PDFArray) {
     const out: string[] = [];
@@ -297,8 +229,8 @@ function readChoiceOptions(dict: PDFDict): FormFieldChoiceOption[] {
     } else if (row instanceof PDFArray && row.size() >= 2) {
       const valueObj = row.get(0);
       const labelObj = row.get(1);
-      const value = decodeText(valueObj);
-      const label = decodeText(labelObj) || value;
+      const value = decodePdfTextString(valueObj);
+      const label = decodePdfTextString(labelObj) || value;
       out.push({ value, label });
     }
   }
@@ -359,25 +291,9 @@ function collectFieldWidgets(
 /** Resolve a field's /FT (inheritable). Returns the bare name without
  *  the leading slash: "Tx", "Btn", "Ch", "Sig", or "" when absent. */
 function readFieldType(dict: PDFDict): string {
-  const ft = inherited(dict, PDFName.of("FT"));
+  const ft = inheritedObject(dict, PDFName.of("FT"));
   if (ft instanceof PDFName) return ft.asString().replace(/^\//, "");
   return "";
-}
-
-/** True iff a kid is itself a terminal field (has its own /T or its
- *  own /Kids whose entries are also fields). The walk treats anything
- *  with /T OR with kids-of-fields as a field, and anything else (or a
- *  kid with /Subtype /Widget but no /T) as a widget annotation owned
- *  by the parent field. */
-function isFieldKid(dict: PDFDict): boolean {
-  if (dict.lookup(PDFName.of("T")) !== undefined) return true;
-  const kids = dict.lookup(PDFName.of("Kids"));
-  if (!(kids instanceof PDFArray)) return false;
-  for (let i = 0; i < kids.size(); i++) {
-    const kid = kids.lookup(i);
-    if (kid instanceof PDFDict && isFieldKid(kid)) return true;
-  }
-  return false;
 }
 
 function buildField(
@@ -386,10 +302,10 @@ function buildField(
   widgetPageMap: Map<PDFRef, number>,
   sourceKey: string,
 ): FormField | null {
-  const fullName = fullyQualifiedName(fieldDict);
+  const fullName = fullyQualifiedFieldName(fieldDict);
   if (!fullName) return null;
   const ft = readFieldType(fieldDict);
-  const ff = readNumber(inherited(fieldDict, PDFName.of("Ff"))) ?? 0;
+  const ff = readPdfNumber(inheritedObject(fieldDict, PDFName.of("Ff"))) ?? 0;
   const readOnly = (ff & FF_READONLY) !== 0;
   const required = (ff & FF_REQUIRED) !== 0;
   const id = `${sourceKey}:${fullName}`;
@@ -411,7 +327,7 @@ function buildField(
       multiline: (ff & FF_TX_MULTILINE) !== 0,
       password: (ff & FF_TX_PASSWORD) !== 0,
       fileSelect: (ff & FF_TX_FILE_SELECT) !== 0,
-      maxLen: readNumber(fieldDict.lookup(PDFName.of("MaxLen"))),
+      maxLen: readPdfNumber(fieldDict.lookup(PDFName.of("MaxLen"))),
       fontSize: parseDaFontSize(da),
       rtl: isRtlScript(readTextValue(fieldDict)),
     };
@@ -422,7 +338,7 @@ function buildField(
     if ((ff & FF_BTN_RADIO) !== 0) {
       const options: FormFieldRadioOption[] = [];
       for (let i = 0; i < widgets.length; i++) {
-        const onState = discoverOnState(widgetDicts[i]) ?? "";
+        const onState = discoverWidgetOnState(widgetDicts[i]) ?? "";
         if (!onState) continue;
         options.push({ ...widgets[i], onState });
       }
@@ -436,7 +352,8 @@ function buildField(
     // Plain checkbox — single widget; multi-widget checkboxes are
     // legal per spec but rare and behave as a synced group, which we
     // approximate by treating the FIRST widget's on-state as canonical.
-    const onState = widgetDicts.length > 0 ? (discoverOnState(widgetDicts[0]) ?? "Yes") : "Yes";
+    const onState =
+      widgetDicts.length > 0 ? (discoverWidgetOnState(widgetDicts[0]) ?? "Yes") : "Yes";
     const stored = readCheckboxChosenState(fieldDict);
     return {
       ...common,

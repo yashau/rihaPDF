@@ -1,49 +1,8 @@
-import {
-  PDFArray,
-  PDFContext,
-  PDFDict,
-  PDFName,
-  PDFNumber,
-  PDFObject,
-  PDFPage,
-  PDFRef,
-} from "pdf-lib";
+import { PDFArray, PDFContext, PDFDict, PDFName, PDFObject, PDFPage, PDFRef } from "pdf-lib";
 import { rectsOverlap, type Redaction } from "./redactions";
-import type { PdfRect } from "./pdfGeometry";
+import { isWidgetDict, readPdfRect, resolvePdfDict } from "./pdfFormTree";
 
 type FieldId = string;
-
-function readRect(dict: PDFDict): PdfRect | null {
-  const rect = dict.lookup(PDFName.of("Rect"));
-  if (!(rect instanceof PDFArray) || rect.size() < 4) return null;
-  const nums: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const n = rect.lookup(i);
-    if (!(n instanceof PDFNumber)) return null;
-    nums.push(n.asNumber());
-  }
-  const [a, b, c, d] = nums;
-  const llx = Math.min(a, c);
-  const lly = Math.min(b, d);
-  const urx = Math.max(a, c);
-  const ury = Math.max(b, d);
-  if (urx <= llx || ury <= lly) return null;
-  return { pdfX: llx, pdfY: lly, pdfWidth: urx - llx, pdfHeight: ury - lly };
-}
-
-function isWidget(dict: PDFDict): boolean {
-  const subtype = dict.lookup(PDFName.of("Subtype"));
-  return subtype instanceof PDFName && subtype.asString() === "/Widget";
-}
-
-function resolveDict(ctx: PDFContext, obj: PDFObject | undefined): PDFDict | null {
-  if (obj instanceof PDFDict) return obj;
-  if (obj instanceof PDFRef) {
-    const resolved = ctx.lookup(obj);
-    return resolved instanceof PDFDict ? resolved : null;
-  }
-  return null;
-}
 
 const fieldIds = new WeakMap<PDFDict, string>();
 let directFieldCounter = 0;
@@ -64,7 +23,7 @@ function topFieldStable(ctx: PDFContext, widget: PDFDict): { id: FieldId; dict: 
   let dict = widget;
   while (true) {
     const parent = dict.get(PDFName.of("Parent"));
-    const parentDict = resolveDict(ctx, parent);
+    const parentDict = resolvePdfDict(ctx, parent);
     if (!parentDict) break;
     dict = parentDict;
   }
@@ -137,7 +96,7 @@ function removeRedactedFieldsFromAcroForm(
 }
 
 function pageHasRedactionOverlap(widget: PDFDict, redactions: Redaction[]): boolean {
-  const rect = readRect(widget);
+  const rect = readPdfRect(widget);
   if (!rect) return false;
   return redactions.some((r) => rectsOverlap(r, rect));
 }
@@ -158,7 +117,7 @@ export function applyRedactionsToFormWidgets(
     if (!(annots instanceof PDFArray)) continue;
     for (let i = 0; i < annots.size(); i++) {
       const annot = annots.lookup(i);
-      if (!(annot instanceof PDFDict) || !isWidget(annot)) continue;
+      if (!(annot instanceof PDFDict) || !isWidgetDict(annot)) continue;
       if (!pageHasRedactionOverlap(annot, redactions)) continue;
       const field = topFieldStable(doc.context, annot);
       redactedFieldIds.add(field.id);
@@ -174,7 +133,7 @@ export function applyRedactionsToFormWidgets(
     for (let i = 0; i < annots.size(); i++) {
       const raw = annots.get(i);
       const annot = annots.lookup(i);
-      if (!(annot instanceof PDFDict) || !isWidget(annot)) {
+      if (!(annot instanceof PDFDict) || !isWidgetDict(annot)) {
         next.push(raw);
         continue;
       }

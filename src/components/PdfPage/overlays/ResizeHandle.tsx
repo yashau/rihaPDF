@@ -14,13 +14,15 @@
  *
  *  z-index 21 keeps the handle above the parent box's onPointerDown
  *  surface so the resize wins the hit-test over the translate drag. */
+export type ResizeHandlePosition = "tl" | "tr" | "bl" | "br";
+
 export function ResizeHandle({
   position,
   parentW,
   parentH,
   onPointerDown,
 }: {
-  position: "tl" | "tr" | "bl" | "br";
+  position: ResizeHandlePosition;
   /** Parent overlay's viewport-pixel width/height. Used to cap the
    *  hit pad so two corner pads don't meet in the centre. */
   parentW: number;
@@ -85,5 +87,31 @@ export function ResizeHandle({
     >
       <div style={dotStyle} />
     </div>
+  );
+}
+
+const HANDLE_POSITIONS: ResizeHandlePosition[] = ["tl", "tr", "bl", "br"];
+
+export function ResizeHandles({
+  parentW,
+  parentH,
+  onPointerDown,
+}: {
+  parentW: number;
+  parentH: number;
+  onPointerDown: (position: ResizeHandlePosition) => (e: React.PointerEvent) => void;
+}) {
+  return (
+    <>
+      {HANDLE_POSITIONS.map((position) => (
+        <ResizeHandle
+          key={position}
+          position={position}
+          parentW={parentW}
+          parentH={parentH}
+          onPointerDown={onPointerDown(position)}
+        />
+      ))}
+    </>
   );
 }

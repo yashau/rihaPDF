@@ -30,6 +30,7 @@ import {
   RENDER_SCALE,
   SCREENSHOTS,
   loadFixture,
+  saveAndDownload as savePdf,
   setupBrowser,
   tearDown,
   type Harness,
@@ -176,15 +177,6 @@ async function readAnnotations(savedPath: string): Promise<ParsedAnnot[]> {
   return out;
 }
 
-async function saveAndDownload(name: string): Promise<string> {
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-  const dl = await dlPromise;
-  const saved = path.join(SCREENSHOTS, name);
-  await dl.saveAs(saved);
-  return saved;
-}
-
 describe("annotation round-trip", () => {
   test("highlight a text run → saved PDF carries a /Highlight with QuadPoints", async () => {
     await loadFixture(h, FIXTURE.maldivian);
@@ -197,7 +189,7 @@ describe("annotation round-trip", () => {
     await targetRun.click();
     await h.page.waitForTimeout(150);
 
-    const saved = await saveAndDownload("annotation-highlight.pdf");
+    const saved = await savePdf(h.page, "annotation-highlight.pdf");
     const annots = await readAnnotations(saved);
     const highlights = annots.filter((a) => a.subtype === "Highlight");
     expect(
@@ -238,7 +230,7 @@ describe("annotation round-trip", () => {
     await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
     await h.page.waitForTimeout(200);
 
-    const saved = await saveAndDownload("annotation-comment.pdf");
+    const saved = await savePdf(h.page, "annotation-comment.pdf");
     const annots = await readAnnotations(saved);
     const comments = annots.filter((a) => a.subtype === "FreeText");
     expect(comments.length, "expected at least 1 /FreeText annotation").toBeGreaterThanOrEqual(1);
@@ -273,7 +265,7 @@ describe("annotation round-trip", () => {
     await h.page.mouse.up();
     await h.page.waitForTimeout(150);
 
-    const saved = await saveAndDownload("annotation-ink.pdf");
+    const saved = await savePdf(h.page, "annotation-ink.pdf");
     const annots = await readAnnotations(saved);
     const inks = annots.filter((a) => a.subtype === "Ink");
     expect(inks.length, "expected at least 1 /Ink annotation").toBeGreaterThanOrEqual(1);
@@ -304,7 +296,7 @@ describe("annotation round-trip", () => {
     expect(await h.page.locator("[data-ink-id]").count()).toBe(0);
     expect(await saveButton.isDisabled()).toBe(false);
 
-    const saved = await saveAndDownload("source-annots-edited.pdf");
+    const saved = await savePdf(h.page, "source-annots-edited.pdf");
     const annots = await readAnnotations(saved);
     expect(annots.filter((a) => a.subtype === "Highlight")).toHaveLength(1);
     expect(annots.filter((a) => a.subtype === "FreeText")).toHaveLength(1);
@@ -331,7 +323,7 @@ describe("annotation round-trip", () => {
     await h.page.waitForTimeout(150);
 
     await h.page.locator('[data-testid="tool-ink"]').click();
-    const beforeSaved = await saveAndDownload("annotation-ink-move-before.pdf");
+    const beforeSaved = await savePdf(h.page, "annotation-ink-move-before.pdf");
     const beforeInks = (await readAnnotations(beforeSaved)).filter((a) => a.subtype === "Ink");
     expect(beforeInks).toHaveLength(1);
     expect(beforeInks[0].pageIndex, "ink should start on page 1").toBe(0);
@@ -351,7 +343,7 @@ describe("annotation round-trip", () => {
     await h.page.mouse.up();
     await h.page.waitForTimeout(200);
 
-    const afterMoveSaved = await saveAndDownload("annotation-ink-move-after.pdf");
+    const afterMoveSaved = await savePdf(h.page, "annotation-ink-move-after.pdf");
     const afterMoveInks = (await readAnnotations(afterMoveSaved)).filter(
       (a) => a.subtype === "Ink",
     );
@@ -387,7 +379,7 @@ describe("annotation round-trip", () => {
 
     // Save once at origin so we can assert the saved /Rect changes
     // after the drag.
-    const beforeSaved = await saveAndDownload("annotation-move-before.pdf");
+    const beforeSaved = await savePdf(h.page, "annotation-move-before.pdf");
     const beforeAnnots = (await readAnnotations(beforeSaved)).filter(
       (a) => a.subtype === "FreeText",
     );
@@ -409,7 +401,7 @@ describe("annotation round-trip", () => {
     await h.page.mouse.up();
     await h.page.waitForTimeout(200);
 
-    const afterSaved = await saveAndDownload("annotation-move-after.pdf");
+    const afterSaved = await savePdf(h.page, "annotation-move-after.pdf");
     const afterAnnots = (await readAnnotations(afterSaved)).filter((a) => a.subtype === "FreeText");
     expect(afterAnnots).toHaveLength(1);
     const afterRect = afterAnnots[0].rect!;
@@ -455,7 +447,7 @@ describe("annotation round-trip", () => {
     const redactionBox = await h.page.locator("[data-redaction-id]").first().boundingBox();
     expect(redactionBox, "redaction overlay should be created").not.toBeNull();
 
-    const saved = await saveAndDownload("annotation-ink-redacted-same-session.pdf");
+    const saved = await savePdf(h.page, "annotation-ink-redacted-same-session.pdf");
     const inks = (await readAnnotations(saved)).filter((a) => a.subtype === "Ink");
     expect(inks).toHaveLength(1);
     expect(inks[0].inkList, "/InkList should survive with outside segments only").not.toBeNull();

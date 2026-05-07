@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import type { RenderedPage } from "../../../lib/pdf";
+import { pdfRectToViewportRect } from "../geometry";
 import { cropCanvasToDataUrl } from "../helpers";
 import type { ImageMoveValue, ResizeCorner } from "../types";
-import { ResizeHandle } from "./ResizeHandle";
+import { ResizeHandles, type ResizeHandlePosition } from "./ResizeHandle";
 
 /** Drag-movable image overlay. Two visual layers when moved:
  *
@@ -59,10 +60,12 @@ export function ImageOverlay({
   // PDF user-space → viewport: x scales directly; y flips around the
   // page bottom. CTM origin (pdfX, pdfY) is the bottom-left corner in
   // PDF y-up so the viewport top is page.viewHeight - (pdfY + pdfH) × s.
-  const left = img.pdfX * page.scale;
-  const top = page.viewHeight - (img.pdfY + img.pdfHeight) * page.scale;
-  const w = img.pdfWidth * page.scale;
-  const h = img.pdfHeight * page.scale;
+  const {
+    left,
+    top,
+    width: w,
+    height: h,
+  } = pdfRectToViewportRect(img, page.scale, page.viewHeight);
   const dx = liveDx ?? persisted?.dx ?? 0;
   const dy = liveDy ?? persisted?.dy ?? 0;
   const dw = liveDw ?? persisted?.dw ?? 0;
@@ -88,6 +91,9 @@ export function ImageOverlay({
   const boxH = h + dh;
 
   const baseFor = () => ({ dx, dy, dw, dh });
+  const startResize = (corner: ResizeHandlePosition) => (e: React.PointerEvent) => {
+    onResizeStart(corner, e, baseFor());
+  };
 
   return (
     <div
@@ -155,32 +161,7 @@ export function ImageOverlay({
       }}
     >
       {movable && isSelected ? (
-        <>
-          <ResizeHandle
-            position="tl"
-            parentW={boxW}
-            parentH={boxH}
-            onPointerDown={(e) => onResizeStart("tl", e, baseFor())}
-          />
-          <ResizeHandle
-            position="tr"
-            parentW={boxW}
-            parentH={boxH}
-            onPointerDown={(e) => onResizeStart("tr", e, baseFor())}
-          />
-          <ResizeHandle
-            position="bl"
-            parentW={boxW}
-            parentH={boxH}
-            onPointerDown={(e) => onResizeStart("bl", e, baseFor())}
-          />
-          <ResizeHandle
-            position="br"
-            parentW={boxW}
-            parentH={boxH}
-            onPointerDown={(e) => onResizeStart("br", e, baseFor())}
-          />
-        </>
+        <ResizeHandles parentW={boxW} parentH={boxH} onPointerDown={startResize} />
       ) : null}
     </div>
   );

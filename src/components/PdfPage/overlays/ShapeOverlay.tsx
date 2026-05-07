@@ -1,4 +1,5 @@
 import type { RenderedPage } from "../../../lib/pdf";
+import { pdfRectToViewportRect } from "../geometry";
 
 /** Selectable hit-zone for a vector shape (line, rect, path) detected
  *  on the source page. v1 only supports delete — no move, no resize.
@@ -17,10 +18,12 @@ export function ShapeOverlay({
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  const visW = shape.pdfWidth * page.scale;
-  const visH = shape.pdfHeight * page.scale;
-  const visLeft = shape.pdfX * page.scale;
-  const visTop = page.viewHeight - (shape.pdfY + shape.pdfHeight) * page.scale;
+  const {
+    left: visLeft,
+    top: visTop,
+    width: visW,
+    height: visH,
+  } = pdfRectToViewportRect(shape, page.scale, page.viewHeight);
   const MIN_HIT = 8;
   const hitW = Math.max(visW, MIN_HIT);
   const hitH = Math.max(visH, MIN_HIT);

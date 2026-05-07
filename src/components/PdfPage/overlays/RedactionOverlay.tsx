@@ -1,7 +1,13 @@
 import type { RenderedPage } from "../../../lib/pdf";
 import type { Redaction } from "../../../lib/redactions";
 import { useDragGesture } from "../../../lib/useDragGesture";
-import { ResizeHandle } from "./ResizeHandle";
+import {
+  pdfRectToViewportRect,
+  resizePdfRectFromCorner,
+  screenDeltaToPdf,
+  type ResizeCorner,
+} from "../geometry";
+import { ResizeHandles } from "./ResizeHandle";
 
 /** Opaque black rectangle over a redacted region. In-editor preview
  *  ONLY — the underlying glyphs are still in the content stream of
@@ -33,10 +39,12 @@ export function RedactionOverlay({
   onChange: (patch: Partial<Redaction>) => void;
   onSelect: () => void;
 }) {
-  const left = redaction.pdfX * page.scale;
-  const top = page.viewHeight - (redaction.pdfY + redaction.pdfHeight) * page.scale;
-  const w = redaction.pdfWidth * page.scale;
-  const h = redaction.pdfHeight * page.scale;
+  const {
+    left,
+    top,
+    width: w,
+    height: h,
+  } = pdfRectToViewportRect(redaction, page.scale, page.viewHeight);
 
   const effectivePdfScale = page.scale * displayScale;
 
@@ -54,7 +62,7 @@ export function RedactionOverlay({
   };
 
   type RedactResizeCtx = {
-    corner: "tl" | "tr" | "bl" | "br";
+    corner: ResizeCorner;
     base: { x: number; y: number; w: number; h: number };
   };
   const MIN_PDF = 4;
@@ -62,37 +70,12 @@ export function RedactionOverlay({
     touchActivation: "immediate",
     onMove: (ctx, info) => {
       const { corner, base } = ctx;
-      const dxPdf = info.dxRaw / effectivePdfScale;
-      const dyPdf = -info.dyRaw / effectivePdfScale;
-      let { x, y } = base;
-      let nw = base.w;
-      let nh = base.h;
-      switch (corner) {
-        case "br":
-          nw = Math.max(MIN_PDF, base.w + dxPdf);
-          nh = Math.max(MIN_PDF, base.h - dyPdf);
-          y = base.y + base.h - nh;
-          break;
-        case "tr":
-          nw = Math.max(MIN_PDF, base.w + dxPdf);
-          nh = Math.max(MIN_PDF, base.h + dyPdf);
-          break;
-        case "tl":
-          nw = Math.max(MIN_PDF, base.w - dxPdf);
-          nh = Math.max(MIN_PDF, base.h + dyPdf);
-          x = base.x + base.w - nw;
-          break;
-        case "bl":
-          nw = Math.max(MIN_PDF, base.w - dxPdf);
-          nh = Math.max(MIN_PDF, base.h - dyPdf);
-          x = base.x + base.w - nw;
-          y = base.y + base.h - nh;
-          break;
-      }
-      onChange({ pdfX: x, pdfY: y, pdfWidth: nw, pdfHeight: nh });
+      const { dxPdf, dyPdf } = screenDeltaToPdf(info.dxRaw, info.dyRaw, effectivePdfScale);
+      const next = resizePdfRectFromCorner(base, corner, dxPdf, dyPdf, MIN_PDF);
+      onChange({ pdfX: next.x, pdfY: next.y, pdfWidth: next.w, pdfHeight: next.h });
     },
   });
-  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (e: React.PointerEvent) => {
+  const startResize = (corner: ResizeCorner) => (e: React.PointerEvent) => {
     beginResize(e, {
       corner,
       base: { x: redaction.pdfX, y: redaction.pdfY, w: redaction.pdfWidth, h: redaction.pdfHeight },
@@ -134,14 +117,7 @@ export function RedactionOverlay({
         }
       }}
     >
-      {isSelected ? (
-        <>
-          <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
-          <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
-          <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
-          <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
-        </>
-      ) : null}
+      {isSelected ? <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} /> : null}
     </div>
   );
 }

@@ -23,7 +23,11 @@ import path from "path";
 import {
   FIXTURE,
   SCREENSHOTS,
+  extractImageCountsByPage,
+  extractTextByPage,
   loadFixture,
+  pageBox,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -61,62 +65,6 @@ async function dragBetween(fromX: number, fromY: number, toX: number, toY: numbe
   await h.page.waitForTimeout(800);
 }
 
-async function pageBox(pageIndex: number) {
-  const box = await h.page.locator(`[data-page-index="${pageIndex}"]`).boundingBox();
-  if (!box) throw new Error(`page ${pageIndex} not in DOM`);
-  return box;
-}
-
-/** Save → wait for download → return path. */
-async function saveAndDownload(name: string): Promise<string> {
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-  const dl = await dlPromise;
-  const out = path.join(SCREENSHOTS, name);
-  await dl.saveAs(out);
-  return out;
-}
-
-/** Per-page text content via pdf.js. Index-aligned with page numbers
- *  (returned[0] = page 1 text). */
-async function extractTextByPage(pdfPath: string): Promise<string[]> {
-  const b64 = fs.readFileSync(pdfPath).toString("base64");
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const doc = await pdfMod.loadPdf(bytes.buffer);
-    const out: string[] = [];
-    for (let i = 1; i <= doc.numPages; i++) {
-      const p = await doc.getPage(i);
-      const content = await p.getTextContent();
-      out.push(
-        content.items
-          .filter((it) => "str" in it)
-          .map((it) => (it as { str: string }).str)
-          .join(" "),
-      );
-    }
-    return out;
-  }, b64);
-}
-
-/** Per-page image counts via the app's own sourceImages module. */
-async function extractImageCountsByPage(pdfPath: string): Promise<number[]> {
-  const b64 = fs.readFileSync(pdfPath).toString("base64");
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const mod = (await importer(
-      "/src/lib/sourceImages.ts",
-    )) as typeof import("../../src/lib/sourceImages");
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const all = await mod.extractPageImages(bytes.buffer);
-    return all.map((p) => p.length);
-  }, b64);
-}
-
 describe("cross-page move", () => {
   test("existing text run: drag from page 1 to page 2 — saved PDF has the text on page 2 only", async () => {
     await loadFixture(h.page, FIXTURE.withImagesMultipage, { expectedPages: 2 });
@@ -139,14 +87,14 @@ describe("cross-page move", () => {
 
     // Drop near the top of page 2 (well inside the bounding rect so
     // findPageAtPoint definitely picks page-index=1).
-    const p2 = await pageBox(1);
+    const p2 = await pageBox(h.page, 1);
     const toX = p2.x + 200;
     const toY = p2.y + 100;
 
     await dragBetween(fromX, fromY, toX, toY);
 
-    const saved = await saveAndDownload("cross-page-text-run.pdf");
-    const text = await extractTextByPage(saved);
+    const saved = await saveAndDownload(h.page, "cross-page-text-run.pdf");
+    const text = await extractTextByPage(h.page, saved);
     expect(text.length).toBe(2);
     expect(text[0], "page 1 should no longer contain the moved label").not.toContain(
       "CROSS_PAGE_FIXTURE_P1",
@@ -157,7 +105,7 @@ describe("cross-page move", () => {
   test("existing image: drag from page 1 to page 2 — saved PDF has the image on page 2", async () => {
     await loadFixture(h.page, FIXTURE.withImagesMultipage, { expectedPages: 2 });
 
-    const before = await extractImageCountsByPage(FIXTURE.withImagesMultipage);
+    const before = await extractImageCountsByPage(h.page, FIXTURE.withImagesMultipage);
     expect(before, "fixture should be 1 image per page").toEqual([1, 1]);
 
     // The page-1 image is the first overlay rendered inside page 1.
@@ -172,14 +120,14 @@ describe("cross-page move", () => {
     const fromX = imgBox!.x + imgBox!.width / 2;
     const fromY = imgBox!.y + imgBox!.height / 2;
 
-    const p2 = await pageBox(1);
+    const p2 = await pageBox(h.page, 1);
     const toX = p2.x + 250;
     const toY = p2.y + 200;
 
     await dragBetween(fromX, fromY, toX, toY);
 
-    const saved = await saveAndDownload("cross-page-image.pdf");
-    const counts = await extractImageCountsByPage(saved);
+    const saved = await saveAndDownload(h.page, "cross-page-image.pdf");
+    const counts = await extractImageCountsByPage(h.page, saved);
     expect(counts.length).toBe(2);
     expect(counts[0], "page 1 should be empty after the image moved off").toBe(0);
     expect(counts[1], "page 2 should hold both its native image and the moved one").toBe(2);
@@ -195,7 +143,7 @@ describe("cross-page move", () => {
       .locator("button")
       .filter({ hasText: /^\+ Text$/ })
       .click();
-    const p1 = await pageBox(0);
+    const p1 = await pageBox(h.page, 0);
     await h.page.mouse.click(p1.x + p1.width * 0.4, p1.y + p1.height * 0.5);
     await h.page.waitForTimeout(200);
     const input = h.page.locator("[data-text-insert-id] input").first();
@@ -208,13 +156,13 @@ describe("cross-page move", () => {
     expect(insBox).not.toBeNull();
     const fromX = insBox!.x + insBox!.width / 2;
     const fromY = insBox!.y + insBox!.height / 2;
-    const p2 = await pageBox(1);
+    const p2 = await pageBox(h.page, 1);
     const toX = p2.x + 200;
     const toY = p2.y + 300;
     await dragBetween(fromX, fromY, toX, toY);
 
-    const saved = await saveAndDownload("cross-page-inserted-text.pdf");
-    const text = await extractTextByPage(saved);
+    const saved = await saveAndDownload(h.page, "cross-page-inserted-text.pdf");
+    const text = await extractTextByPage(h.page, saved);
     expect(text.length).toBe(2);
     expect(text[0], "page 1 must not carry the inserted text").not.toContain(SENTINEL);
     expect(text[1], "page 2 must now carry the inserted text").toContain(SENTINEL);
@@ -223,7 +171,7 @@ describe("cross-page move", () => {
   test("inserted image: drop on page 1, drag to page 2 — saved PDF has the image on page 2", async () => {
     await loadFixture(h.page, FIXTURE.withImagesMultipage, { expectedPages: 2 });
 
-    const before = await extractImageCountsByPage(FIXTURE.withImagesMultipage);
+    const before = await extractImageCountsByPage(h.page, FIXTURE.withImagesMultipage);
     expect(before).toEqual([1, 1]);
 
     // 1×1 red PNG written to disk so the file-input can pick it up.
@@ -242,7 +190,7 @@ describe("cross-page move", () => {
       .click();
     await h.page.locator('input[type="file"][accept*="image"]').setInputFiles(tmpPng);
     await h.page.waitForTimeout(400);
-    const p1 = await pageBox(0);
+    const p1 = await pageBox(h.page, 0);
     await h.page.mouse.click(p1.x + p1.width * 0.5, p1.y + p1.height * 0.4);
     await h.page.waitForTimeout(300);
 
@@ -251,13 +199,13 @@ describe("cross-page move", () => {
     expect(insBox, "inserted image overlay should be on page 1").not.toBeNull();
     const fromX = insBox!.x + insBox!.width / 2;
     const fromY = insBox!.y + insBox!.height / 2;
-    const p2 = await pageBox(1);
+    const p2 = await pageBox(h.page, 1);
     const toX = p2.x + 250;
     const toY = p2.y + 350;
     await dragBetween(fromX, fromY, toX, toY);
 
-    const saved = await saveAndDownload("cross-page-inserted-image.pdf");
-    const counts = await extractImageCountsByPage(saved);
+    const saved = await saveAndDownload(h.page, "cross-page-inserted-image.pdf");
+    const counts = await extractImageCountsByPage(h.page, saved);
     expect(counts.length).toBe(2);
     expect(counts[0], "page 1 image count should be unchanged (its native image stayed)").toBe(1);
     expect(counts[1], "page 2 should now have its native image + the inserted one").toBe(2);

@@ -5,12 +5,13 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
-import path from "path";
 import {
   FIXTURE,
   RENDER_SCALE,
   SCREENSHOTS,
+  captureImages,
   loadFixture,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -26,30 +27,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (h) await tearDown(h);
 });
-
-async function captureImages(pdfPath: string) {
-  const bytes = fs.readFileSync(pdfPath);
-  const b64 = bytes.toString("base64");
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (
-      p: string,
-    ) => Promise<typeof import("../../src/lib/sourceImages")>;
-    const mod = await importer("/src/lib/sourceImages.ts");
-    const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
-    const all = await mod.extractPageImages(buf);
-    return all.map((perPage) =>
-      perPage.map((i) => ({
-        id: i.id,
-        resourceName: i.resourceName,
-        pdfX: i.pdfX,
-        pdfY: i.pdfY,
-        w: i.pdfWidth,
-        h: i.pdfHeight,
-      })),
-    );
-  }, b64);
-}
 
 async function dragHandle(
   imageId: string,
@@ -73,28 +50,19 @@ async function dragHandle(
   await h.page.waitForTimeout(200);
 }
 
-async function saveAs(filename: string): Promise<string> {
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-  const dl = await dlPromise;
-  const saved = path.join(SCREENSHOTS, filename);
-  await dl.saveAs(saved);
-  return saved;
-}
-
 describe("image XObject resize via corner handles", () => {
   test("BR corner drag grows the box, anchoring TL", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
-    const before = await captureImages(FIXTURE.withImages);
+    const before = await captureImages(h.page, FIXTURE.withImages);
     expect(before[0].length).toBeGreaterThanOrEqual(2);
     const target = before[0][0];
 
     const DXV = 80;
     const DYV = 40;
     await dragHandle(target.id, "br", DXV, DYV);
-    const saved = await saveAs("image-resize-br.pdf");
+    const saved = await saveAndDownload(h.page, "image-resize-br.pdf");
 
-    const after = await captureImages(saved);
+    const after = await captureImages(h.page, saved);
     expect(after[0].length).toBe(before[0].length);
     const a = after[0].find((i) => i.id === target.id)!;
     // PDF deltas: width grows by DXV/scale; height grows by DYV/scale.
@@ -121,7 +89,7 @@ describe("image XObject resize via corner handles", () => {
 
   test("TL corner drag shrinks the box, anchoring BR", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
-    const before = await captureImages(FIXTURE.withImages);
+    const before = await captureImages(h.page, FIXTURE.withImages);
     const target = before[0][0];
 
     // Drag TL handle DOWN-RIGHT: shrinks width and height. The amount
@@ -129,9 +97,9 @@ describe("image XObject resize via corner handles", () => {
     const DXV = 30;
     const DYV = 20;
     await dragHandle(target.id, "tl", DXV, DYV);
-    const saved = await saveAs("image-resize-tl.pdf");
+    const saved = await saveAndDownload(h.page, "image-resize-tl.pdf");
 
-    const after = await captureImages(saved);
+    const after = await captureImages(h.page, saved);
     const a = after[0].find((i) => i.id === target.id)!;
     const expectedDw = -DXV / RENDER_SCALE;
     const expectedDh = -DYV / RENDER_SCALE;

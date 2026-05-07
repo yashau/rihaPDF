@@ -91,6 +91,42 @@ async function getHb(): Promise<Hb> {
   return hbPromise;
 }
 
+async function shapeWithFont(
+  text: string,
+  fontBytes: Uint8Array,
+  direction: ShapeResult["direction"],
+  configureBuffer: (buffer: ReturnType<Hb["createBuffer"]>) => void,
+): Promise<ShapeResult> {
+  const hb = await getHb();
+  const f = await getFont(fontBytes);
+  const buf = hb.createBuffer();
+  try {
+    buf.addText(text);
+    configureBuffer(buf);
+    hb.shape(f.font, buf);
+    const glyphs: ShapedGlyph[] = buf.json().map((g) => ({
+      glyphId: g.g,
+      xAdvance: g.ax,
+      yAdvance: g.ay,
+      xOffset: g.dx,
+      yOffset: g.dy,
+      cluster: g.cl ?? 0,
+    }));
+    let totalAdvance = 0;
+    for (const g of glyphs) totalAdvance += g.xAdvance;
+    return {
+      glyphs,
+      totalAdvance,
+      unitsPerEm: f.unitsPerEm,
+      ascender: f.ascender,
+      descender: f.descender,
+      direction,
+    };
+  } finally {
+    buf.destroy();
+  }
+}
+
 type HbFont = {
   font: { destroy(): void };
   face: { destroy(): void; upem?: number; get_upem?: () => number };
@@ -188,37 +224,11 @@ export async function shapeWithFallback(
 }
 
 export async function shapeRtlThaana(text: string, fontBytes: Uint8Array): Promise<ShapeResult> {
-  const hb = await getHb();
-  const f = await getFont(fontBytes);
-  const buf = hb.createBuffer();
-  try {
-    buf.addText(text);
+  return shapeWithFont(text, fontBytes, "rtl", (buf) => {
     buf.setDirection("rtl");
     buf.setScript("Thaa");
     buf.setLanguage("dhv");
-    hb.shape(f.font, buf);
-    const json = buf.json();
-    const glyphs: ShapedGlyph[] = json.map((g) => ({
-      glyphId: g.g,
-      xAdvance: g.ax,
-      yAdvance: g.ay,
-      xOffset: g.dx,
-      yOffset: g.dy,
-      cluster: g.cl ?? 0,
-    }));
-    let totalAdvance = 0;
-    for (const g of glyphs) totalAdvance += g.xAdvance;
-    return {
-      glyphs,
-      totalAdvance,
-      unitsPerEm: f.unitsPerEm,
-      ascender: f.ascender,
-      descender: f.descender,
-      direction: "rtl",
-    };
-  } finally {
-    buf.destroy();
-  }
+  });
 }
 
 /**
@@ -229,34 +239,7 @@ export async function shapeRtlThaana(text: string, fontBytes: Uint8Array): Promi
 export async function shapeAuto(text: string, fontBytes: Uint8Array): Promise<ShapeResult> {
   const hasRtl = /[֐-׿؀-ۿހ-޿]/u.test(text);
   if (hasRtl) return shapeRtlThaana(text, fontBytes);
-  // Pure-LTR fallback.
-  const hb = await getHb();
-  const f = await getFont(fontBytes);
-  const buf = hb.createBuffer();
-  try {
-    buf.addText(text);
+  return shapeWithFont(text, fontBytes, "ltr", (buf) => {
     buf.guessSegmentProperties();
-    hb.shape(f.font, buf);
-    const json = buf.json();
-    const glyphs: ShapedGlyph[] = json.map((g) => ({
-      glyphId: g.g,
-      xAdvance: g.ax,
-      yAdvance: g.ay,
-      xOffset: g.dx,
-      yOffset: g.dy,
-      cluster: g.cl ?? 0,
-    }));
-    let totalAdvance = 0;
-    for (const g of glyphs) totalAdvance += g.xAdvance;
-    return {
-      glyphs,
-      totalAdvance,
-      unitsPerEm: f.unitsPerEm,
-      ascender: f.ascender,
-      descender: f.descender,
-      direction: "ltr",
-    };
-  } finally {
-    buf.destroy();
-  }
+  });
 }

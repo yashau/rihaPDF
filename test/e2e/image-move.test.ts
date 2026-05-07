@@ -5,12 +5,13 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
-import path from "path";
 import {
   FIXTURE,
   RENDER_SCALE,
   SCREENSHOTS,
+  captureImages,
   loadFixture,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -27,38 +28,11 @@ afterAll(async () => {
   if (h) await tearDown(h);
 });
 
-async function captureImages(pdfPath: string) {
-  const bytes = fs.readFileSync(pdfPath);
-  const b64 = bytes.toString("base64");
-  // `new Function('return import(p)')` keeps vitest's SSR transform
-  // from rewriting the dynamic import to a helper that doesn't exist
-  // in the browser — see test/helpers/browser.ts:dynImport.
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (
-      p: string,
-    ) => Promise<typeof import("../../src/lib/sourceImages")>;
-    const mod = await importer("/src/lib/sourceImages.ts");
-    const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
-    const all = await mod.extractPageImages(buf);
-    return all.map((perPage) =>
-      perPage.map((i) => ({
-        id: i.id,
-        resourceName: i.resourceName,
-        pdfX: i.pdfX,
-        pdfY: i.pdfY,
-        w: i.pdfWidth,
-        h: i.pdfHeight,
-      })),
-    );
-  }, b64);
-}
-
 describe("image XObject move", () => {
   test("dragging an image rewrites its cm op; neighbours unchanged", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
 
-    const before = await captureImages(FIXTURE.withImages);
+    const before = await captureImages(h.page, FIXTURE.withImages);
     expect(before[0].length, "synthetic fixture should have ≥ 2 images").toBeGreaterThanOrEqual(2);
     const target = before[0][0];
 
@@ -80,14 +54,10 @@ describe("image XObject move", () => {
     await h.page.waitForTimeout(300);
 
     // Save and reload.
-    const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-    await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-    const dl = await dlPromise;
-    const saved = path.join(SCREENSHOTS, "image-move.pdf");
-    await dl.saveAs(saved);
+    const saved = await saveAndDownload(h.page, "image-move.pdf");
 
     await loadFixture(h.page, saved);
-    const after = await captureImages(saved);
+    const after = await captureImages(h.page, saved);
 
     // Every image should still be present, target moved by the
     // expected Δ in PDF user space, others stayed put.

@@ -7,6 +7,7 @@ import { useThaanaTransliteration } from "../../../lib/thaanaKeyboard";
 import { useCenterInVisibleViewport } from "../../../lib/useVisualViewport";
 import { useIsMobile } from "../../../lib/useMediaQuery";
 import { EditTextToolbar } from "../EditTextToolbar";
+import { pdfBaselineToViewportBox } from "../geometry";
 import {
   chooseToolbarTop,
   cssTextDecoration,
@@ -80,16 +81,22 @@ export function InsertedTextOverlay({
   // for undefined so the `??` lets us fall back inline.
   const cssColor = colorToCss(style.color) ?? "black";
   const fontSizePt = ins.fontSize;
-  const fontSizePx = fontSizePt * page.scale;
   // PDF user-space (pdfX, pdfY) is the BASELINE of the text. The
   // viewport top of the box is baseline - fontSize, scaled. Match the
   // EditField rendering: render text in a box of height = fontSize × 1.4
   // so descenders fit.
   const lineHeight = fontSizePt * 1.4;
-  const left = ins.pdfX * page.scale;
-  const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
-  const width = Math.max(ins.pdfWidth * page.scale, 60);
-  const height = lineHeight * page.scale;
+  const { left, top, width, height } = pdfBaselineToViewportBox({
+    pdfX: ins.pdfX,
+    pdfY: ins.pdfY,
+    fontSizePt,
+    lineHeightPt: lineHeight,
+    widthPt: ins.pdfWidth,
+    minWidthPx: 60,
+    pageScale: page.scale,
+    viewHeight: page.viewHeight,
+  });
+  const fontSizePx = fontSizePt * page.scale;
   useEffect(() => {
     if (isEditing) {
       if (inputRef.current) focusInputAtInitialCaret(inputRef.current, initialCaretPoint);

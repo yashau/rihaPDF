@@ -35,6 +35,16 @@ import {
 } from "./streamSurgery";
 import { idOf } from "./xobjects";
 
+function bucketRedactionsByPage(redactions: Redaction[]): Map<number, Redaction[]> {
+  const byPage = new Map<number, Redaction[]>();
+  for (const r of redactions) {
+    const list = byPage.get(r.pageIndex) ?? [];
+    list.push(r);
+    byPage.set(r.pageIndex, list);
+  }
+  return byPage;
+}
+
 export async function applyEditsAndSave(
   sources: Map<string, LoadedSource>,
   slots: PageSlot[],
@@ -333,13 +343,7 @@ export async function applyEditsAndSave(
     for (const [sourceKey, ctx] of ctxBySource) {
       const sourceRedactions = redactionsBySource.get(sourceKey) ?? [];
       if (sourceRedactions.length === 0) continue;
-      const byPage = new Map<number, Redaction[]>();
-      for (const r of sourceRedactions) {
-        const list = byPage.get(r.pageIndex) ?? [];
-        list.push(r);
-        byPage.set(r.pageIndex, list);
-      }
-      applyRedactionsToFormWidgets(ctx.doc, byPage);
+      applyRedactionsToFormWidgets(ctx.doc, bucketRedactionsByPage(sourceRedactions));
     }
   }
 
@@ -377,12 +381,7 @@ export async function applyEditsAndSave(
     for (const [sourceKey, ctx] of ctxBySource) {
       const sourceRedactions = redactionsBySource.get(sourceKey) ?? [];
       if (sourceRedactions.length === 0) continue;
-      const byPage = new Map<number, Redaction[]>();
-      for (const r of sourceRedactions) {
-        const list = byPage.get(r.pageIndex) ?? [];
-        list.push(r);
-        byPage.set(r.pageIndex, list);
-      }
+      const byPage = bucketRedactionsByPage(sourceRedactions);
       for (const [pageIndex, pageRedactions] of byPage) {
         const page = ctx.doc.getPages()[pageIndex];
         if (!page) continue;

@@ -1,10 +1,11 @@
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
-import path from "path";
 import {
   FIXTURE,
   SCREENSHOTS,
+  captureImageCount,
   loadFixture,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -32,34 +33,11 @@ async function clearSignatureStorage() {
   });
 }
 
-async function captureImageCount(pdfPath: string): Promise<number> {
-  const bytes = fs.readFileSync(pdfPath);
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const mod = (await importer(
-      "/src/lib/sourceImages.ts",
-    )) as typeof import("../../src/lib/sourceImages");
-    const images = await mod.extractPageImages(bytes.buffer);
-    return images[0]?.length ?? 0;
-  }, bytes.toString("base64"));
-}
-
-async function saveAs(filename: string): Promise<string> {
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-  const dl = await dlPromise;
-  const saved = path.join(SCREENSHOTS, filename);
-  await dl.saveAs(saved);
-  return saved;
-}
-
 describe("signature insertion", () => {
   test("draw signature, save to library, place, and persist as a page image", async () => {
     await clearSignatureStorage();
     await loadFixture(h.page, FIXTURE.withImages);
-    const before = await captureImageCount(FIXTURE.withImages);
+    const before = await captureImageCount(h.page, FIXTURE.withImages);
 
     await h.page.locator('[data-testid="tool-signature"]').click();
     const canvas = h.page.locator('[data-testid="signature-draw-canvas"]');
@@ -94,8 +72,8 @@ describe("signature insertion", () => {
       .evaluate((el) => getComputedStyle(el).backgroundImage);
     expect(overlayBg).toMatch(/url\(.*data:image\/png;base64,/);
 
-    const saved = await saveAs("signature-insert.pdf");
-    const after = await captureImageCount(saved);
+    const saved = await saveAndDownload(h.page, "signature-insert.pdf");
+    const after = await captureImageCount(h.page, saved);
     expect(after).toBe(before + 1);
   }, 60_000);
 

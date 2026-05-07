@@ -24,7 +24,11 @@ import path from "path";
 import {
   FIXTURE,
   SCREENSHOTS,
+  extractImageCountsByPage,
+  extractTextByPage,
   loadFixture,
+  pageBox,
+  saveAndDownload,
   setupBrowser,
   tearDown,
   type Harness,
@@ -57,58 +61,6 @@ async function dragBetween(fromX: number, fromY: number, toX: number, toY: numbe
   }
   await h.page.mouse.up();
   await h.page.waitForTimeout(800);
-}
-
-async function pageBox(pageIndex: number) {
-  const box = await h.page.locator(`[data-page-index="${pageIndex}"]`).boundingBox();
-  if (!box) throw new Error(`page ${pageIndex} not in DOM`);
-  return box;
-}
-
-async function saveAndDownload(name: string): Promise<string> {
-  const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
-  await h.page.locator("button").filter({ hasText: /^Save/ }).click();
-  const dl = await dlPromise;
-  const out = path.join(SCREENSHOTS, name);
-  await dl.saveAs(out);
-  return out;
-}
-
-async function extractTextByPage(pdfPath: string): Promise<string[]> {
-  const b64 = fs.readFileSync(pdfPath).toString("base64");
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const pdfMod = (await importer("/src/lib/pdf.ts")) as typeof import("../../src/lib/pdf");
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const doc = await pdfMod.loadPdf(bytes.buffer);
-    const out: string[] = [];
-    for (let i = 1; i <= doc.numPages; i++) {
-      const p = await doc.getPage(i);
-      const content = await p.getTextContent();
-      out.push(
-        content.items
-          .filter((it) => "str" in it)
-          .map((it) => (it as { str: string }).str)
-          .join(" "),
-      );
-    }
-    return out;
-  }, b64);
-}
-
-async function extractImageCountsByPage(pdfPath: string): Promise<number[]> {
-  const b64 = fs.readFileSync(pdfPath).toString("base64");
-  return h.page.evaluate(async (b64) => {
-    // oxlint-disable-next-line typescript/no-implied-eval
-    const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;
-    const mod = (await importer(
-      "/src/lib/sourceImages.ts",
-    )) as typeof import("../../src/lib/sourceImages");
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const all = await mod.extractPageImages(bytes.buffer);
-    return all.map((p) => p.length);
-  }, b64);
 }
 
 /** Load primary, then add the external fixture and wait for the
@@ -159,7 +111,7 @@ describe("first-class external pages", () => {
       .locator("button")
       .filter({ hasText: /^\+ Text$/ })
       .click();
-    const ext1 = await pageBox(1);
+    const ext1 = await pageBox(h.page, 1);
     await h.page.mouse.click(ext1.x + ext1.width * 0.3, ext1.y + ext1.height * 0.4);
     await h.page.waitForTimeout(200);
     const input = h.page.locator("[data-text-insert-id] input").first();
@@ -167,8 +119,8 @@ describe("first-class external pages", () => {
     await input.press("Enter");
     await h.page.waitForTimeout(300);
 
-    const saved = await saveAndDownload("ext-insert-text.pdf");
-    const text = await extractTextByPage(saved);
+    const saved = await saveAndDownload(h.page, "ext-insert-text.pdf");
+    const text = await extractTextByPage(h.page, saved);
     expect(text.length).toBe(3);
     // Saved page index 1 = slot 1 = external page 1 (label + sentinel).
     expect(text[1]).toContain("EXTERNAL_FIXTURE_P1");
@@ -181,7 +133,7 @@ describe("first-class external pages", () => {
   test("inserted image on an external page survives save", async () => {
     await loadPrimaryThenExternal(3);
 
-    const beforeCounts = await extractImageCountsByPage(FIXTURE.externalSource);
+    const beforeCounts = await extractImageCountsByPage(h.page, FIXTURE.externalSource);
     expect(beforeCounts).toEqual([0, 1]);
 
     // 1×1 PNG to use as the inserted image.
@@ -201,12 +153,12 @@ describe("first-class external pages", () => {
     await h.page.locator('input[type="file"][accept*="image"]').setInputFiles(tmpPng);
     await h.page.waitForTimeout(400);
     // Drop on slot 1 (external page 1, currently has zero images).
-    const ext1 = await pageBox(1);
+    const ext1 = await pageBox(h.page, 1);
     await h.page.mouse.click(ext1.x + ext1.width * 0.5, ext1.y + ext1.height * 0.5);
     await h.page.waitForTimeout(300);
 
-    const saved = await saveAndDownload("ext-insert-image.pdf");
-    const counts = await extractImageCountsByPage(saved);
+    const saved = await saveAndDownload(h.page, "ext-insert-image.pdf");
+    const counts = await extractImageCountsByPage(h.page, saved);
     expect(counts.length).toBe(3);
     // Slot 0 = primary (2 images preserved).
     expect(counts[0], "primary page image count").toBe(2);
@@ -226,7 +178,7 @@ describe("first-class external pages", () => {
       .locator("button")
       .filter({ hasText: /^\+ Text$/ })
       .click();
-    const p0 = await pageBox(0);
+    const p0 = await pageBox(h.page, 0);
     await h.page.mouse.click(p0.x + p0.width * 0.4, p0.y + p0.height * 0.5);
     await h.page.waitForTimeout(200);
     const input = h.page.locator("[data-text-insert-id] input").first();
@@ -239,13 +191,13 @@ describe("first-class external pages", () => {
     expect(insBox).not.toBeNull();
     const fromX = insBox!.x + insBox!.width / 2;
     const fromY = insBox!.y + insBox!.height / 2;
-    const ext2 = await pageBox(2);
+    const ext2 = await pageBox(h.page, 2);
     const toX = ext2.x + 200;
     const toY = ext2.y + 250;
     await dragBetween(fromX, fromY, toX, toY);
 
-    const saved = await saveAndDownload("ext-cross-source-text.pdf");
-    const text = await extractTextByPage(saved);
+    const saved = await saveAndDownload(h.page, "ext-cross-source-text.pdf");
+    const text = await extractTextByPage(h.page, saved);
     expect(text.length).toBe(3);
     expect(text[0], "primary should not carry the sentinel after the drag").not.toContain(SENTINEL);
     expect(text[1], "external page 1 should not carry the sentinel").not.toContain(SENTINEL);
@@ -280,8 +232,8 @@ describe("first-class external pages", () => {
     await editInput.press("Enter");
     await h.page.waitForTimeout(400);
 
-    const saved = await saveAndDownload("ext-edit-run.pdf");
-    const text = await extractTextByPage(saved);
+    const saved = await saveAndDownload(h.page, "ext-edit-run.pdf");
+    const text = await extractTextByPage(h.page, saved);
     expect(text.length).toBe(3);
     // The original run text should be gone from external page 1, and
     // the replacement should be there. Saved page 1 = slot 1.

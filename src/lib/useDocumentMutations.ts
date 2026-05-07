@@ -16,6 +16,68 @@ import type { PendingImage, ToolMode } from "./toolMode";
 import type { Selection } from "./useSelection";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
 
+type SlotBucketItem = {
+  id: string;
+  sourceKey: string;
+  pageIndex: number;
+};
+
+function resolveSlotBucketPatch<T extends SlotBucketItem>(
+  item: T,
+  sourceSlotId: string,
+  patch: Partial<T>,
+  slots: readonly PageSlot[],
+): { targetSlotId: string; updated: T } {
+  let targetSlotId = sourceSlotId;
+  if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
+    const destSlot = slots[patch.pageIndex];
+    if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
+      targetSlotId = destSlot.id;
+      return {
+        targetSlotId,
+        updated: {
+          ...item,
+          ...patch,
+          sourceKey: destSlot.sourceKey,
+          pageIndex: destSlot.sourcePageIndex,
+        },
+      };
+    }
+    return {
+      targetSlotId,
+      updated: { ...item, ...patch, sourceKey: item.sourceKey, pageIndex: item.pageIndex },
+    };
+  }
+  return { targetSlotId, updated: { ...item, ...patch } };
+}
+
+function updateSlotBucket<T extends SlotBucketItem>(
+  prev: Map<string, T[]>,
+  sourceSlotId: string,
+  id: string,
+  slots: readonly PageSlot[],
+  patch: Partial<T>,
+): { next: Map<string, T[]>; targetSlotId: string; found: boolean } {
+  const next = new Map(prev);
+  const fromArr = next.get(sourceSlotId) ?? [];
+  const item = fromArr.find((t) => t.id === id);
+  if (!item) return { next: prev, targetSlotId: sourceSlotId, found: false };
+  const { targetSlotId, updated } = resolveSlotBucketPatch(item, sourceSlotId, patch, slots);
+  if (targetSlotId !== sourceSlotId) {
+    next.set(
+      sourceSlotId,
+      fromArr.filter((t) => t.id !== id),
+    );
+    next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
+  } else {
+    next.set(
+      sourceSlotId,
+      fromArr.map((t) => (t.id === id ? updated : t)),
+    );
+  }
+  return { next, targetSlotId, found: true };
+}
+
 export function useDocumentMutations({
   slotsRef,
   tool,
@@ -257,57 +319,7 @@ export function useDocumentMutations({
       // box, or dragging it, is one undo step.
       recordHistory(`text-insert:${sourceSlotId}:${id}`);
       setInsertedTexts((prev) => {
-        const next = new Map(prev);
-        const fromArr = next.get(sourceSlotId) ?? [];
-        const item = fromArr.find((t) => t.id === id);
-        if (!item) return prev;
-        // PdfPage's cross-page drop emits `patch.pageIndex` as the
-        // destination's CURRENT slot index — NOT a source-page index.
-        // Resolve to that slot's id and (sourceKey, sourcePageIndex):
-        // - slot id is the stable bucket key, so reorder doesn't strand
-        //   the insertion;
-        // - sourceKey + sourcePageIndex are the persisted address used
-        //   at save time. Comparing against `item.pageIndex` would mix
-        //   slot-index and source-page-index spaces and silently drop
-        //   moves whenever the two happened to match numerically.
-        let updated: TextInsertion;
-        let targetSlotId = sourceSlotId;
-        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
-          const destSlot = slotsRef.current[patch.pageIndex];
-          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: destSlot.sourceKey,
-              pageIndex: destSlot.sourcePageIndex,
-            };
-            targetSlotId = destSlot.id;
-          } else {
-            // Same slot (or unresolvable) — keep the item's existing
-            // source address; only the pdfX/pdfY portion of the patch
-            // is meaningful here.
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: item.sourceKey,
-              pageIndex: item.pageIndex,
-            };
-          }
-        } else {
-          updated = { ...item, ...patch };
-        }
-        if (targetSlotId !== sourceSlotId) {
-          next.set(
-            sourceSlotId,
-            fromArr.filter((t) => t.id !== id),
-          );
-          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
-        } else {
-          next.set(
-            sourceSlotId,
-            fromArr.map((t) => (t.id === id ? updated : t)),
-          );
-        }
+        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
         return next;
       });
     },
@@ -333,48 +345,7 @@ export function useDocumentMutations({
       // image is one undo step.
       recordHistory(`image-insert:${sourceSlotId}:${id}`);
       setInsertedImages((prev) => {
-        const next = new Map(prev);
-        const fromArr = next.get(sourceSlotId) ?? [];
-        const item = fromArr.find((m) => m.id === id);
-        if (!item) return prev;
-        // See onTextInsertChange for the rationale — patch.pageIndex
-        // is a SLOT index from PdfPage, not a source-page index, so we
-        // resolve the destination slot and compare slot ids.
-        let updated: ImageInsertion;
-        let targetSlotId = sourceSlotId;
-        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
-          const destSlot = slotsRef.current[patch.pageIndex];
-          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: destSlot.sourceKey,
-              pageIndex: destSlot.sourcePageIndex,
-            };
-            targetSlotId = destSlot.id;
-          } else {
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: item.sourceKey,
-              pageIndex: item.pageIndex,
-            };
-          }
-        } else {
-          updated = { ...item, ...patch };
-        }
-        if (targetSlotId !== sourceSlotId) {
-          next.set(
-            sourceSlotId,
-            fromArr.filter((m) => m.id !== id),
-          );
-          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
-        } else {
-          next.set(
-            sourceSlotId,
-            fromArr.map((m) => (m.id === id ? updated : m)),
-          );
-        }
+        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
         return next;
       });
     },
@@ -428,52 +399,7 @@ export function useDocumentMutations({
         );
       }
       setAnnotations((prev) => {
-        const next = new Map(prev);
-        const fromArr = next.get(sourceSlotId) ?? [];
-        const item = fromArr.find((a) => a.id === id);
-        if (!item) return prev;
-        // Cross-page move: when the patch carries a `pageIndex` (slot
-        // index) + `sourceKey` that resolve to a DIFFERENT slot than
-        // the one the annotation currently lives in, move it across
-        // buckets and rewrite its source-page address to the
-        // destination slot's. Mirrors the inserted text / image
-        // cross-page path so dragging a comment across pages lands it
-        // on the new page rather than at off-page PDF coords. Same-
-        // slot patches (text edits, color tweaks, tiny re-positions)
-        // fall through to the in-place branch below.
-        let targetSlotId = sourceSlotId;
-        let updated: Annotation = { ...item, ...patch } as Annotation;
-        if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
-          const destSlot = slotsRef.current[patch.pageIndex];
-          if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: destSlot.sourceKey,
-              pageIndex: destSlot.sourcePageIndex,
-            } as Annotation;
-            targetSlotId = destSlot.id;
-          } else {
-            updated = {
-              ...item,
-              ...patch,
-              sourceKey: item.sourceKey,
-              pageIndex: item.pageIndex,
-            } as Annotation;
-          }
-        }
-        if (targetSlotId !== sourceSlotId) {
-          next.set(
-            sourceSlotId,
-            fromArr.filter((a) => a.id !== id),
-          );
-          next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
-        } else {
-          next.set(
-            sourceSlotId,
-            fromArr.map((a) => (a.id === id ? updated : a)),
-          );
-        }
+        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
         return next;
       });
     },

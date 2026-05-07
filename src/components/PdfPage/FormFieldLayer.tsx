@@ -10,8 +10,6 @@
 // matching AnnotationLayer's sub-layers.
 
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Button } from "@heroui/react";
 import type {
   ChoiceFormField,
   FormField,
@@ -22,9 +20,10 @@ import type {
 import { isRtlScript } from "../../lib/fonts";
 import { useThaanaTransliteration } from "../../lib/thaanaKeyboard";
 import { useIsMobile } from "../../lib/useMediaQuery";
-import { useCenterInVisibleViewport, useVisualViewportFollow } from "../../lib/useVisualViewport";
+import { useCenterInVisibleViewport } from "../../lib/useVisualViewport";
+import { pdfRectArrayToViewportRect } from "./geometry";
 import { isFocusMovingToToolbar } from "./helpers";
-import { vpY } from "./annotations/helpers";
+import { MobileThaanaToggleBar } from "./MobileThaanaToggleBar";
 
 export type { FormValue };
 
@@ -78,14 +77,6 @@ export function FormFieldLayer({
    *  state (only shown while a text field is focused, matching the
    *  CommentLayer pattern). */
   const [focusedTextId, setFocusedTextId] = useState<string | null>(null);
-  /** DV/EN toolbar ref — `useVisualViewportFollow` writes a transform
-   *  onto it so it stays anchored above the soft keyboard and at
-   *  constant visual size during pinch-zoom (with the
-   *  opacity-fade-during-scale-change polish baked into the hook).
-   *  Same recipe EditTextToolbar / CommentLayer use. */
-  const dvEnToolbarRef = useRef<HTMLDivElement | null>(null);
-  useVisualViewportFollow(dvEnToolbarRef, "bottom", isMobile && focusedTextId !== null);
-
   return (
     <div className="absolute inset-0" style={{ pointerEvents: "none" }}>
       {formFields.flatMap((field) => {
@@ -107,11 +98,11 @@ export function FormFieldLayer({
           ];
         }
         return widgetsOnPage.map((widget, i) => {
-          const [llx, lly, urx, ury] = widget.rect;
-          const left = llx * pageScale;
-          const top = vpY(ury, pageScale, viewHeight);
-          const width = (urx - llx) * pageScale;
-          const height = (ury - lly) * pageScale;
+          const { left, top, width, height } = pdfRectArrayToViewportRect(
+            widget.rect,
+            pageScale,
+            viewHeight,
+          );
           if (field.kind === "text") {
             return (
               <TextFieldOverlay
@@ -186,69 +177,11 @@ export function FormFieldLayer({
           return null;
         });
       })}
-      {/* Mobile-only floating DV/EN toggle. Same recipe as
-          EditTextToolbar / CommentLayer: portal to body so
-          `position: fixed` anchors to the visual viewport (not the
-          per-page transformed wrapper), tagged `data-edit-toolbar` so
-          the input's blur check ignores focus moving here, and
-          `useVisualViewportFollow` keeps it pinned above the soft
-          keyboard at constant visual size during pinch-zoom (with the
-          opacity-fade-during-scale-change polish baked into the hook).
-          Wrapper className + baseStyle mirror EditTextToolbar /
-          CommentLayer verbatim so the chrome looks identical to the
-          inserted-text and comment editors; only mounted while a
-          text field is focused. */}
-      {isMobile && focusedTextId !== null && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              ref={dvEnToolbarRef}
-              data-edit-toolbar
-              className="border-t border-zinc-300 bg-white text-zinc-900 shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
-              style={{
-                position: "fixed",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                zIndex: 30,
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                padding: 8,
-                paddingBottom: `max(8px, var(--safe-bottom, 0px))`,
-                alignItems: "center",
-                pointerEvents: "auto",
-              }}
-              // Stop pointerdown from bubbling so the page-level
-              // click-to-create / drag handlers don't see it. Mirrors
-              // EditTextToolbar's wrapper.
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <Button
-                size="sm"
-                variant={thaanaInput ? "primary" : "ghost"}
-                onPress={() => setThaanaInput(!thaanaInput)}
-                // preventDefault on mousedown stops focus shifting off
-                // the input — without it the editor would blur and
-                // close on every toggle tap. Same protection
-                // CommentLayer / EditTextToolbar's DV/EN button uses.
-                onMouseDown={(e) => e.preventDefault()}
-                aria-label={
-                  thaanaInput
-                    ? "Thaana phonetic input (click to type Latin)"
-                    : "Latin input (click to type Thaana)"
-                }
-                // `marginLeft: auto` pushes the button to the right
-                // edge of the bar — same trick EditTextToolbar uses
-                // for its trailing trash button so the affordance
-                // lands under the right-thumb resting position.
-                style={{ minWidth: 44, fontWeight: 600, fontSize: 12, marginLeft: "auto" }}
-              >
-                {thaanaInput ? "DV" : "EN"}
-              </Button>
-            </div>,
-            document.body,
-          )
-        : null}
+      <MobileThaanaToggleBar
+        enabled={isMobile && focusedTextId !== null}
+        value={thaanaInput}
+        onChange={setThaanaInput}
+      />
     </div>
   );
 }
@@ -461,11 +394,11 @@ function RadioField({
         // doc), drop the overlay.
         const opt = field.options.find((o) => o.id === widget.id);
         if (!opt) return null;
-        const [llx, lly, urx, ury] = widget.rect;
-        const left = llx * pageScale;
-        const top = vpY(ury, pageScale, viewHeight);
-        const width = (urx - llx) * pageScale;
-        const height = (ury - lly) * pageScale;
+        const { left, top, width, height } = pdfRectArrayToViewportRect(
+          widget.rect,
+          pageScale,
+          viewHeight,
+        );
         const size = Math.max(10, Math.min(width, height) - 2);
         const isChecked = chosen === opt.onState;
         return (

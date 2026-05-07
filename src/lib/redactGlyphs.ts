@@ -33,6 +33,7 @@
 import { PDFArray, PDFContext, PDFDict, PDFName, PDFNumber, PDFRef } from "pdf-lib";
 import type { ContentOp, ContentToken } from "./contentStream";
 import { rectsOverlap, type PdfRect } from "./pdfGeometry";
+import { walkTextShows, type PdfTextState, type TextShowSegment } from "./pdfTextWalker";
 
 export type FontMetrics = {
   /** 1 for simple fonts (Type1/TrueType/MMType1); 2 for /Identity-H
@@ -187,56 +188,6 @@ function decodeGlyphs(bytes: Uint8Array, m: FontMetrics): DecodedGlyph[] {
   return out;
 }
 
-type TextState = {
-  /** Text matrix [a b c d e f]. */
-  tm: [number, number, number, number, number, number];
-  /** Text line matrix — Td / TD / T* update this. */
-  tlm: [number, number, number, number, number, number];
-  fontName: string | null;
-  fontSize: number;
-  /** Char spacing (Tc), word spacing (Tw), horizontal scaling (Th).
-   *  Th defaults to 1.0 (100%); the Tz operator sets it as a percent. */
-  Tc: number;
-  Tw: number;
-  Th: number;
-  TL: number;
-};
-
-function freshState(): TextState {
-  return {
-    tm: [1, 0, 0, 1, 0, 0],
-    tlm: [1, 0, 0, 1, 0, 0],
-    fontName: null,
-    fontSize: 0,
-    Tc: 0,
-    Tw: 0,
-    Th: 1,
-    TL: 0,
-  };
-}
-
-function cloneState(s: TextState): TextState {
-  return {
-    tm: [...s.tm] as TextState["tm"],
-    tlm: [...s.tlm] as TextState["tlm"],
-    fontName: s.fontName,
-    fontSize: s.fontSize,
-    Tc: s.Tc,
-    Tw: s.Tw,
-    Th: s.Th,
-    TL: s.TL,
-  };
-}
-
-/** Apply Td-style translation to tlm and reset tm. */
-function applyTd(s: TextState, tx: number, ty: number): void {
-  const [a, b, c, d, e, f] = s.tlm;
-  const ne = tx * a + ty * c + e;
-  const nf = tx * b + ty * d + f;
-  s.tlm = [a, b, c, d, ne, nf];
-  s.tm = [...s.tlm];
-}
-
 /** Compute the AABB of the four world-space corners of a text-space
  *  rect (x0..x1) × (0..fontSize) under text matrix Tm. The text-space
  *  height is the font size — a conservative envelope (the actual
@@ -245,7 +196,7 @@ function applyTd(s: TextState, tx: number, ty: number): void {
  *  underestimated bbox could leave a glyph un-redacted that's
  *  visually under the rect. */
 function bboxFromTextSpaceRect(
-  tm: TextState["tm"],
+  tm: PdfTextState["tm"],
   x0: number,
   x1: number,
   fontSize: number,
@@ -297,90 +248,10 @@ export function planRedactionStrip(
   };
 
   const plans: OpStripPlan[] = [];
-  let s = freshState();
-  const stack: TextState[] = [];
-
-  for (let i = 0; i < ops.length; i++) {
-    const o = ops[i];
-    switch (o.op) {
-      case "q":
-        stack.push(cloneState(s));
-        break;
-      case "Q": {
-        const popped = stack.pop();
-        if (popped) s = popped;
-        break;
-      }
-      case "BT":
-        s.tm = [1, 0, 0, 1, 0, 0];
-        s.tlm = [1, 0, 0, 1, 0, 0];
-        break;
-      case "Tf": {
-        const [name, size] = o.operands;
-        if (name?.kind === "name") s.fontName = name.value;
-        if (size?.kind === "number") s.fontSize = size.value;
-        break;
-      }
-      case "Tc":
-        if (o.operands[0]?.kind === "number") s.Tc = o.operands[0].value;
-        break;
-      case "Tw":
-        if (o.operands[0]?.kind === "number") s.Tw = o.operands[0].value;
-        break;
-      case "Tz":
-        if (o.operands[0]?.kind === "number") s.Th = o.operands[0].value / 100;
-        break;
-      case "TL":
-        if (o.operands[0]?.kind === "number") s.TL = o.operands[0].value;
-        break;
-      case "Tm": {
-        if (o.operands.length === 6 && o.operands.every((x) => x.kind === "number")) {
-          s.tm = o.operands.map((x) => (x as { value: number }).value) as TextState["tm"];
-          s.tlm = [...s.tm];
-        }
-        break;
-      }
-      case "Td":
-      case "TD": {
-        if (
-          o.operands.length === 2 &&
-          o.operands[0].kind === "number" &&
-          o.operands[1].kind === "number"
-        ) {
-          const tx = o.operands[0].value;
-          const ty = o.operands[1].value;
-          if (o.op === "TD") s.TL = -ty;
-          applyTd(s, tx, ty);
-        }
-        break;
-      }
-      case "T*":
-        applyTd(s, 0, -s.TL);
-        break;
-      case "'": // move to next line + show
-      case '"': // set Tw + Tc + move to next line + show
-      case "Tj":
-      case "TJ": {
-        // Apostrophe-quote operators move to next line first. We
-        // approximate that by applying T*-like translation, then
-        // process the show as a normal Tj. (The double-quote also
-        // sets Tw and Tc as its first two operands; we update those
-        // before consuming the string operand.)
-        let stringOperandIndex = 0;
-        if (o.op === "'") {
-          applyTd(s, 0, -s.TL);
-        } else if (o.op === '"') {
-          if (o.operands[0]?.kind === "number") s.Tw = o.operands[0].value;
-          if (o.operands[1]?.kind === "number") s.Tc = o.operands[1].value;
-          applyTd(s, 0, -s.TL);
-          stringOperandIndex = 2;
-        }
-        const plan = processShowOp(o, i, s, getMetrics, redactions, stringOperandIndex);
-        if (plan) plans.push(plan);
-        break;
-      }
-    }
-  }
+  walkTextShows(ops, ({ opIndex, state, segments }) => {
+    const plan = processShowOp(opIndex, state, getMetrics, redactions, segments);
+    if (plan) plans.push(plan);
+  });
   return plans;
 }
 
@@ -391,40 +262,16 @@ export function planRedactionStrip(
  *  update Tm here (the surrounding loop doesn't need post-show Tm
  *  for redaction planning). */
 function processShowOp(
-  op: ContentOp,
   opIndex: number,
-  s: TextState,
+  s: PdfTextState,
   getMetrics: (name: string) => FontMetrics | null,
   redactions: Rect[],
-  stringOperandIndex: number,
+  segments: TextShowSegment[] | null,
 ): OpStripPlan | null {
   if (!s.fontName || s.fontSize <= 0) return { kind: "unsupported", opIndex };
   const metrics = getMetrics(s.fontName);
   if (!metrics) return { kind: "unsupported", opIndex };
-
-  // Normalize Tj / ' / " into a TJ-shape "segments" list so the
-  // walker has one code path.
-  type Seg = { kind: "string"; bytes: Uint8Array } | { kind: "spacer"; value: number };
-  const segments: Seg[] = [];
-  if (op.op === "TJ") {
-    const arr = op.operands[0];
-    if (arr?.kind !== "array") return { kind: "unsupported", opIndex };
-    for (const item of arr.items) {
-      if (item.kind === "literal-string" || item.kind === "hex-string") {
-        segments.push({ kind: "string", bytes: item.bytes });
-      } else if (item.kind === "number") {
-        segments.push({ kind: "spacer", value: item.value });
-      } else {
-        return { kind: "unsupported", opIndex };
-      }
-    }
-  } else {
-    const str = op.operands[stringOperandIndex];
-    if (!str || (str.kind !== "literal-string" && str.kind !== "hex-string")) {
-      return { kind: "unsupported", opIndex };
-    }
-    segments.push({ kind: "string", bytes: str.bytes });
-  }
+  if (!segments) return { kind: "unsupported", opIndex };
 
   // Walk every glyph; track text-space x; AABB-test against each
   // redaction rect.

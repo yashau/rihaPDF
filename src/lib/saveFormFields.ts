@@ -30,12 +30,18 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
-  PDFObject,
   PDFRef,
   PDFString,
 } from "pdf-lib";
 import type { FormValue } from "./formFields";
 import { isRtlScript } from "./fonts";
+import {
+  collectWidgetDicts,
+  discoverWidgetOnState,
+  inheritedOwner,
+  isFieldKid,
+  partialFieldName,
+} from "./pdfFormTree";
 import {
   encodePdfTextString,
   makeAcroFormFontSetup,
@@ -65,47 +71,11 @@ function encodeFieldString(s: string): PDFString | PDFHexString {
   return encodePdfTextString(s);
 }
 
-/** Walk /Parent until we find a node that has `key` directly. /FT,
- *  /Ff, /DA are inheritable per spec — same helper as in formFields.ts
- *  but kept private here because the save pipeline only needs it for
- *  /FT lookup at write time. */
-function inherited(dict: PDFDict, key: PDFName): PDFDict | undefined {
-  let node: PDFDict | null = dict;
-  while (node) {
-    if (node.lookup(key) !== undefined) return node;
-    const parent: PDFObject | undefined = node.lookup(PDFName.of("Parent"));
-    node = parent instanceof PDFDict ? parent : null;
-  }
-  return undefined;
-}
-
 function readFt(dict: PDFDict): string {
-  const owner = inherited(dict, PDFName.of("FT"));
+  const owner = inheritedOwner(dict, PDFName.of("FT"));
   const ft = owner?.lookup(PDFName.of("FT"));
   if (ft instanceof PDFName) return ft.asString().replace(/^\//, "");
   return "";
-}
-
-/** Decode a /T entry without touching the inheritance chain (each
- *  level contributes its OWN partial name to the fully-qualified
- *  name). */
-function partialName(dict: PDFDict): string | null {
-  const t = dict.lookup(PDFName.of("T"));
-  if (t instanceof PDFString || t instanceof PDFHexString) return t.decodeText();
-  return null;
-}
-
-/** True iff a kid is itself a terminal field (matches the rule in
- *  formFields.ts so we walk the same field tree on save). */
-function isFieldKid(dict: PDFDict): boolean {
-  if (dict.lookup(PDFName.of("T")) !== undefined) return true;
-  const kids = dict.lookup(PDFName.of("Kids"));
-  if (!(kids instanceof PDFArray)) return false;
-  for (let i = 0; i < kids.size(); i++) {
-    const kid = kids.lookup(i);
-    if (kid instanceof PDFDict && isFieldKid(kid)) return true;
-  }
-  return false;
 }
 
 /** Resolve a target field by fully-qualified name. Returns null when
@@ -121,7 +91,7 @@ function findFieldByName(catalog: PDFDict, fullName: string): PDFDict | null {
   const parts = fullName.split(".");
 
   function walk(dict: PDFDict, idx: number): PDFDict | null {
-    const partial = partialName(dict);
+    const partial = partialFieldName(dict);
     let nextIdx = idx;
     if (partial !== null) {
       if (partial !== parts[idx]) return null;
@@ -147,29 +117,6 @@ function findFieldByName(catalog: PDFDict, fullName: string): PDFDict | null {
     if (found) return found;
   }
   return null;
-}
-
-/** Collect every widget annotation owned by `field`. Mirrors the
- *  formFields.ts collector so the save pass operates on the same set
- *  the extractor surfaced to the UI. */
-function collectFieldWidgets(field: PDFDict): PDFDict[] {
-  const subtype = field.lookup(PDFName.of("Subtype"));
-  if (subtype instanceof PDFName && subtype.asString() === "/Widget") {
-    return [field];
-  }
-  const out: PDFDict[] = [];
-  const kids = field.lookup(PDFName.of("Kids"));
-  if (!(kids instanceof PDFArray)) return out;
-  for (let i = 0; i < kids.size(); i++) {
-    const kid = kids.lookup(i);
-    if (!(kid instanceof PDFDict)) continue;
-    // Skip nested fields (those have their own /T) — only widgets.
-    if (kid.lookup(PDFName.of("T")) !== undefined) continue;
-    const kidSubtype = kid.lookup(PDFName.of("Subtype"));
-    if (kidSubtype instanceof PDFName && kidSubtype.asString() !== "/Widget") continue;
-    out.push(kid);
-  }
-  return out;
 }
 
 /** Set /NeedAppearances true on the AcroForm dict so viewers regenerate
@@ -222,7 +169,7 @@ function rewriteDaFont(da: string | null, alias: string, fallbackSize: number): 
 }
 
 function readDa(field: PDFDict): string | null {
-  const owner = inherited(field, PDFName.of("DA"));
+  const owner = inheritedOwner(field, PDFName.of("DA"));
   const da = owner?.lookup(PDFName.of("DA"));
   if (da instanceof PDFString || da instanceof PDFHexString) return da.decodeText();
   return null;
@@ -242,7 +189,7 @@ async function writeTextField(
   acroFormSetup: AcroFormSetup,
 ): Promise<void> {
   field.set(PDFName.of("V"), encodeFieldString(value));
-  const widgets = collectFieldWidgets(field);
+  const widgets = collectWidgetDicts(field);
   // Right-align RTL text so /DA-driven regen produces the correct
   // visual layout for Thaana even when the box is wider than the
   // shaped run. /Q 2 = right-aligned; 0 = left.
@@ -260,14 +207,14 @@ async function writeTextField(
   // in which case it's already in the widgets list above.
   for (const widget of widgets) stripWidgetAppearance(widget);
   // When the field IS the widget but no kids were collected (single-
-  // widget Tx), strip on the field too. collectFieldWidgets already
+  // widget Tx), strip on the field too. collectWidgetDicts already
   // returns [field] in that case, so the loop covers it.
 }
 
 function writeCheckboxField(field: PDFDict, checked: boolean, onState: string): void {
   const stateName = checked ? onState : "Off";
   field.set(PDFName.of("V"), PDFName.of(stateName));
-  const widgets = collectFieldWidgets(field);
+  const widgets = collectWidgetDicts(field);
   for (const widget of widgets) {
     widget.set(PDFName.of("AS"), PDFName.of(stateName));
   }
@@ -275,26 +222,13 @@ function writeCheckboxField(field: PDFDict, checked: boolean, onState: string): 
 
 function writeRadioField(field: PDFDict, chosen: string | null): void {
   field.set(PDFName.of("V"), PDFName.of(chosen ?? "Off"));
-  const widgets = collectFieldWidgets(field);
+  const widgets = collectWidgetDicts(field);
   for (const widget of widgets) {
     // The widget's on-state comes from its /AP /N keys; pick whichever
     // entry isn't /Off. If the chosen on-state matches THIS widget's
     // on-state, set /AS to that name; otherwise /Off so only one kid
     // appears selected.
-    const ap = widget.lookup(PDFName.of("AP"));
-    let widgetOnState: string | null = null;
-    if (ap instanceof PDFDict) {
-      const n = ap.lookup(PDFName.of("N"));
-      if (n instanceof PDFDict) {
-        for (const [key] of n.entries()) {
-          const name = key.asString().replace(/^\//, "");
-          if (name && name !== "Off") {
-            widgetOnState = name;
-            break;
-          }
-        }
-      }
-    }
+    const widgetOnState = discoverWidgetOnState(widget);
     if (chosen !== null && widgetOnState === chosen) {
       widget.set(PDFName.of("AS"), PDFName.of(chosen));
     } else {
@@ -335,7 +269,7 @@ function writeChoiceField(field: PDFDict, chosen: string[]): void {
     }
   }
   // Strip any pre-baked /AP on widgets — viewer regen rebuilds it.
-  for (const widget of collectFieldWidgets(field)) stripWidgetAppearance(widget);
+  for (const widget of collectWidgetDicts(field)) stripWidgetAppearance(widget);
 }
 
 /** Walk every output page's `/Annots`, collect widget annotations, and
@@ -453,20 +387,10 @@ export async function applyFormFillsToDoc(
       // on-state. We re-discover it here rather than threading it
       // through the fill payload — the extractor already filtered out
       // pushbutton fields, so the first widget always has one.
-      const widgets = collectFieldWidgets(field);
+      const widgets = collectWidgetDicts(field);
       let onState = "Yes";
       for (const widget of widgets) {
-        const ap = widget.lookup(PDFName.of("AP"));
-        if (!(ap instanceof PDFDict)) continue;
-        const n = ap.lookup(PDFName.of("N"));
-        if (!(n instanceof PDFDict)) continue;
-        for (const [key] of n.entries()) {
-          const name = key.asString().replace(/^\//, "");
-          if (name && name !== "Off") {
-            onState = name;
-            break;
-          }
-        }
+        onState = discoverWidgetOnState(widget) ?? onState;
         break;
       }
       writeCheckboxField(field, value.checked, onState);

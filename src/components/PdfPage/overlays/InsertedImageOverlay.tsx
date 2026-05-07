@@ -2,9 +2,15 @@ import { useMemo } from "react";
 import type { RenderedPage } from "../../../lib/pdf";
 import type { ImageInsertion } from "../../../lib/insertions";
 import { useDragGesture } from "../../../lib/useDragGesture";
+import {
+  pdfRectToViewportRect,
+  resizePdfRectFromCorner,
+  screenDeltaToPdf,
+  type ResizeCorner,
+} from "../geometry";
 import { findPageAtPoint } from "../helpers";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
-import { ResizeHandle } from "./ResizeHandle";
+import { ResizeHandles } from "./ResizeHandle";
 
 /** Net-new image the user dropped onto the page. Drag to move; double-
  *  click to delete. The bytes ride along in state until save embeds
@@ -48,10 +54,12 @@ export function InsertedImageOverlay({
     return `data:image/${ins.format};base64,${btoa(s)}`;
   }, [ins.bytes, ins.format]);
 
-  const left = ins.pdfX * page.scale;
-  const top = page.viewHeight - (ins.pdfY + ins.pdfHeight) * page.scale;
-  const w = ins.pdfWidth * page.scale;
-  const h = ins.pdfHeight * page.scale;
+  const {
+    left,
+    top,
+    width: w,
+    height: h,
+  } = pdfRectToViewportRect(ins, page.scale, page.viewHeight);
 
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
@@ -101,7 +109,7 @@ export function InsertedImageOverlay({
   // Each handle anchors the OPPOSITE corner so the box grows/shrinks
   // toward the dragged corner.
   type InsImageResizeCtx = {
-    corner: "tl" | "tr" | "bl" | "br";
+    corner: ResizeCorner;
     base: { x: number; y: number; w: number; h: number };
   };
   const MIN_PDF = 10;
@@ -109,38 +117,12 @@ export function InsertedImageOverlay({
     touchActivation: "immediate",
     onMove: (ctx, info) => {
       const { corner, base } = ctx;
-      const dxPdf = info.dxRaw / effectivePdfScale;
-      // Viewport y is y-down, PDF is y-up — drag DOWN means -dyPdf.
-      const dyPdf = -info.dyRaw / effectivePdfScale;
-      let { x, y } = base;
-      let nw = base.w;
-      let nh = base.h;
-      switch (corner) {
-        case "br": // anchor TL: x stays, y+h stays
-          nw = Math.max(MIN_PDF, base.w + dxPdf);
-          nh = Math.max(MIN_PDF, base.h - dyPdf);
-          y = base.y + base.h - nh;
-          break;
-        case "tr": // anchor BL: x stays, y stays
-          nw = Math.max(MIN_PDF, base.w + dxPdf);
-          nh = Math.max(MIN_PDF, base.h + dyPdf);
-          break;
-        case "tl": // anchor BR: x+w stays, y stays
-          nw = Math.max(MIN_PDF, base.w - dxPdf);
-          nh = Math.max(MIN_PDF, base.h + dyPdf);
-          x = base.x + base.w - nw;
-          break;
-        case "bl": // anchor TR: x+w stays, y+h stays
-          nw = Math.max(MIN_PDF, base.w - dxPdf);
-          nh = Math.max(MIN_PDF, base.h - dyPdf);
-          x = base.x + base.w - nw;
-          y = base.y + base.h - nh;
-          break;
-      }
-      onChange({ pdfX: x, pdfY: y, pdfWidth: nw, pdfHeight: nh });
+      const { dxPdf, dyPdf } = screenDeltaToPdf(info.dxRaw, info.dyRaw, effectivePdfScale);
+      const next = resizePdfRectFromCorner(base, corner, dxPdf, dyPdf, MIN_PDF);
+      onChange({ pdfX: next.x, pdfY: next.y, pdfWidth: next.w, pdfHeight: next.h });
     },
   });
-  const startResize = (corner: "tl" | "tr" | "bl" | "br") => (e: React.PointerEvent) => {
+  const startResize = (corner: ResizeCorner) => (e: React.PointerEvent) => {
     beginInsImageResize(e, {
       corner,
       base: { x: ins.pdfX, y: ins.pdfY, w: ins.pdfWidth, h: ins.pdfHeight },
@@ -198,14 +180,7 @@ export function InsertedImageOverlay({
           }
         }}
       >
-        {isSelected ? (
-          <>
-            <ResizeHandle position="tl" parentW={w} parentH={h} onPointerDown={startResize("tl")} />
-            <ResizeHandle position="tr" parentW={w} parentH={h} onPointerDown={startResize("tr")} />
-            <ResizeHandle position="bl" parentW={w} parentH={h} onPointerDown={startResize("bl")} />
-            <ResizeHandle position="br" parentW={w} parentH={h} onPointerDown={startResize("br")} />
-          </>
-        ) : null}
+        {isSelected ? <ResizeHandles parentW={w} parentH={h} onPointerDown={startResize} /> : null}
       </div>
       {renderPortal({
         backgroundImage: `url(${dataUrl})`,

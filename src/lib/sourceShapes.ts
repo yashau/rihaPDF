@@ -26,6 +26,13 @@
 import { PDFDocument } from "pdf-lib";
 import { parseContentStream, type ContentOp } from "./contentStream";
 import { getPageContentBytes } from "./pageContent";
+import {
+  includePathConstructionPoints,
+  readNumberOperands,
+  VECTOR_CLIP_OPS,
+  VECTOR_PAINT_OPS,
+  VECTOR_PATH_END_OPS,
+} from "./pdfPathOps";
 import { IDENTITY_MATRIX, mulCm, transformPoint, type Mat6 } from "./pdfGeometry";
 
 export type ShapeInstance = {
@@ -56,19 +63,6 @@ export async function extractPageShapes(pdfBytes: ArrayBuffer): Promise<PageShap
     const bytes = getPageContentBytes(doc.context, page.node);
     const ops = parseContentStream(bytes);
     out.push(findShapesInOps(ops, pi + 1));
-  }
-  return out;
-}
-
-const PAINT_OPS = new Set(["S", "s", "f", "F", "f*", "B", "B*", "b", "b*"]);
-const PATH_END_OPS = new Set([...PAINT_OPS, "n"]);
-const CLIP_OPS = new Set(["W", "W*"]);
-
-function readNumberOperands(op: ContentOp): number[] | null {
-  const out: number[] = [];
-  for (const t of op.operands) {
-    if (t.kind !== "number") return null;
-    out.push(t.value);
   }
   return out;
 }
@@ -269,51 +263,27 @@ function findShapesInOps(ops: ContentOp[], pageNumber: number): ShapeInstance[] 
         break;
 
       case "m":
-      case "l": {
-        const nums = readNumberOperands(o);
-        if (nums && nums.length === 2) includePoint(nums[0], nums[1]);
-        break;
-      }
-      case "c": {
-        const nums = readNumberOperands(o);
-        if (nums && nums.length === 6) {
-          includePoint(nums[0], nums[1]);
-          includePoint(nums[2], nums[3]);
-          includePoint(nums[4], nums[5]);
-        }
-        break;
-      }
+      case "l":
+      case "c":
       case "v":
-      case "y": {
-        const nums = readNumberOperands(o);
-        if (nums && nums.length === 4) {
-          includePoint(nums[0], nums[1]);
-          includePoint(nums[2], nums[3]);
-        }
-        break;
-      }
+      case "y":
       case "re": {
-        const nums = readNumberOperands(o);
-        if (nums && nums.length === 4) {
-          const [x, y, w, h] = nums;
-          includePoint(x, y);
-          includePoint(x + w, y + h);
-        }
+        includePathConstructionPoints(o, includePoint);
         break;
       }
 
       default:
-        if (top && PATH_END_OPS.has(o.op)) {
+        if (top && VECTOR_PATH_END_OPS.has(o.op)) {
           // Path is ending. If the end is a paint op, merge the
           // current path's bbox into the block's painted bbox; if it's
           // `n`, drop it (clip-only path that contributes no fill /
           // stroke). Either way, reset the per-path accumulator.
-          if (PAINT_OPS.has(o.op)) {
+          if (VECTOR_PAINT_OPS.has(o.op)) {
             mergeCurIntoPainted(top);
             top.hasPaint = true;
           }
           resetCurPath(top);
-        } else if (top && CLIP_OPS.has(o.op)) {
+        } else if (top && VECTOR_CLIP_OPS.has(o.op)) {
           // Clip op (W / W*) modifies the clipping path but does not
           // end the path or paint. The next op is typically `n` —
           // handled above. We don't need to do anything here.

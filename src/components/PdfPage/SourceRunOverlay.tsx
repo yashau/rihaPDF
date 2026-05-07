@@ -103,6 +103,31 @@ export function SourceRunOverlay({
   // content where the user wants it.
   const padX = 2;
   const padY = 2;
+  const activateRun = (nextInitialCaretPoint?: InitialCaretPoint) => {
+    if (tool === "highlight") {
+      addHighlightForRun(run);
+      return;
+    }
+    if (tool === "redact") {
+      addRedactionForRun(run);
+      return;
+    }
+    onEditingChange(run.id, nextInitialCaretPoint);
+  };
+  const handleOverlayClick = (
+    e: React.MouseEvent<HTMLElement>,
+    nextInitialCaretPoint?: InitialCaretPoint,
+  ) => {
+    e.stopPropagation();
+    if (drag || justDraggedRef.current === run.id) return;
+    activateRun(nextInitialCaretPoint);
+  };
+  const handleOverlayKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    activateRun();
+  };
 
   if (isEditing) {
     return (
@@ -212,33 +237,9 @@ export function SourceRunOverlay({
           onEditingChange(run.id);
         }}
         onClick={(e) => {
-          e.stopPropagation();
-          if (drag || justDraggedRef.current === run.id) return;
-          if (tool === "highlight") {
-            addHighlightForRun(run);
-            return;
-          }
-          if (tool === "redact") {
-            addRedactionForRun(run);
-            return;
-          }
-          onEditingChange(run.id, { clientX: e.clientX, clientY: e.clientY });
+          handleOverlayClick(e, { clientX: e.clientX, clientY: e.clientY });
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            e.stopPropagation();
-            if (tool === "highlight") {
-              addHighlightForRun(run);
-              return;
-            }
-            if (tool === "redact") {
-              addRedactionForRun(run);
-              return;
-            }
-            onEditingChange(run.id);
-          }
-        }}
+        onKeyDown={handleOverlayKeyDown}
       >
         <span
           dir={style.dir ?? "auto"}
@@ -315,37 +316,13 @@ export function SourceRunOverlay({
         onEditingChange(run.id);
       }}
       onClick={(e) => {
-        e.stopPropagation();
-        if (drag || justDraggedRef.current === run.id) return;
-        if (tool === "highlight") {
-          addHighlightForRun(run);
-          return;
-        }
-        if (tool === "redact") {
-          addRedactionForRun(run);
-          return;
-        }
-        onEditingChange(run.id, {
+        handleOverlayClick(e, {
           clientX: e.clientX,
           clientY: e.clientY,
           caretOffset: sourceCaretOffsetFromClick(run, page, e),
         });
       }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          e.stopPropagation();
-          if (tool === "highlight") {
-            addHighlightForRun(run);
-            return;
-          }
-          if (tool === "redact") {
-            addRedactionForRun(run);
-            return;
-          }
-          onEditingChange(run.id);
-        }
-      }}
+      onKeyDown={handleOverlayKeyDown}
     >
       {run.text}
     </span>
