@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-110%20e2e-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-110%20e2e%20%2B%204%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -124,7 +124,7 @@ pnpm build          # tsc + vite build → dist/
 pnpm check          # tsc -b && oxfmt --check && oxlint  (CI gate)
 pnpm lint           # oxlint over src/test/config entry points
 pnpm format         # oxfmt
-pnpm test           # vitest E2E suite (needs dev server up)
+pnpm test           # vitest unit + E2E suite (E2E needs dev server up)
 pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
 pnpm cf:config      # generate wrangler.jsonc from env vars
 pnpm cf:dev         # wrangler dev — local Workers preview of dist/
@@ -161,14 +161,14 @@ The About modal (`?` in the header) has a **Show browser diagnostics** toggle th
 
 ## Tests
 
-E2E vitest suite under [test/e2e/](test/e2e/) drives the dev server through Playwright:
+Vitest runs focused unit tests under [test/unit/](test/unit/) and the E2E suite under [test/e2e/](test/e2e/). E2E tests drive the dev server through Playwright:
 
 ```bash
 pnpm dev          # one terminal
 pnpm test         # another
 ```
 
-The detailed E2E coverage inventory and current test count live in [test/e2e/README.md](test/e2e/README.md).
+The detailed E2E coverage inventory and current E2E test count live in [test/e2e/README.md](test/e2e/README.md). Unit coverage currently locks down low-level rectangle overlap and PDF `/Rect` normalization used by redaction/form code.
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 

@@ -1,11 +1,7 @@
-export type Mat6 = [number, number, number, number, number, number];
+export type { PdfRect } from "@/domain/geometry";
+export { rectsOverlap } from "@/domain/geometry";
 
-export type PdfRect = {
-  pdfX: number;
-  pdfY: number;
-  pdfWidth: number;
-  pdfHeight: number;
-};
+export type Mat6 = [number, number, number, number, number, number];
 
 export const IDENTITY_MATRIX: Mat6 = [1, 0, 0, 1, 0, 0];
 
@@ -23,12 +19,4 @@ export function mulCm(a: Mat6, b: Mat6): Mat6 {
 
 export function transformPoint(m: Mat6, x: number, y: number): [number, number] {
   return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-}
-
-export function rectsOverlap(a: PdfRect, b: PdfRect): boolean {
-  const ax2 = a.pdfX + a.pdfWidth;
-  const ay2 = a.pdfY + a.pdfHeight;
-  const bx2 = b.pdfX + b.pdfWidth;
-  const by2 = b.pdfY + b.pdfHeight;
-  return a.pdfX < bx2 && ax2 > b.pdfX && a.pdfY < by2 && ay2 > b.pdfY;
 }

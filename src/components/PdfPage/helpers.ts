@@ -1,4 +1,4 @@
-import type { EditStyle } from "@/pdf/save";
+import type { EditStyle } from "@/domain/editStyle";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 
 type CaretPositionDocument = Document & {

@@ -8,7 +8,7 @@
 // matching how source-extracted ImageInstance + TextRun store theirs.
 // PdfPage converts to viewport space when rendering.
 
-import type { EditStyle } from "@/pdf/save";
+import type { EditStyle } from "@/domain/editStyle";
 
 export type TextInsertion = {
   /** Stable id for state plumbing: "p<pageNumber>-t<index>". */

@@ -1,4 +1,4 @@
-import type { PdfRect } from "@/pdf/geometry/pdfGeometry";
+import type { PdfRect } from "@/domain/geometry";
 
 export type ViewportRect = {
   left: number;

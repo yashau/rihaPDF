@@ -10,7 +10,7 @@ import {
 } from "pdf-lib";
 import { annotationBBox, type Annotation, type HighlightAnnotation } from "@/domain/annotations";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
-import type { PdfRect } from "@/pdf/geometry/pdfGeometry";
+import type { PdfRect } from "@/domain/geometry";
 
 const EPS = 1e-6;
 

@@ -32,7 +32,7 @@
 
 import { PDFArray, PDFContext, PDFDict, PDFName, PDFNumber, PDFRef } from "pdf-lib";
 import type { ContentOp, ContentToken } from "@/pdf/content/contentStream";
-import { rectsOverlap, type PdfRect } from "@/pdf/geometry/pdfGeometry";
+import { rectsOverlap, type PdfRect } from "@/domain/geometry";
 import {
   walkTextShows,
   type PdfTextState,
