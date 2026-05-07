@@ -232,10 +232,6 @@ export function InsertedTextOverlay({
             // it directly on the insertion, no scale conversion.
             updateStyle(patch);
           }}
-          onDelete={() => {
-            onDelete();
-            onClose();
-          }}
         />
       ) : null}
       <div
@@ -379,7 +375,7 @@ export function InsertedTextOverlay({
         )}
         {isEditing ? (
           <OverlayDeleteButton
-            aria-label="Delete inserted text"
+            aria-label="Delete text"
             onDelete={() => {
               onDelete();
               onClose();

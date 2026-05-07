@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 
 export function OverlayDeleteButton({
@@ -11,6 +12,8 @@ export function OverlayDeleteButton({
   positionClassName?: string;
   style?: React.CSSProperties;
 }) {
+  const deletedOnPointerDownRef = useRef(false);
+
   return (
     <button
       type="button"
@@ -21,10 +24,16 @@ export function OverlayDeleteButton({
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        deletedOnPointerDownRef.current = true;
+        onDelete();
       }}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (deletedOnPointerDownRef.current) {
+          deletedOnPointerDownRef.current = false;
+          return;
+        }
         onDelete();
       }}
     >

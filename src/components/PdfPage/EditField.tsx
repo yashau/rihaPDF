@@ -196,7 +196,6 @@ export function EditField({
             return next;
           })
         }
-        onDelete={onDelete}
       />
       <input
         ref={inputRef}
