@@ -42,7 +42,7 @@ type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
   : never;
 
 const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
-const NUMERIC_MARKER_RE = /(^|\s)([()[\]./-]*\d[\d()[\]./-]*)(?=$|\s)/gu;
+const NUMERIC_MARKER_RE = /(^|\s)([.-]?\d[\d./-]*)(?=$|\s|[()[\]])/gu;
 const LRI = "\u2066";
 const PDI = "\u2069";
 
