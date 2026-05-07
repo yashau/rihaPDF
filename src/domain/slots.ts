@@ -8,12 +8,11 @@
 // reordering.
 //
 // Sources are addressed by `sourceKey`. The primary file uses the
-// sentinel `PRIMARY_SOURCE_KEY` from `loadSource.ts`; externals use
+// sentinel `PRIMARY_SOURCE_KEY` from `sourceKeys.ts`; externals use
 // per-session content keys. Page slots and blanks are the only kinds —
 // what used to be `original` vs `external` collapses into a single
 // `page` kind that carries a sourceKey + page index within that source.
 
-import type { LoadedSource } from "@/pdf/source/loadSource";
 import { PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 
 export type PageSlot =
@@ -40,18 +39,11 @@ export function blankSlot(size: [number, number]): PageSlot {
   return { id: `slot-blank-${Date.now().toString(36)}-${blankCounter}`, kind: "blank", size };
 }
 
-export function slotsFromSource(source: LoadedSource): PageSlot[] {
-  return source.pages.map((_, i) => pageSlot(source.sourceKey, i));
-}
+type SlottedSource = {
+  sourceKey: string;
+  pages: readonly unknown[];
+};
 
-/** Resolve a page slot to the rendered page from its source map. Blanks
- *  return null and must be handled separately by the caller. */
-export function resolvePage(
-  slot: PageSlot,
-  sources: Map<string, LoadedSource>,
-): { source: LoadedSource; pageIndex: number } | null {
-  if (slot.kind !== "page") return null;
-  const source = sources.get(slot.sourceKey);
-  if (!source) return null;
-  return { source, pageIndex: slot.sourcePageIndex };
+export function slotsFromSource(source: SlottedSource): PageSlot[] {
+  return source.pages.map((_, i) => pageSlot(source.sourceKey, i));
 }
