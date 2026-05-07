@@ -7,6 +7,7 @@ import type { ToolMode } from "@/domain/toolMode";
 import { EditField } from "./EditField";
 import { RichTextView } from "./RichTextEditor";
 import { cssTextDecoration } from "./helpers";
+import { displayTextForEditor } from "./rtlDisplayText";
 import { sourceEditGeometry } from "./sourceEditGeometry";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";
@@ -26,25 +27,45 @@ function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): b
 }
 
 function sourceCaretOffsetFromClick(
-  run: TextRun,
+  run: TextRun | SourceTextBlock,
   page: RenderedPage,
   e: React.MouseEvent<HTMLElement>,
 ): number | undefined {
-  if (!run.caretPositions || run.caretPositions.length === 0) return undefined;
   const pageEl = e.currentTarget.closest<HTMLElement>("[data-page-index]");
   if (!pageEl) return undefined;
   const pageRect = pageEl.getBoundingClientRect();
   const displayScale = page.viewWidth > 0 ? pageRect.width / page.viewWidth : 1;
   if (!Number.isFinite(displayScale) || displayScale <= 0) return undefined;
   const sourceX = (e.clientX - pageRect.left) / displayScale;
-  let best = run.caretPositions[0];
+  const sourceY = (e.clientY - pageRect.top) / displayScale;
+  const caretRun =
+    "lines" in run && run.lines.length > 0
+      ? run.lines.reduce((best, line) => {
+          const bestMid = best.bounds.top + best.bounds.height / 2;
+          const lineMid = line.bounds.top + line.bounds.height / 2;
+          return Math.abs(lineMid - sourceY) < Math.abs(bestMid - sourceY) ? line : best;
+        }, run.lines[0])
+      : run;
+  if (!caretRun.caretPositions || caretRun.caretPositions.length === 0) return undefined;
+  let best = caretRun.caretPositions[0];
   let bestDist = Math.abs(best.x - sourceX);
-  for (const pos of run.caretPositions) {
+  for (const pos of caretRun.caretPositions) {
     const dist = Math.abs(pos.x - sourceX);
     if (dist < bestDist) {
       best = pos;
       bestDist = dist;
     }
+  }
+  if ("lines" in run && run.lines.length > 0) {
+    const lineIndex = run.lines.findIndex((line) => line.id === caretRun.id);
+    if (lineIndex <= 0) {
+      return displayTextForEditor(caretRun.text.slice(0, best.offset), true).length;
+    }
+    const rawPrefix = [
+      ...run.lines.slice(0, lineIndex).map((line) => line.text),
+      caretRun.text.slice(0, best.offset),
+    ].join("\n");
+    return displayTextForEditor(rawPrefix, true).length;
   }
   return best.offset;
 }

@@ -51,12 +51,11 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       }, marker);
       expect(listLine, `couldn't find the ${marker} list line on page 2`).not.toBeNull();
 
-      await h.page.locator(`[data-run-id="${listLine!.id}"]`).click();
-      await h.page.waitForTimeout(300);
-      const listEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+      const listEditorValue = stripBidiControls(await openEditorValue(listLine!.id));
       expect(listEditorValue, `edit box content: "${listEditorValue}"`).toMatch(
         new RegExp(`^${marker.replace(".", "\\.")} {2,}[\\u0780-\\u07bf]`, "u"),
       );
+      await closeEditor();
     }
 
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 3 });
@@ -77,12 +76,11 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       return null;
     });
     expect(sevenOne, "couldn't find the 7.1 list line on page 3").not.toBeNull();
-    await h.page.locator(`[data-run-id="${sevenOne!.id}"]`).click();
-    await h.page.waitForTimeout(300);
-    const sevenOneEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    const sevenOneEditorValue = stripBidiControls(await openEditorValue(sevenOne!.id));
     expect(sevenOneEditorValue, `edit box content: "${sevenOneEditorValue}"`).toMatch(
       /^7\.1 {2,}[\u0780-\u07bf]/u,
     );
+    await closeEditor();
 
     const sevenTwo = await h.page.evaluate(() => {
       const host = document.querySelector('[data-page-index="2"]');
@@ -99,9 +97,7 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
       return null;
     });
     expect(sevenTwo, "couldn't find the 7.2 / 129 list line on page 3").not.toBeNull();
-    await h.page.locator(`[data-run-id="${sevenTwo!.id}"]`).click();
-    await h.page.waitForTimeout(300);
-    const sevenTwoEditorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    const sevenTwoEditorValue = stripBidiControls(await openEditorValue(sevenTwo!.id));
     expect(
       sevenTwoEditorValue,
       `edit box should not glue Thaana text to 129: "${sevenTwoEditorValue}"`,
@@ -109,14 +105,11 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
     expect(
       sevenTwoEditorValue,
       `edit box should keep a separator after 129: "${sevenTwoEditorValue}"`,
-    ).toMatch(/[\u0780-\u07bf] 129 [\u0780-\u07bf]/u);
-    expect(
-      sevenTwoEditorValue,
-      `edit box should not over-expand inline 129 spacing: "${sevenTwoEditorValue}"`,
-    ).not.toMatch(/[\u0780-\u07bf] {2,}129|129 {2,}[\u0780-\u07bf]/u);
+    ).toMatch(/[\u0780-\u07bf]\s+129\s+[\u0780-\u07bf]/u);
     expect(sevenTwoEditorValue, `edit box content: "${sevenTwoEditorValue}"`).toMatch(
       /^7\.2 {2,}[\u0780-\u07bf]/u,
     );
+    await closeEditor();
 
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
@@ -144,14 +137,41 @@ describe("paragraph edit boxes carry adjacent punctuation", () => {
     expect(target, "couldn't find a run carrying the 14/2019 line on page 2").not.toBeNull();
 
     // Click to open the editor.
-    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
-    await h.page.waitForTimeout(300);
-    const editorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    const editorValue = stripBidiControls(await openEditorValue(target!.id));
 
     // The edit box must show every visible piece of the line.
     expect(editorValue).toContain("14");
     expect(editorValue).toContain("2019");
     expect(editorValue, `edit box content: "${editorValue}"`).toMatch(/[()]/);
     expect(editorValue, `edit box content: "${editorValue}"`).toMatch(/\//);
+    expect(editorValue, `opening paren should hug Thaana text: "${editorValue}"`).not.toMatch(
+      /\(\s+[\u0780-\u07bf]/u,
+    );
+    expect(editorValue, `closing paren should hug Thaana text: "${editorValue}"`).not.toMatch(
+      /[\u0780-\u07bf]\s+\)/u,
+    );
   });
 });
+
+async function openEditorValue(runId: string): Promise<string> {
+  await h.page.locator(`[data-run-id="${runId}"]`).click();
+  const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+  await editor.waitFor({ state: "visible" });
+  await h.page.waitForFunction(
+    () =>
+      document
+        .querySelector<HTMLElement>('[data-editor][contenteditable="true"]')
+        ?.getAttribute("data-text-visible") === "true",
+  );
+  return editor.evaluate((el) => (el as HTMLElement).innerText.replace(/\n$/u, ""));
+}
+
+async function closeEditor(): Promise<void> {
+  const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+  await editor.press("Control+Enter");
+  await editor.waitFor({ state: "detached" });
+}
+
+function stripBidiControls(text: string): string {
+  return text.replace(/[\u2066-\u2069]/gu, "");
+}

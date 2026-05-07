@@ -61,8 +61,17 @@ describe("paragraph edit boxes carry adjacent punctuation (maldivian2)", () => {
     ).not.toBeNull();
 
     await h.page.locator(`[data-run-id="${target!.id}"]`).click();
-    await h.page.waitForTimeout(300);
-    const editorValue = await h.page.locator("input[data-editor]").first().inputValue();
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await editor.waitFor({ state: "visible" });
+    await h.page.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLElement>('[data-editor][contenteditable="true"]')
+          ?.getAttribute("data-text-visible") === "true",
+    );
+    const editorValue = await editor.evaluate((el) =>
+      (el as HTMLElement).innerText.replace(/\n$/u, ""),
+    );
 
     expect(editorValue, `edit box content: "${editorValue}"`).toContain("https");
     expect(editorValue, `edit box content: "${editorValue}"`).toContain("forms.office.com");

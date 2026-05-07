@@ -76,6 +76,7 @@ describe("source paragraph WYSIWYG", () => {
     const target = await findParagraphRun(h.page, marker);
     expect(target, `couldn't find paragraph run for ${marker}`).not.toBeNull();
 
+    const source = await capturePageShot(h.page, PAGE_INDEX);
     await h.page.locator(`[data-run-id="${target!.id}"]`).click();
     const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
     await editor.waitFor({ state: "visible" });
@@ -86,6 +87,17 @@ describe("source paragraph WYSIWYG", () => {
           ?.getAttribute("data-text-visible") === "true",
     );
 
+    const clip = await editorClip(h.page);
+    const activeBeforeEdit = await capturePageShot(h.page, PAGE_INDEX);
+    const sourceVsActive = await compareInkGeometry(h.page, source, activeBeforeEdit, clip, {
+      label: `${marker} source render vs active editor before edit`,
+      maxEdgeDelta: 8,
+      maxCentroidDelta: 12,
+      maxInkRatioDelta: 0.15,
+    });
+    expect(sourceVsActive.ok, sourceVsActive.message).toBe(true);
+
+    await h.page.keyboard.press("Control+End");
     await h.page.keyboard.insertText(THAANA_PROBE);
     await h.page.waitForFunction((probes) => {
       const text =
@@ -94,7 +106,6 @@ describe("source paragraph WYSIWYG", () => {
       return text.includes(probes);
     }, THAANA_PROBE);
 
-    const clip = await editorClip(h.page);
     const active = await capturePageShot(h.page, PAGE_INDEX);
 
     await editor.press("Control+Enter");
