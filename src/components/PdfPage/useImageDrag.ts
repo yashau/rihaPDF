@@ -3,8 +3,9 @@ import { useState } from "react";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { ImageInstance } from "@/pdf/source/sourceImages";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
+import type { ImageMoveValue } from "@/domain/editState";
 import { cropCanvasToDataUrl, findPageAtPoint } from "./helpers";
-import type { ImageMoveValue, ResizeCorner } from "./types";
+import type { ResizeCorner } from "./types";
 
 /** Live state for an image drag in progress. Same body-portal preview
  *  pattern as the run drag state, plus a `corner` field that's null

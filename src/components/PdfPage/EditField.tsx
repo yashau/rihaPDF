@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { colorToCss } from "@/domain/color";
+import type { EditValue } from "@/domain/editState";
 import type { TextRun } from "@/pdf/render/pdf";
 import type { EditStyle } from "@/domain/editStyle";
 import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
@@ -13,7 +14,7 @@ import {
   hasStyle,
   isFocusMovingToToolbar,
 } from "./helpers";
-import type { EditValue, InitialCaretPoint, ToolbarBlocker } from "./types";
+import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 

@@ -1,5 +1,11 @@
-import { PdfPage, type EditValue, type FormValue, type ImageMoveValue } from "./PdfPage";
-import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
+import { PdfPage } from "./PdfPage";
+import type {
+  CrossPageArrival,
+  CrossPageImageArrival,
+  EditValue,
+  ImageMoveValue,
+} from "@/domain/editState";
+import type { FormValue } from "@/domain/formFields";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import type { FormField } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";

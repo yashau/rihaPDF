@@ -1,6 +1,12 @@
 import { PageWithToolbar } from "./PageWithToolbar";
-import type { EditValue, FormValue, ImageMoveValue } from "./PdfPage";
-import type { CrossPageArrival, CrossPageImageArrival } from "./PdfPage/types";
+import type {
+  CrossPageArrival,
+  CrossPageImageArrival,
+  EditValue,
+  ImageMoveValue,
+} from "@/domain/editState";
+import type { FormValue } from "@/domain/formFields";
+import type { Selection } from "@/domain/selection";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import { blankSourceKey } from "@/domain/blankSource";
 import { blankRenderedPage } from "@/pdf/render/blankPage";
@@ -10,15 +16,6 @@ import type { RenderedPage } from "@/pdf/render/pdf";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import type { ToolMode } from "@/domain/toolMode";
-
-export type Selection =
-  | { kind: "image"; slotId: string; imageId: string }
-  | { kind: "insertedImage"; slotId: string; id: string }
-  | { kind: "shape"; slotId: string; shapeId: string }
-  | { kind: "redaction"; slotId: string; id: string }
-  | { kind: "highlight"; slotId: string; id: string }
-  | { kind: "ink"; slotId: string; id: string }
-  | null;
 
 export function PageList({
   slots,

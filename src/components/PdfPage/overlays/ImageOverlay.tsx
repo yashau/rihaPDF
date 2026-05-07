@@ -1,8 +1,9 @@
 import { useMemo } from "react";
+import type { ImageMoveValue } from "@/domain/editState";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import { pdfRectToViewportRect } from "../geometry";
 import { cropCanvasToDataUrl } from "../helpers";
-import type { ImageMoveValue, ResizeCorner } from "../types";
+import type { ResizeCorner } from "../types";
 import { ResizeHandles, type ResizeHandlePosition } from "./ResizeHandle";
 
 /** Drag-movable image overlay. Two visual layers when moved:

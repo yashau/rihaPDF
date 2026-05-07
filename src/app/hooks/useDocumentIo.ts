@@ -9,7 +9,7 @@ import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 import { pageSlot, slotsFromSource, type PageSlot } from "@/domain/slots";
 import type { PendingImage, ToolMode } from "@/domain/toolMode";
 import { MIN_DOCUMENT_ZOOM } from "@/app/hooks/useMobileDocumentZoom";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 function sourceAnnotationsForSlots(
   source: LoadedSource,

@@ -10,7 +10,8 @@ import {
   DEFAULT_INK_COLOR,
 } from "@/domain/annotations";
 import type { Redaction } from "@/domain/redactions";
-import type { EditValue, FormValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
+import type { FormValue } from "@/domain/formFields";
 import { CommentToolbar } from "@/components/CommentToolbar";
 import { HighlightToolbar } from "@/components/HighlightToolbar";
 import { InkToolbar } from "@/components/InkToolbar";

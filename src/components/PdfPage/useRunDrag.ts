@@ -1,9 +1,9 @@
 import type { RefObject } from "react";
 import { useRef, useState } from "react";
+import type { EditValue } from "@/domain/editState";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import { clickSuppressMs, useDragGesture } from "@/platform/hooks/useDragGesture";
 import { findPageAtPoint } from "./helpers";
-import type { EditValue } from "./types";
 
 /** Live state for a source-run drag in progress. The renderer reads
  *  `dx/dy` for the in-place position and the `cursorOffsetX/Y +

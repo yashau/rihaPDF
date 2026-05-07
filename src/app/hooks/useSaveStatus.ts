@@ -9,7 +9,7 @@ import type { PageSlot } from "@/domain/slots";
 import type { PendingImage, ToolMode } from "@/domain/toolMode";
 import { annotationArraysEquivalent } from "@/pdf/source/sourceAnnotations";
 import { sumMapArrayLengths, sumMapSetSizes, sumMapSizes } from "@/domain/collectionCounts";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 function countAnnotationChanges(
   sources: Map<string, LoadedSource>,

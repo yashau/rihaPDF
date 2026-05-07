@@ -12,7 +12,7 @@ import type { FormFill } from "@/pdf/save/forms";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 /** Translate the App's slotId-keyed edit / move / insert maps back
  *  to the (sourceKey, sourcePageIndex)-keyed flat arrays the per-

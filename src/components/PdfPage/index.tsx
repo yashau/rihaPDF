@@ -1,10 +1,16 @@
 import { useRef, useState } from "react";
 import type { RenderedPage } from "@/pdf/render/pdf";
-import type { FormField } from "@/domain/formFields";
+import type { FormField, FormValue } from "@/domain/formFields";
 import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import type { Redaction } from "@/domain/redactions";
 import type { ToolMode } from "@/domain/toolMode";
+import type {
+  CrossPageArrival,
+  CrossPageImageArrival,
+  EditValue,
+  ImageMoveValue,
+} from "@/domain/editState";
 import {
   ImageOverlay,
   InsertedImageOverlay,
@@ -15,7 +21,7 @@ import {
 import { AnnotationLayer } from "./AnnotationLayer";
 import { CanvasSlot } from "./CanvasSlot";
 import { DragPreviews } from "./DragPreviews";
-import { FormFieldLayer, type FormValue } from "./FormFieldLayer";
+import { FormFieldLayer } from "./FormFieldLayer";
 import { PlacementCaptureLayer } from "./PlacementCaptureLayer";
 import { CrossPageImageArrivalOverlay, CrossPageTextArrivalOverlay } from "./arrivals";
 import { SourceRunOverlay } from "./SourceRunOverlay";
@@ -24,23 +30,7 @@ import { usePageFitScale } from "./usePageFitScale";
 import { useRunMarkupActions } from "./useRunMarkupActions";
 import { useRunDrag } from "./useRunDrag";
 import { useImageDrag } from "./useImageDrag";
-import type {
-  CrossPageArrival,
-  CrossPageImageArrival,
-  EditValue,
-  ImageMoveValue,
-  InitialCaretPoint,
-} from "./types";
-
-export type {
-  CrossPageArrival,
-  CrossPageImageArrival,
-  EditValue,
-  ImageMoveValue,
-  ToolbarBlocker,
-} from "./types";
-export type { FormValue } from "./FormFieldLayer";
-
+import type { InitialCaretPoint } from "./types";
 type Props = {
   page: RenderedPage;
   pageIndex: number;

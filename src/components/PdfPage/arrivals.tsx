@@ -1,8 +1,13 @@
 import { useMemo } from "react";
 import { colorToCss } from "@/domain/color";
+import type {
+  CrossPageArrival,
+  CrossPageImageArrival,
+  EditValue,
+  ImageMoveValue,
+} from "@/domain/editState";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import { cropCanvasToDataUrl, cssTextDecoration, findPageAtPoint } from "./helpers";
-import type { CrossPageArrival, CrossPageImageArrival, EditValue, ImageMoveValue } from "./types";
 import { useCrossPageDragPreview } from "./useCrossPageDragPreview";
 
 /** Re-draggable text overlay for a cross-page-arrived source run.

@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Annotation } from "@/domain/annotations";
 import type { ImageInsertion } from "@/domain/insertions";
 import type { Redaction } from "@/domain/redactions";
-import type { ImageMoveValue } from "@/components/PdfPage";
-import type { Selection } from "@/components/PageList";
-
-export type { Selection };
+import type { ImageMoveValue } from "@/domain/editState";
+import type { Selection } from "@/domain/selection";
 
 /** Currently-selected object — set by single-click on an image
  *  overlay; cleared by Escape, by clicking elsewhere, or by tool

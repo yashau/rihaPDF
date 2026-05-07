@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { PageStripSpec } from "@/pdf/render/preview";
 import type { PageSlot } from "@/domain/slots";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 /** Rebuild the per-page preview canvases whenever the set of edited
  *  runs or moved images changes. Per-source — every affected source's

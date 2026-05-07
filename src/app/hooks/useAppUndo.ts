@@ -7,7 +7,7 @@ import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import { useUndoRedo } from "@/platform/hooks/useUndoRedo";
 import { useLatestRef } from "@/platform/hooks/useLatestRef";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 type UndoSnapshot = {
   edits: Map<string, Map<string, EditValue>>;

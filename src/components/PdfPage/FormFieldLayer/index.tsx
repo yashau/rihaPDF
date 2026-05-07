@@ -16,8 +16,6 @@ import { pdfRectArrayToViewportRect } from "../geometry";
 import { MobileThaanaToggleBar } from "../MobileThaanaToggleBar";
 import { CheckboxOverlay, ChoiceOverlay, RadioField, TextFieldOverlay } from "./overlays";
 
-export type { FormValue };
-
 type Props = {
   /** All form fields for this page's source. The layer filters to
    *  widgets whose `pageIndex` matches the current `pageIndex` prop.

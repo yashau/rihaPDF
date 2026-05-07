@@ -13,8 +13,8 @@ import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
 import type { Redaction } from "@/domain/redactions";
 import type { PageSlot } from "@/domain/slots";
 import type { PendingImage, ToolMode } from "@/domain/toolMode";
-import type { Selection } from "@/app/hooks/useSelection";
-import type { EditValue, ImageMoveValue } from "@/components/PdfPage";
+import type { Selection } from "@/domain/selection";
+import type { EditValue, ImageMoveValue } from "@/domain/editState";
 
 type SlotBucketItem = {
   id: string;
