@@ -14,6 +14,7 @@ Primary source areas:
 - `src/components/`: UI components.
 - `src/components/PdfPage/`: page rendering, overlays, gestures, edit fields, annotation layers.
 - `src/lib/`: PDF parsing, content-stream rewriting, save pipeline, fonts, shaping, redaction, selection, undo/redo, preview, form fields.
+- `test/unit/`: focused Vitest tests for pure parser, geometry, text-run, and redaction internals.
 - `test/e2e/`: Vitest tests that drive the app through Playwright.
 - `test/fixtures/`: pinned and generated PDFs used by tests.
 - `scripts/`: one-off diagnostics and probes. These are useful for investigation but are not the main CI test suite.
@@ -21,6 +22,8 @@ Primary source areas:
 Reference docs already in the repo:
 
 - `README.md`: product behavior, architecture, commands, limitations, and test inventory.
+- `test/unit/README.md`: focused unit coverage inventory and current unit test count.
+- `test/e2e/README.md`: Playwright E2E coverage inventory and current E2E test count.
 - `form-filling-plan.md`: form field design notes.
 - `harfbuzz-plan.md`: shaping notes.
 - `pnpm-workspace.yaml`: pnpm build-script approval policy.
@@ -76,7 +79,7 @@ pnpm check          # TypeScript + Oxfmt check + Oxlint
 pnpm lint           # Oxlint over src/test/config entry points
 pnpm format         # Oxfmt write
 pnpm format:check   # Oxfmt check only
-pnpm test           # Vitest E2E suite; requires pnpm dev already running
+pnpm test           # Vitest unit + E2E suite; E2E requires pnpm dev already running
 pnpm test:fixtures  # Rebuild generated fixture PDFs
 pnpm preview        # Preview production build
 pnpm cf:dev         # Cloudflare Workers local preview
@@ -90,7 +93,7 @@ pnpm check
 pnpm build
 ```
 
-Run `pnpm test` when behavior is covered by E2E tests or when touching PDF interaction/save paths. Remember that tests require a running dev server:
+Run `pnpm test test/unit` for focused pure-internal coverage. Run `pnpm test` when behavior is covered by E2E tests or when touching PDF interaction/save paths. Remember that E2E tests require a running dev server:
 
 ```bash
 pnpm dev
@@ -208,7 +211,13 @@ Relevant tests include:
 
 ## Testing Guidance
 
-The E2E suite is the main regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup.
+The unit suite under `test/unit/` covers pure parser, geometry, text-run, and redaction internals with synthetic inputs. It does not need the Vite dev server:
+
+```bash
+pnpm test test/unit
+```
+
+The E2E suite is the main user-workflow regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup.
 
 Common targeted test runs use `pnpm test run <name-fragment>`. The repo's `test` script already runs `vitest run`; the extra `run` and name fragment are passed through as Vitest filters.
 
@@ -285,7 +294,8 @@ Before finishing, report:
 - Which verification commands ran and whether they passed.
 - Any verification that was skipped and why.
 - Any remaining risk, especially for save/redaction/form/text-shaping changes.
-- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or E2E coverage changes. Keep the feature list, root test inventory table, and E2E test-count badge accurate; the badge should count actual `test(...)` / `it(...)` declarations, not helper `.test(...)` calls.
+- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or test coverage changes. Keep the feature list, root test badge, and linked test inventories accurate; counts should use actual `test(...)` / `it(...)` declarations, not helper `.test(...)` calls.
+- When unit coverage changes, also update `test/unit/README.md` so its coverage table and test count stay in sync with the root README.
 - When E2E coverage changes, also update `test/e2e/README.md` so its coverage table and test count stay in sync with the root README.
 
 For code changes, prefer ending with a concise status rather than a long explanation. For documentation-only changes, `pnpm check` is usually optional unless formatting or lint rules include the touched files.
