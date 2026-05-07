@@ -1,22 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import type { AnnotationColor } from "@/domain/annotations";
 import { colorToCss } from "@/domain/color";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
-import { useThaanaTransliteration } from "@/domain/thaanaKeyboard";
-import { useCenterInVisibleViewport } from "@/platform/hooks/useVisualViewport";
-import { useIsMobile } from "@/platform/hooks/useMediaQuery";
-import { EditTextToolbar } from "../EditTextToolbar";
+import { richTextOrPlain } from "@/domain/richText";
 import { pdfBaselineToViewportBox } from "../geometry";
 import {
   chooseToolbarTop,
   cssTextDecoration,
   findPageAtPoint,
-  focusInputAtInitialCaret,
-  isFocusMovingToToolbar,
 } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
+import { RichTextEditor, uniformSpanStyle } from "../RichTextEditor";
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -55,16 +49,6 @@ export function InsertedTextOverlay({
   onOpen: (initialCaretPoint?: InitialCaretPoint) => void;
   onClose: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const isMobile = useIsMobile();
-  // Mobile-only Latin → Thaana phonetic transliteration. Defaults on
-  // (most users on mobile have a Latin keyboard); the toolbar's DV/EN
-  // toggle flips it for the current edit session.
-  const [thaanaInput, setThaanaInput] = useState(true);
-  useThaanaTransliteration(inputRef, isMobile && isEditing && thaanaInput);
-  // Centre the input in the visible viewport on mobile so the keyboard
-  // doesn't cover it. Fires only while the input is mounted (isEditing).
-  useCenterInVisibleViewport(inputRef, isMobile && isEditing);
   // Style state is in the parent (TextInsertion.style + .fontSize),
   // mirrored here in convenience locals so the render stays readable.
   const style = ins.style ?? {};
@@ -97,61 +81,6 @@ export function InsertedTextOverlay({
     viewHeight: page.viewHeight,
   });
   const fontSizePx = fontSizePt * page.scale;
-  useEffect(() => {
-    if (isEditing) {
-      if (inputRef.current) focusInputAtInitialCaret(inputRef.current, initialCaretPoint);
-    }
-  }, [isEditing, initialCaretPoint]);
-
-  // Click-outside-to-close. Same reason as EditField: the input's
-  // onBlur fires once when focus first moves to the toolbar (suppressed
-  // by the toolbar relatedTarget check), and after the user finishes
-  // with a toolbar control no further blur arrives on a page-body click.
-  useEffect(() => {
-    if (!isEditing) return;
-    const onDocClick = (e: MouseEvent) => {
-      const t = e.target;
-      if (!(t instanceof Node)) return;
-      if (inputRef.current?.contains(t)) return;
-      if (t instanceof HTMLElement && t.closest("[data-edit-toolbar]")) return;
-      if (ins.text === "") onDelete();
-      onClose();
-    };
-    document.addEventListener("click", onDocClick, true);
-    return () => document.removeEventListener("click", onDocClick, true);
-  }, [isEditing, ins.text, onClose, onDelete]);
-
-  const updateStyle = (patch: {
-    fontFamily?: string;
-    fontSize?: number;
-    bold?: boolean;
-    italic?: boolean;
-    underline?: boolean;
-    strikethrough?: boolean;
-    /** `null` clears an explicit dir back to auto-detect. */
-    dir?: "rtl" | "ltr" | null;
-    color?: AnnotationColor;
-  }) => {
-    // fontSize lives outside `style` (it's a top-level field on the
-    // insertion since it's also used to derive the box height); split
-    // the patch accordingly.
-    const nextStyle: typeof style = { ...style };
-    if (patch.fontFamily !== undefined) nextStyle.fontFamily = patch.fontFamily;
-    if (patch.bold !== undefined) nextStyle.bold = patch.bold;
-    if (patch.italic !== undefined) nextStyle.italic = patch.italic;
-    if (patch.underline !== undefined) nextStyle.underline = patch.underline;
-    if (patch.strikethrough !== undefined) nextStyle.strikethrough = patch.strikethrough;
-    if (patch.dir !== undefined) {
-      // null = clear back to auto; "rtl"/"ltr" = explicit override.
-      if (patch.dir === null) delete nextStyle.dir;
-      else nextStyle.dir = patch.dir;
-    }
-    if (patch.color !== undefined) nextStyle.color = patch.color;
-    const insPatch: Partial<TextInsertion> = { style: nextStyle };
-    if (patch.fontSize !== undefined) insPatch.fontSize = patch.fontSize;
-    onChange(insPatch);
-  };
-
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
   const effectivePdfScale = page.scale * displayScale;
@@ -207,30 +136,49 @@ export function InsertedTextOverlay({
   return (
     <>
       {isEditing ? (
-        <EditTextToolbar
+        <RichTextEditor
+          id={ins.id}
+          initial={richTextOrPlain(ins.richText, ins.text, ins.style)}
+          defaultStyle={{
+            fontFamily: family,
+            fontSize: fontSizePt,
+            bold,
+            italic,
+            underline,
+            strikethrough,
+            dir: style.dir,
+            color: style.color,
+          }}
+          pageScale={page.scale}
           left={left - 2}
-          top={chooseToolbarTop({
+          top={top}
+          width={width}
+          minHeight={height}
+          lineHeight={height}
+          toolbarLeft={left - 2}
+          toolbarTop={chooseToolbarTop({
             editorLeft: left - 2,
             editorTop: top,
             editorBottom: top + height,
             blockers: toolbarBlockers,
             selfId: ins.id,
           })}
-          fontFamily={family}
-          fontSize={fontSizePt}
-          bold={bold}
-          italic={italic}
-          underline={underline}
-          strikethrough={strikethrough}
-          dir={style.dir}
-          color={style.color}
-          thaanaInput={thaanaInput}
-          onThaanaInputChange={setThaanaInput}
           boundaryWidth={page.viewWidth}
-          onChange={(patch) => {
-            // Toolbar already reports fontSize in PDF points — store
-            // it directly on the insertion, no scale conversion.
-            updateStyle(patch);
+          initialCaretOffset={initialCaretPoint?.caretOffset}
+          onCommit={(richText) => {
+            if (richText.text === "") {
+              onDelete();
+              onClose();
+              return;
+            }
+            const nextStyle = uniformSpanStyle(richText);
+            onChange({
+              text: richText.text,
+              richText,
+              style: nextStyle,
+              fontSize: nextStyle?.fontSize ?? ins.fontSize,
+            });
+            onClose();
           }}
           onDelete={() => {
             onDelete();
@@ -298,64 +246,9 @@ export function InsertedTextOverlay({
         }}
       >
         {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            // Explicit `style.dir` overrides the codepoint-based
-            // auto-detection. `dir="auto"` is the browser's own
-            // detector — used when the user hasn't picked a side.
-            dir={style.dir ?? "auto"}
-            // Mobile + DV mode: suppress the soft keyboard's autocorrect
-            // / autocapitalise / spellcheck so each keystroke fires a
-            // single-char `insertText` event the Thaana transliterator
-            // can intercept. Off otherwise so Latin typing keeps native
-            // affordances.
-            autoComplete={isMobile && thaanaInput ? "off" : undefined}
-            autoCorrect={isMobile && thaanaInput ? "off" : undefined}
-            autoCapitalize={isMobile && thaanaInput ? "none" : undefined}
-            spellCheck={isMobile && thaanaInput ? false : undefined}
-            value={ins.text}
-            style={{
-              width: "100%",
-              border: "none",
-              outline: "none",
-              padding: "0 4px",
-              fontFamily: `"${family}"`,
-              fontSize: `${fontSizePx}px`,
-              lineHeight: `${height}px`,
-              fontWeight: bold ? 700 : 400,
-              fontStyle: italic ? "italic" : "normal",
-              textDecoration: cssTextDecoration(underline, strikethrough),
-              background: "transparent",
-              // Wrapper paints rgba(255,255,255,0.9) — without explicit
-              // color, dark mode lets text inherit the page's near-white
-              // and the user types into invisible ink. When the user
-              // picks a color the same property carries it.
-              color: cssColor,
-              colorScheme: "light",
-            }}
-            onChange={(e) => onChange({ text: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onClose();
-              } else if (e.key === "Escape") {
-                if (ins.text === "") onDelete();
-                onClose();
-              } else if (e.key === "Backspace" && ins.text === "") {
-                e.preventDefault();
-                onDelete();
-                onClose();
-              }
-            }}
-            onBlur={(e) => {
-              if (isFocusMovingToToolbar(e.relatedTarget)) return;
-              if (ins.text === "") onDelete();
-              onClose();
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
-          />
+          <span aria-hidden style={{ width: "100%" }}>
+            {ins.text || " "}
+          </span>
         ) : (
           <span
             dir={style.dir ?? "auto"}
