@@ -11,6 +11,23 @@ import type { PendingImage, ToolMode } from "./toolMode";
 import { MIN_DOCUMENT_ZOOM } from "./useMobileDocumentZoom";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
 
+function sourceAnnotationsForSlots(
+  source: LoadedSource,
+  slots: PageSlot[],
+): Map<string, Annotation[]> {
+  const out = new Map<string, Annotation[]>();
+  for (const slot of slots) {
+    if (slot.kind !== "page" || slot.sourceKey !== source.sourceKey) continue;
+    const annots = source.annotationsByPage[slot.sourcePageIndex] ?? [];
+    if (annots.length > 0)
+      out.set(
+        slot.id,
+        annots.map((a) => ({ ...a })),
+      );
+  }
+  return out;
+}
+
 export function useDocumentIo({
   renderScale,
   sources,
@@ -80,9 +97,10 @@ export function useDocumentIo({
       try {
         const { loadSource } = await import("./loadSource");
         const source = await loadSource(file, renderScale, PRIMARY_SOURCE_KEY);
+        const nextSlots = slotsFromSource(source);
         setPrimaryFilename(file.name);
         setSources(new Map([[PRIMARY_SOURCE_KEY, source]]));
-        setSlots(slotsFromSource(source));
+        setSlots(nextSlots);
         setDocumentZoom(MIN_DOCUMENT_ZOOM);
         clearHistory();
         (
@@ -95,7 +113,7 @@ export function useDocumentIo({
         setEdits(new Map());
         setImageMoves(new Map());
         setShapeDeletes(new Map());
-        setAnnotations(new Map());
+        setAnnotations(sourceAnnotationsForSlots(source, nextSlots));
         setRedactions(new Map());
         setFormValues(new Map());
         setInsertedTexts(new Map());
@@ -139,18 +157,26 @@ export function useDocumentIo({
         for (const file of files) {
           const sourceKey = nextExternalSourceKey(file);
           const source = await loadSource(file, renderScale, sourceKey);
+          const sourceSlots = source.pages.map((_, i) => pageSlot(sourceKey, i));
           setSources((prev) => {
             const next = new Map(prev);
             next.set(sourceKey, source);
             return next;
           });
-          setSlots((prev) => [...prev, ...source.pages.map((_, i) => pageSlot(sourceKey, i))]);
+          setSlots((prev) => [...prev, ...sourceSlots]);
+          setAnnotations((prev) => {
+            const next = new Map(prev);
+            for (const [slotId, annots] of sourceAnnotationsForSlots(source, sourceSlots)) {
+              next.set(slotId, annots);
+            }
+            return next;
+          });
         }
       } finally {
         setBusy(false);
       }
     },
-    [recordHistory, renderScale, setBusy, setSlots, setSources],
+    [recordHistory, renderScale, setAnnotations, setBusy, setSlots, setSources],
   );
 
   const onPickImageFile = useCallback(

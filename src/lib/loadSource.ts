@@ -18,6 +18,8 @@ import { extractPageShapes } from "./sourceShapes";
 import type { ShapeInstance } from "./sourceShapes";
 import { pairDecorationsWithRuns } from "./runDecorations";
 import { extractFormFields, type FormField } from "./formFields";
+import { extractSourceAnnotations } from "./sourceAnnotations";
+import type { Annotation } from "./annotations";
 export { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "./sourceKeys";
 
 export type LoadedSource = {
@@ -43,6 +45,12 @@ export type LoadedSource = {
    *  widgets pre-resolved to (pageIndex, /Rect) so FormFieldLayer can
    *  paint overlays without touching the doc again. */
   formFields: FormField[];
+  /** Supported native source `/Annots`, bucketed by source page index.
+   *  These seed the editable annotation overlay state on load; the save
+   *  path removes their original PDF dicts before appending the current
+   *  editable values to avoid duplicates. Unsupported annotation
+   *  subtypes remain pass-through via copyPages. */
+  annotationsByPage: Annotation[][];
 };
 
 /** Load a PDF file into a fully-extracted `LoadedSource`. Used by both
@@ -92,6 +100,7 @@ export async function loadSource(
     void doc.destroy();
   }
   const formFields = extractFormFields(glyphsDoc, sourceKey);
+  const annotationsByPage = extractSourceAnnotations(glyphsDoc, sourceKey);
   return {
     sourceKey,
     filename: file.name,
@@ -102,5 +111,6 @@ export async function loadSource(
     shapesByPage,
     pages,
     formFields,
+    annotationsByPage,
   };
 }

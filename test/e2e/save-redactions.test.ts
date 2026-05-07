@@ -65,6 +65,7 @@ async function makeSourceFromBytes(bytes: ArrayBuffer, filename: string): Promis
     imagesByPage,
     shapesByPage,
     formFields: [],
+    annotationsByPage: pages.map(() => []),
     pages: pages.map((page, i) => ({
       pageNumber: i + 1,
       canvas: null as unknown as HTMLCanvasElement,
@@ -329,6 +330,7 @@ async function makeGradientImageSource(): Promise<LoadedSource> {
     imagesByPage,
     shapesByPage,
     formFields: [],
+    annotationsByPage: [[]],
     pages: [
       {
         pageNumber: 1,

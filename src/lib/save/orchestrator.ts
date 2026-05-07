@@ -22,6 +22,7 @@ import {
   applyRedactionsToNewAnnotations,
   applyRedactionsToPageAnnotations,
 } from "../redactAnnotations";
+import { removeParsedSourceAnnotationsFromDoc } from "../sourceAnnotations";
 import type { Edit, ImageInsert, ImageMove, ShapeDelete, TextInsert } from "./types";
 import { makeFontFactory, type LoadedSourceContext } from "./context";
 import { drawDecorations, drawTextWithStyle, emitTextDraw, measureTextWidth } from "./textDraw";
@@ -348,6 +349,11 @@ export async function applyEditsAndSave(
   // output along with any pre-existing source annotations.
   const annotationsForSave =
     redactions.length > 0 ? applyRedactionsToNewAnnotations(annotations, redactions) : annotations;
+  for (const [sourceKey, ctx] of ctxBySource) {
+    const source = sources.get(sourceKey);
+    if (!source) continue;
+    removeParsedSourceAnnotationsFromDoc(ctx.doc, sourceKey, source.annotationsByPage);
+  }
   if (annotationsForSave.length > 0) {
     const annotsBySource = new Map<string, Annotation[]>();
     for (const a of annotationsForSave) {

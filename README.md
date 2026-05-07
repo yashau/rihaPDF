@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-106%20e2e-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-107%20e2e-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -173,7 +173,7 @@ The suite includes visual-signature coverage for the local saved-signature libra
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `acroform-save.test.ts`                       | unrelated saves of fillable PDFs rebuild `/Root /AcroForm /Fields`            |
-| `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
+| `annotations.test.ts`                         | annotation save/move/delete; source `/Annots`; same-session ink redaction     |
 | `caret-at-click.test.ts`                      | source-glyph click on Maldivian 6.2 line opens caret at matching text offset  |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save → reopen → toggle off → no orphan line         |
@@ -230,7 +230,6 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 ### Document-level
 
 - [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
-- [ ] **Round-trip existing `/Annots`.** Source annotations pass through `copyPages` but aren't surfaced as editable. Parse `/Annots` in [loadSource.ts](src/lib/loadSource.ts).
 
 ### Source-PDF support
 

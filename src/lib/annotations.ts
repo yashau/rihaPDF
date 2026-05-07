@@ -38,6 +38,10 @@ export type Quad = {
 export type HighlightAnnotation = {
   kind: "highlight";
   id: string;
+  /** Present when this UI annotation was parsed from an existing
+   *  source `/Annot`. Save strips the original dict before writing the
+   *  current editable value so source annotations do not duplicate. */
+  sourceAnnotationId?: string;
   sourceKey: string;
   pageIndex: number;
   quads: Quad[];
@@ -56,6 +60,7 @@ export type HighlightAnnotation = {
 export type CommentAnnotation = {
   kind: "comment";
   id: string;
+  sourceAnnotationId?: string;
   sourceKey: string;
   pageIndex: number;
   /** Bottom-left of the comment box in PDF user space (y-up). */
@@ -78,6 +83,7 @@ export type CommentAnnotation = {
 export type InkAnnotation = {
   kind: "ink";
   id: string;
+  sourceAnnotationId?: string;
   sourceKey: string;
   pageIndex: number;
   strokes: Array<Array<{ x: number; y: number }>>;

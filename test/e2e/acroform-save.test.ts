@@ -89,6 +89,7 @@ async function makeFillableSource(): Promise<LoadedSource> {
     imagesByPage: [[]],
     shapesByPage: [[]],
     formFields: [],
+    annotationsByPage: [[]],
     pages: [
       {
         pageNumber: 1,

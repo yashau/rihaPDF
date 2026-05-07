@@ -7,7 +7,25 @@ import { PRIMARY_SOURCE_KEY } from "./sourceKeys";
 import type { Redaction } from "./redactions";
 import type { PageSlot } from "./slots";
 import type { PendingImage, ToolMode } from "./toolMode";
+import { annotationArraysEquivalent } from "./sourceAnnotations";
 import type { EditValue, ImageMoveValue } from "../components/PdfPage";
+
+function countAnnotationChanges(
+  sources: Map<string, LoadedSource>,
+  slots: PageSlot[],
+  annotations: Map<string, Annotation[]>,
+): number {
+  let changes = 0;
+  for (const slot of slots) {
+    const current = annotations.get(slot.id) ?? [];
+    const baseline =
+      slot.kind === "page"
+        ? (sources.get(slot.sourceKey)?.annotationsByPage[slot.sourcePageIndex] ?? [])
+        : [];
+    if (!annotationArraysEquivalent(current, baseline)) changes += 1;
+  }
+  return changes;
+}
 
 export function useSaveStatus({
   sources,
@@ -53,10 +71,7 @@ export function useSaveStatus({
       (sum, set) => sum + set.size,
       0,
     );
-    const totalAnnotations = Array.from(annotations.values()).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
+    const totalAnnotationChanges = countAnnotationChanges(sources, slots, annotations);
     const totalRedactions = Array.from(redactions.values()).reduce(
       (sum, arr) => sum + arr.length,
       0,
@@ -94,7 +109,7 @@ export function useSaveStatus({
       totalInsertedTexts +
       totalInsertedImages +
       totalShapeDeletes +
-      totalAnnotations +
+      totalAnnotationChanges +
       totalRedactions +
       totalFormFills
     );

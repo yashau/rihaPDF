@@ -40,12 +40,12 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 106 e2e tests.
+The suite currently has 107 e2e tests.
 
 | File                                          | What it covers                                                                |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `acroform-save.test.ts`                       | unrelated saves of fillable PDFs rebuild `/Root /AcroForm /Fields`            |
-| `annotations.test.ts`                         | annotation save/move/delete; same-session ink redaction                       |
+| `annotations.test.ts`                         | annotation save/move/delete; source `/Annots`; same-session ink redaction     |
 | `caret-at-click.test.ts`                      | source-glyph click on Maldivian 6.2 line opens caret at matching text offset  |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages    |
 | `decoration-roundtrip.test.ts`                | underline + strikethrough save -> reopen -> toggle off -> no orphan line      |

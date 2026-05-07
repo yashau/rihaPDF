@@ -15,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import {
   PDFArray,
+  PDFContext,
   PDFDict,
   PDFDocument,
   PDFHexString,
@@ -22,6 +23,7 @@ import {
   PDFNumber,
   PDFRef,
   PDFString,
+  StandardFonts,
 } from "pdf-lib";
 import {
   FIXTURE,
@@ -70,6 +72,56 @@ function readNumberArray(arr: PDFArray): number[] {
     const o = arr.get(i);
     if (o instanceof PDFNumber) out.push(o.asNumber());
   }
+  return out;
+}
+
+function numberArray(ctx: PDFContext, values: number[]): PDFArray {
+  return ctx.obj(values.map((v) => PDFNumber.of(v)));
+}
+
+async function writeSourceAnnotationFixture(): Promise<string> {
+  const doc = await PDFDocument.create();
+  doc.setCreationDate(new Date("2024-01-01T00:00:00.000Z"));
+  doc.setModificationDate(new Date("2024-01-01T00:00:00.000Z"));
+  const page = doc.addPage([595, 842]);
+  const helv = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("SOURCE_ANNOT_FIXTURE", { x: 80, y: 760, size: 16, font: helv });
+
+  const ctx = doc.context;
+  const annots = ctx.obj([]);
+
+  const highlight = PDFDict.withContext(ctx);
+  highlight.set(PDFName.of("Type"), PDFName.of("Annot"));
+  highlight.set(PDFName.of("Subtype"), PDFName.of("Highlight"));
+  highlight.set(PDFName.of("Rect"), numberArray(ctx, [80, 700, 260, 724]));
+  highlight.set(PDFName.of("QuadPoints"), numberArray(ctx, [80, 724, 260, 724, 80, 700, 260, 700]));
+  highlight.set(PDFName.of("C"), numberArray(ctx, [1, 0.92, 0.23]));
+  annots.push(ctx.register(highlight));
+
+  const comment = PDFDict.withContext(ctx);
+  comment.set(PDFName.of("Type"), PDFName.of("Annot"));
+  comment.set(PDFName.of("Subtype"), PDFName.of("FreeText"));
+  comment.set(PDFName.of("Rect"), numberArray(ctx, [80, 620, 240, 660]));
+  comment.set(PDFName.of("Contents"), PDFString.of("loaded source comment"));
+  comment.set(PDFName.of("DA"), PDFString.of("/Helv 12 Tf 0 0 0 rg"));
+  comment.set(PDFName.of("IC"), numberArray(ctx, [1, 0.96, 0.62]));
+  annots.push(ctx.register(comment));
+
+  const ink = PDFDict.withContext(ctx);
+  ink.set(PDFName.of("Type"), PDFName.of("Annot"));
+  ink.set(PDFName.of("Subtype"), PDFName.of("Ink"));
+  ink.set(PDFName.of("Rect"), numberArray(ctx, [80, 540, 220, 590]));
+  ink.set(PDFName.of("InkList"), ctx.obj([numberArray(ctx, [80, 540, 130, 570, 220, 590])]));
+  ink.set(PDFName.of("C"), numberArray(ctx, [0.93, 0.27, 0.27]));
+  const bs = PDFDict.withContext(ctx);
+  bs.set(PDFName.of("W"), PDFNumber.of(2));
+  ink.set(PDFName.of("BS"), bs);
+  annots.push(ctx.register(ink));
+
+  page.node.set(PDFName.of("Annots"), annots);
+
+  const out = path.join(SCREENSHOTS, "source-annots-input.pdf");
+  fs.writeFileSync(out, await doc.save());
   return out;
 }
 
@@ -234,6 +286,32 @@ describe("annotation round-trip", () => {
       "stroke needs ≥ 4 numbers (2 points) to draw a line",
     ).toBeGreaterThanOrEqual(4);
     expect(ink.borderWidth, "/BS /W is the stroke thickness").toBeGreaterThan(0);
+  }, 60_000);
+
+  test("load existing /Annots as editable overlays and save without duplicates", async () => {
+    const fixture = await writeSourceAnnotationFixture();
+    await loadFixture(h, fixture);
+
+    expect(await h.page.locator("[data-highlight-id]").count()).toBe(1);
+    expect(await h.page.locator("[data-annotation-id]").count()).toBe(1);
+    expect(await h.page.locator("[data-ink-id]").count()).toBe(1);
+    const saveButton = h.page.locator("button").filter({ hasText: /^Save/ });
+    expect(await saveButton.isDisabled()).toBe(true);
+
+    await h.page.locator("[data-ink-id]").first().click();
+    await h.page.keyboard.press("Delete");
+    await h.page.waitForTimeout(150);
+    expect(await h.page.locator("[data-ink-id]").count()).toBe(0);
+    expect(await saveButton.isDisabled()).toBe(false);
+
+    const saved = await saveAndDownload("source-annots-edited.pdf");
+    const annots = await readAnnotations(saved);
+    expect(annots.filter((a) => a.subtype === "Highlight")).toHaveLength(1);
+    expect(annots.filter((a) => a.subtype === "FreeText")).toHaveLength(1);
+    expect(annots.filter((a) => a.subtype === "Ink")).toHaveLength(0);
+    expect(annots.filter((a) => a.subtype === "FreeText")[0].contents).toBe(
+      "loaded source comment",
+    );
   }, 60_000);
 
   test("select, drag, and delete an ink stroke", async () => {
