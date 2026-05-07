@@ -18,5 +18,12 @@ export default defineConfig({
     testTimeout: 240_000,
     hookTimeout: 60_000,
     fileParallelism: false,
+    coverage: {
+      provider: "v8",
+      reportsDirectory: "coverage",
+      reporter: ["text", "html", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.d.ts"],
+    },
   },
 });

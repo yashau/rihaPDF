@@ -31,6 +31,7 @@ dist-ssr
 scripts/screenshots/
 test/e2e/screenshots/
 test-logs/
+coverage/
 
 # Stash dir from font import — slugified copies live in public/fonts/dhivehi/
 Proper_Thaana_Fonts/

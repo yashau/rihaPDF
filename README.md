@@ -125,6 +125,7 @@ pnpm check          # tsc -b && oxfmt --check && oxlint  (CI gate)
 pnpm lint           # oxlint over src/test/config entry points
 pnpm format         # oxfmt
 pnpm test           # vitest unit + E2E suite (E2E needs dev server up)
+pnpm test:coverage  # vitest with V8 coverage output in coverage/
 pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
 pnpm cf:config      # generate wrangler.jsonc from env vars
 pnpm cf:dev         # wrangler dev — local Workers preview of dist/
@@ -166,6 +167,18 @@ Vitest runs focused unit tests under [test/unit/](test/unit/) and the E2E suite 
 ```bash
 pnpm dev          # one terminal
 pnpm test         # another
+```
+
+Coverage uses Vitest's V8 provider. Run the full suite with coverage while the dev server is up:
+
+```bash
+pnpm test:coverage
+```
+
+For focused unit coverage that does not need the dev server:
+
+```bash
+pnpm test:coverage test/unit
 ```
 
 The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup.
