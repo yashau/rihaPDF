@@ -1,17 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { colorToCss } from "../../lib/color";
-import type { RenderedPage, TextRun } from "../../lib/pdf";
+import { useRef, useState } from "react";
+import type { RenderedPage } from "../../lib/pdf";
 import type { FormField } from "../../lib/formFields";
 import type { ImageInsertion, TextInsertion } from "../../lib/insertions";
-import {
-  type Annotation,
-  type AnnotationColor,
-  HIGHLIGHT_LINE_PAD,
-  lineMarkupRect,
-  newAnnotationId,
-} from "../../lib/annotations";
-import { newRedactionId, REDACTION_LINE_PAD, type Redaction } from "../../lib/redactions";
+import type { Annotation, AnnotationColor } from "../../lib/annotations";
+import type { Redaction } from "../../lib/redactions";
 import type { ToolMode } from "../../lib/toolMode";
 import {
   ImageOverlay,
@@ -21,10 +13,15 @@ import {
   ShapeOverlay,
 } from "./overlays";
 import { AnnotationLayer } from "./AnnotationLayer";
+import { CanvasSlot } from "./CanvasSlot";
+import { DragPreviews } from "./DragPreviews";
 import { FormFieldLayer, type FormValue } from "./FormFieldLayer";
+import { PlacementCaptureLayer } from "./PlacementCaptureLayer";
 import { CrossPageImageArrivalOverlay, CrossPageTextArrivalOverlay } from "./arrivals";
 import { SourceRunOverlay } from "./SourceRunOverlay";
-import { cssTextDecoration } from "./helpers";
+import { buildToolbarBlockers } from "./toolbarBlockers";
+import { usePageFitScale } from "./usePageFitScale";
+import { useRunMarkupActions } from "./useRunMarkupActions";
 import { useRunDrag } from "./useRunDrag";
 import { useImageDrag } from "./useImageDrag";
 import type {
@@ -33,7 +30,6 @@ import type {
   EditValue,
   ImageMoveValue,
   InitialCaretPoint,
-  ToolbarBlocker,
 } from "./types";
 
 export type {
@@ -207,74 +203,13 @@ export function PdfPage({
   documentZoom,
   onFormFieldChange,
 }: Props) {
-  /** Outer layout wrapper. Reserves display-pixel space for the page
-   *  (= natural × displayScale) so the document scroll container can
-   *  size itself correctly. The actual page chrome lives on
-   *  `containerRef` (the inner natural-size div) which is CSS-
-   *  transformed by `displayScale` to fit. Children stay in NATURAL
-   *  CSS pixels — only the conversion from screen-pixel input
-   *  (cursor / finger) is wrapped through `displayScale`. */
-  const fitRef = useRef<HTMLDivElement | null>(null);
+  const { fitRef, fitScale } = usePageFitScale(page.viewWidth);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  /** Fit-to-width scale applied before the user-controlled mobile
-   *  document zoom. 1 on desktop where the page already fits; <1 on
-   *  mobile where it doesn't. */
-  const [fitScale, setFitScale] = useState(1);
   const displayScale = fitScale * documentZoom;
   const [initialCaret, setInitialCaret] = useState<{
     id: string;
     point: InitialCaretPoint;
   } | null>(null);
-
-  // Compute displayScale synchronously before paint via
-  // useLayoutEffect so the first frame already shows the page at the
-  // correct scale. With a plain useEffect the first paint renders
-  // the OUTER at natural width (918px on US-Letter), spilling out of
-  // the mobile viewport and triggering a one-frame horizontal scroll
-  // before the corrected scale gets applied — visible to the user
-  // as a flash of overflow.
-  useLayoutEffect(() => {
-    const outer = fitRef.current;
-    if (!outer) return;
-    // Find the nearest scroll container — App's <main> with
-    // `overflow: auto`. The immediate parent of `outer` is a flex
-    // item that shrinks to fit its content (i.e. tracks displayScale
-    // itself), so observing it would create a feedback loop where
-    // displayScale stays at 1 forever. <main>'s clientWidth is the
-    // genuine available content area on screen, independent of the
-    // page's own width.
-    let scrollHost: HTMLElement | null = outer.parentElement;
-    while (scrollHost && scrollHost !== document.body) {
-      const cs = window.getComputedStyle(scrollHost);
-      if (cs.overflowX === "auto" || cs.overflowX === "scroll" || scrollHost.tagName === "MAIN") {
-        break;
-      }
-      scrollHost = scrollHost.parentElement;
-    }
-    if (!scrollHost || scrollHost === document.body) {
-      // Fall back to the document element if no auto-overflow
-      // ancestor was found (shouldn't happen — <main> is in App's
-      // tree — but the fallback keeps the page renderable).
-      scrollHost = document.documentElement;
-    }
-    const host = scrollHost;
-    const compute = () => {
-      // clientWidth excludes the vertical scrollbar (good — we don't
-      // want to render under it) but includes the host's own padding.
-      // Subtract horizontal padding so the page fits exactly inside
-      // the visible content area.
-      const cs = window.getComputedStyle(host);
-      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-      const available = host.clientWidth - padX;
-      if (available <= 0 || !page.viewWidth) return;
-      const next = Math.min(1, available / page.viewWidth);
-      setFitScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(host);
-    return () => ro.disconnect();
-  }, [page.viewWidth]);
 
   const setEditingId = (next: string | null, initialCaretPoint?: InitialCaretPoint) => {
     setInitialCaret(next && initialCaretPoint ? { id: next, point: initialCaretPoint } : null);
@@ -305,105 +240,15 @@ export function PdfPage({
     displayScale,
   });
 
-  // Mounts the live canvas (preview or original) into our DOM slot and
-  // sizes it. Mutating the DOM canvas's style is the whole point of
-  // this effect — the immutability rule would have us copy first,
-  // but the canvas is a render artefact, not an owned prop value.
-  /* oxlint-disable-next-line react-hooks/immutability */
-  useEffect(() => {
-    const node = containerRef.current?.querySelector("[data-canvas-slot]") as HTMLElement | null;
-    if (!node) return;
-    const liveCanvas = previewCanvas ?? page.canvas;
-    node.replaceChildren(liveCanvas);
-    /* oxlint-disable react-hooks/immutability */
-    liveCanvas.style.display = "block";
-    liveCanvas.style.width = `${page.viewWidth}px`;
-    liveCanvas.style.height = `${page.viewHeight}px`;
-    /* oxlint-enable react-hooks/immutability */
-  }, [page, previewCanvas]);
-
-  /** Add a highlight annotation covering a single run. We don't reuse
-   *  `run.bounds` directly here — that envelope carries extra padding
-   *  for replacement-text overlays (fili headroom) and reads as offset
-   *  too high when used as a markup rect. `lineMarkupRect` rebuilds a
-   *  tighter rect from the run's baseline + height, balanced around the
-   *  glyph row. Multi-line highlight (one annotation, many quads) is a
-   *  Phase 2 feature; one click currently means one quad. */
-  const addHighlightForRun = (run: TextRun) => {
-    const [llx, lly, urx, ury] = lineMarkupRect(
-      run,
-      page.scale,
-      page.viewHeight,
-      HIGHLIGHT_LINE_PAD,
-    );
-    onAnnotationAdd({
-      kind: "highlight",
-      id: newAnnotationId("highlight"),
-      sourceKey,
-      pageIndex,
-      quads: [{ x1: llx, y1: ury, x2: urx, y2: ury, x3: llx, y3: lly, x4: urx, y4: lly }],
-      color: highlightColor,
-    });
-  };
-
-  /** Drop a redaction rect over a single run. The default size comes
-   *  from `lineMarkupRect` with `REDACTION_LINE_PAD` — generous
-   *  enough that no glyph extents leak past the box on typical
-   *  Thaana/Latin runs. The user can drag corners to tighten or
-   *  expand after the click; the save pipeline strips whatever runs
-   *  intersect the FINAL rect (not the originally-clicked run), so
-   *  resize is meaningful, not cosmetic. */
-  const addRedactionForRun = (run: TextRun) => {
-    const [llx, lly, urx, ury] = lineMarkupRect(
-      run,
-      page.scale,
-      page.viewHeight,
-      REDACTION_LINE_PAD,
-    );
-    onRedactionAdd({
-      id: newRedactionId(),
-      sourceKey,
-      pageIndex,
-      pdfX: llx,
-      pdfY: lly,
-      pdfWidth: urx - llx,
-      pdfHeight: ury - lly,
-    });
-  };
-
-  // Blocker rects the formatting toolbar must avoid. Computed once per
-  // render so EditField + InsertedTextOverlay can decide whether to
-  // place the toolbar above or below the editor without each rebuilding
-  // the same list. Honors persisted move offsets so a dragged run still
-  // counts as occupying its NEW position, not its source position.
-  const toolbarBlockers: ToolbarBlocker[] = [];
-  for (const r of page.textRuns) {
-    const ev = edits.get(r.id);
-    if (ev?.deleted) continue;
-    const dx = ev?.dx ?? 0;
-    const dy = ev?.dy ?? 0;
-    toolbarBlockers.push({
-      id: r.id,
-      left: r.bounds.left + dx,
-      right: r.bounds.left + dx + r.bounds.width,
-      top: r.bounds.top + dy,
-      bottom: r.bounds.top + dy + r.bounds.height,
-    });
-  }
-  for (const ins of insertedTexts) {
-    const fontSizePx = ins.fontSize * page.scale;
-    const lineHeightPx = ins.fontSize * 1.4 * page.scale;
-    const left = ins.pdfX * page.scale;
-    const top = page.viewHeight - ins.pdfY * page.scale - fontSizePx;
-    const width = Math.max(ins.pdfWidth * page.scale, 60);
-    toolbarBlockers.push({
-      id: ins.id,
-      left,
-      right: left + width,
-      top,
-      bottom: top + lineHeightPx,
-    });
-  }
+  const { addHighlightForRun, addRedactionForRun } = useRunMarkupActions({
+    page,
+    sourceKey,
+    pageIndex,
+    highlightColor,
+    onAnnotationAdd,
+    onRedactionAdd,
+  });
+  const toolbarBlockers = buildToolbarBlockers(page, edits, insertedTexts);
 
   return (
     <div
@@ -447,49 +292,13 @@ export function PdfPage({
         data-view-width={page.viewWidth}
         data-view-height={page.viewHeight}
       >
-        <div data-canvas-slot />
-        {tool === "addText" || tool === "addImage" || tool === "comment" ? (
-          // Placement-mode capture layer: sits above all other overlays
-          // so a tap/click goes to onCanvasClick regardless of what's
-          // underneath. The user is in "drop a new thing here" mode;
-          // existing items shouldn't react to the click.
-          //   - "highlight" excluded: click should hit a text run, not
-          //     this layer (the run's onClick branches on tool).
-          //   - "ink" excluded: AnnotationLayer captures pointer events
-          //     itself for stroke drawing.
-          // `touch-action: manipulation` suppresses iOS' 300ms double-
-          // tap-zoom delay on the layer so the placement click fires
-          // immediately on a finger tap.
-          <div
-            className="absolute inset-0"
-            style={{
-              cursor: "crosshair",
-              zIndex: 50,
-              pointerEvents: "auto",
-              touchAction: "manipulation",
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              const host = containerRef.current;
-              if (!host) return;
-              const r = host.getBoundingClientRect();
-              // r is the DISPLAYED rect (post-CSS-transform). Convert
-              // screen px → PDF user space via effectiveScale = scale ×
-              // displayScale, derived once here so the math doesn't
-              // depend on `displayScale` state being current.
-              const ds = page.viewWidth > 0 ? r.width / page.viewWidth : 1;
-              const effective = page.scale * ds;
-              const xView = e.clientX - r.x;
-              const yView = e.clientY - r.y;
-              const pdfX = xView / effective;
-              // Use displayed height (= page.viewHeight × ds) for the
-              // y-flip so all terms are in the same unit before the
-              // single divide.
-              const pdfY = (r.height - yView) / effective;
-              onCanvasClick(pdfX, pdfY);
-            }}
-          />
-        ) : null}
+        <CanvasSlot page={page} previewCanvas={previewCanvas} />
+        <PlacementCaptureLayer
+          containerRef={containerRef}
+          page={page}
+          tool={tool}
+          onCanvasClick={onCanvasClick}
+        />
         <div className="absolute inset-0">
           {/* Source vector-shape overlays render BEFORE runs / images
             so runs and images intercept clicks first when they overlap
@@ -678,115 +487,7 @@ export function PdfPage({
           />
         </div>
       </div>
-      {/* Body-portal'd drag preview. The page wrapper has
-          `overflow: hidden` (it has to — see the wrapper comment above),
-          which clips an in-place dragged span the moment the cursor
-          crosses onto another page. Mounting the preview to document.body
-          via createPortal lets it follow the cursor across pages. The
-          in-place span stays mounted but `visibility: hidden`, so its
-          rect still anchors the cross-page drop math while the user
-          sees the portal'd clone. */}
-      {drag && drag.moved
-        ? (() => {
-            const dragRun = page.textRuns.find((r) => r.id === drag.runId);
-            if (!dragRun || drag.width <= 0 || drag.height <= 0) return null;
-            // Mirror the edited-branch styling so the preview matches
-            // exactly what the post-drop in-place rendering will look
-            // like — same font family / weight / italic / decorations
-            // as the source run, layered with any persisted style edit.
-            const editedValue = edits.get(dragRun.id);
-            const style = editedValue?.style ?? {};
-            const text = editedValue?.text ?? dragRun.text;
-            const fontFamily = style.fontFamily ?? dragRun.fontFamily;
-            const fontSizeNat = style.fontSize ?? dragRun.height;
-            const bold = style.bold ?? dragRun.bold;
-            const italic = style.italic ?? dragRun.italic;
-            const underline = style.underline ?? dragRun.underline ?? false;
-            const strikethrough = style.strikethrough ?? dragRun.strikethrough ?? false;
-            const dir = style.dir ?? "auto";
-            const cssColor = colorToCss(style.color) ?? "black";
-            // The portal sits in document.body where there's no CSS
-            // transform — convert the natural-pixel font/line-height
-            // values to screen pixels via the captured originDisplayScale.
-            const ds = drag.originDisplayScale;
-            const fontSizeScreen = fontSizeNat * ds;
-            const lineHeightScreen = (dragRun.bounds.height + 4) * ds;
-            return createPortal(
-              <div
-                aria-hidden
-                style={{
-                  position: "fixed",
-                  left: drag.clientX - drag.cursorOffsetX,
-                  top: drag.clientY - drag.cursorOffsetY,
-                  width: drag.width,
-                  height: drag.height,
-                  outline: "1px dashed rgba(255, 180, 30, 0.9)",
-                  // No background fill — a semi-opaque white card
-                  // would cover whatever sits behind the cursor while
-                  // the user drags across the page. The dashed outline
-                  // alone is enough to convey "this is the thing
-                  // being moved", and underlying content stays
-                  // visible through the gaps between glyphs.
-                  background: "transparent",
-                  pointerEvents: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  overflow: "visible",
-                  zIndex: 10000,
-                }}
-              >
-                <span
-                  dir={dir}
-                  style={{
-                    fontFamily: `"${fontFamily}"`,
-                    fontSize: `${fontSizeScreen}px`,
-                    lineHeight: `${lineHeightScreen}px`,
-                    fontWeight: bold ? 700 : 400,
-                    fontStyle: italic ? "italic" : "normal",
-                    textDecoration: cssTextDecoration(underline, strikethrough),
-                    color: cssColor,
-                    whiteSpace: "pre",
-                    width: "100%",
-                    paddingLeft: 2 * ds,
-                    paddingRight: 2 * ds,
-                  }}
-                >
-                  {text}
-                </span>
-              </div>,
-              document.body,
-            );
-          })()
-        : null}
-      {/* Body-portal'd drag preview for SOURCE images. Same rationale
-          as the source-run portal above. Only rendered for translate
-          gestures (corner === null) once the user has actually moved;
-          resize gestures stay on the source page so they don't need a
-          portal. */}
-      {imageDrag && imageDrag.corner === null && imageDrag.moved
-        ? (() => {
-            if (imageDrag.width <= 0 || imageDrag.height <= 0) return null;
-            return createPortal(
-              <div
-                aria-hidden
-                style={{
-                  position: "fixed",
-                  left: imageDrag.clientX - imageDrag.cursorOffsetX,
-                  top: imageDrag.clientY - imageDrag.cursorOffsetY,
-                  width: imageDrag.width,
-                  height: imageDrag.height,
-                  backgroundImage: imageDrag.sprite ? `url(${imageDrag.sprite})` : undefined,
-                  backgroundSize: "100% 100%",
-                  backgroundRepeat: "no-repeat",
-                  outline: "1px dashed rgba(60, 130, 255, 0.85)",
-                  pointerEvents: "none",
-                  zIndex: 10000,
-                }}
-              />,
-              document.body,
-            );
-          })()
-        : null}
+      <DragPreviews drag={drag} imageDrag={imageDrag} page={page} edits={edits} />
     </div>
   );
 }
