@@ -51,21 +51,15 @@ jobs:
       - name: Run e2e tests
         run: |
           pnpm dev -- --host 127.0.0.1 > vite.log 2>&1 &
-          VITE_PID=$!
-          trap 'kill "$VITE_PID" 2>/dev/null || true' EXIT
 
           for i in {1..60}; do
-            if curl --silent --fail --output /dev/null http://127.0.0.1:5173/; then
+            if curl -fs http://localhost:5173/ > /dev/null; then
               break
             fi
             sleep 1
           done
 
-          if ! curl --silent --fail --show-error --output /dev/null http://127.0.0.1:5173/; then
-            cat vite.log
-            exit 1
-          fi
-
+          curl -fsS http://localhost:5173/ > /dev/null
           pnpm run test
 
       - name: Generate Wrangler config
