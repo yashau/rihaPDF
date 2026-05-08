@@ -40,6 +40,9 @@ describe("text editor caret placement", () => {
         const { displayTextForEditor } = (await importer(
           "/src/components/PdfPage/rtlDisplayText.ts",
         )) as typeof import("../../src/components/PdfPage/rtlDisplayText");
+        const { sourceEditorText } = (await importer(
+          "/src/components/PdfPage/sourceEditorText.ts",
+        )) as typeof import("../../src/components/PdfPage/sourceEditorText");
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const file = new File([bytes], "maldivian.pdf", { type: "application/pdf" });
         const source = await loadSource(file, scale, "caret-test");
@@ -53,7 +56,7 @@ describe("text editor caret placement", () => {
         if (!block) throw new Error("6.2 source paragraph block not found");
         const targetWord = "އަޙްމަދު";
         const caretOffset = run.text.indexOf(targetWord);
-        const editorText = displayTextForEditor(block.text, true);
+        const editorText = sourceEditorText(displayTextForEditor(block.text, true), block, true);
         const blockCaretOffset = editorText.indexOf(targetWord);
         if (blockCaretOffset < 0) throw new Error("target word not found inside paragraph block");
         const beforeCandidates = run.caretPositions.filter((p) => p.offset === caretOffset);
@@ -188,30 +191,35 @@ describe("text editor caret placement", () => {
           .querySelector<HTMLElement>('[data-editor][contenteditable="true"]')
           ?.getAttribute("data-text-visible") === "true",
     );
+    await editor.evaluate((el) => {
+      const root = el as HTMLElement;
+      root.scrollTop = root.scrollHeight;
+    });
 
     const before = await editor.evaluate((el) =>
       (el as HTMLElement).innerText.replace(/[\u2066-\u2069]/gu, "").replace(/\n$/u, ""),
     );
     const click = await editor.evaluate((el) => {
+      const normalize = (text: string) => text.replace(/[\u2066-\u2069]/gu, "").replace(/\n$/u, "");
       const root = el as HTMLElement;
-      const lines = Array.from(root.children).filter(
-        (child): child is HTMLElement => child instanceof HTMLElement,
-      );
-      const line = lines[lines.length - 1];
-      if (!line) throw new Error("paragraph editor line not found");
       const range = document.createRange();
-      range.selectNodeContents(line);
+      range.selectNodeContents(root);
       const rects = Array.from(range.getClientRects()).filter(
         (rect) => rect.width > 0 && rect.height > 0,
       );
       range.detach();
       if (rects.length === 0) throw new Error("paragraph editor text rect not found");
       const rootRect = root.getBoundingClientRect();
-      const lineRect = line.getBoundingClientRect();
-      const textLeft = Math.min(...rects.map((rect) => rect.left));
+      const rootText = normalize(root.innerText);
+      const finalTop = Math.max(...rects.map((rect) => rect.top));
+      const finalLineRects = rects.filter((rect) => Math.abs(rect.top - finalTop) <= 2);
+      const textLeft = Math.min(...finalLineRects.map((rect) => rect.left));
+      const lineTop = Math.min(...finalLineRects.map((rect) => rect.top));
+      const lineBottom = Math.max(...finalLineRects.map((rect) => rect.bottom));
       return {
-        x: Math.max(rootRect.left + 4, textLeft - 24),
-        y: lineRect.top + lineRect.height / 2,
+        x: Math.max(rootRect.left + 4, textLeft - 2),
+        y: (lineTop + lineBottom) / 2,
+        expectedOffset: rootText.length,
       };
     });
 
@@ -221,6 +229,8 @@ describe("text editor caret placement", () => {
       (el as HTMLElement).innerText.replace(/[\u2066-\u2069]/gu, "").replace(/\n$/u, ""),
     );
 
-    expect(edited).toBe(`${before}X`);
+    expect(edited).toBe(
+      `${before.slice(0, click.expectedOffset)}X${before.slice(click.expectedOffset)}`,
+    );
   });
 });

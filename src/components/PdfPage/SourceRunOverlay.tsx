@@ -246,12 +246,11 @@ export function SourceRunOverlay({
       color: style.color,
     };
     const shouldFlowText = true;
-    const displayTextAlign =
-      geometry.isParagraph && isRtlEditor
-        ? "justify"
-        : "textAlign" in run
-          ? run.textAlign
-          : undefined;
+    const displayTextAlign = shouldFlowText
+      ? undefined
+      : "textAlign" in run
+        ? run.textAlign
+        : undefined;
     // Edited / dragged run: paint the new text where the user wants
     // it, with a white cover behind it. The preview canvas SHOULD
     // have the original glyphs stripped, but the strip is content-
@@ -335,8 +334,8 @@ export function SourceRunOverlay({
             whiteSpace: shouldFlowText ? "pre-wrap" : "pre",
             overflowWrap: shouldFlowText ? "break-word" : undefined,
             overflow: shouldFlowText ? "hidden" : undefined,
-            paddingLeft: shouldFlowText ? padX * 2 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
-            paddingRight: shouldFlowText ? padX * 2 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
+            paddingLeft: shouldFlowText ? 0 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
+            paddingRight: shouldFlowText ? 0 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
           }}
         >
           <RichTextView

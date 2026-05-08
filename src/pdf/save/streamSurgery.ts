@@ -184,7 +184,7 @@ export async function applyStreamSurgeryForSource(
       const runPdfHeight = run.height / scale;
       const lineStepPdf = lineStepForRuns(sourceRuns, scale);
       const lineLayoutsPdf = undefined;
-      const drawBox = drawBoxForEdit(run, edit, scale, runPdfX, runPdfWidth, lineLayoutsPdf);
+      const drawBox = drawBoxForEdit(edit, scale, runPdfX, runPdfWidth, lineLayoutsPdf);
       const clipBoxPdf = sourceEditClipBoxForEdit(run, edit, pageHeight, scale, drawBox.left);
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
@@ -624,7 +624,6 @@ function lineStepForRuns(runs: TextRun[], scale: number): number | undefined {
 }
 
 function drawBoxForEdit(
-  run: TextRun | SourceTextBlock,
   edit: Edit,
   scale: number,
   runPdfX: number,
@@ -639,8 +638,8 @@ function drawBoxForEdit(
   const text = edit.richText?.text ?? edit.newText;
   const isRtl = edit.style?.dir === "rtl" || (edit.style?.dir !== "ltr" && RTL_RE.test(text));
   if (!isRtl) return { left: runPdfX, width: overrideWidth ?? runPdfWidth };
-  const widthPadding = Math.max(96, run.height * 6) / scale;
-  const width = overrideWidth ?? runPdfWidth + widthPadding;
+  if (overrideWidth === undefined) return { left: runPdfX, width: runPdfWidth };
+  const width = overrideWidth;
   return {
     left: runPdfX + runPdfWidth - width,
     width,

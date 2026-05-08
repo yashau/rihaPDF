@@ -171,12 +171,16 @@ export function EditField({
             isParagraph: flowSourceText,
           });
           const committedValue = flowSourceText && !value.richText ? { ...value, richText } : value;
+          const hasContentChange =
+            committedValue.text !== sourceText ||
+            committedValue.richText !== undefined ||
+            committedValue.style !== undefined;
           onCommit({
             ...committedValue,
             dx,
             dy,
-            editBoxWidth: box.width,
-            editBoxHeight: box.height,
+            editBoxWidth: box.width ?? (hasContentChange ? geometry.width : undefined),
+            editBoxHeight: box.height ?? (hasContentChange ? geometry.height : undefined),
           });
         }}
         onDelete={onDelete}

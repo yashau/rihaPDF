@@ -225,6 +225,7 @@ export function chooseToolbarTop({
   const aboveTop = editorTop - TOOLBAR_HEIGHT_PX - gap;
   const belowTop = editorBottom + gap;
   const right = editorLeft + TOOLBAR_WIDTH_PX;
+  const aboveIsInsidePage = aboveTop >= 0;
   const overlaps = (top: number) => {
     const bottom = top + TOOLBAR_HEIGHT_PX;
     for (const b of blockers) {
@@ -237,8 +238,9 @@ export function chooseToolbarTop({
     }
     return false;
   };
-  if (!overlaps(aboveTop)) return aboveTop;
+  if (aboveIsInsidePage && !overlaps(aboveTop)) return aboveTop;
   if (!overlaps(belowTop)) return belowTop;
+  if (!aboveIsInsidePage) return belowTop;
   // Both sides overlap — uncommon (the page is densely packed). Fall
   // back to the default (above) so the toolbar at least keeps its
   // usual relationship to the editor.
