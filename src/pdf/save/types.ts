@@ -32,6 +32,11 @@ export type Edit = {
    *  draw entirely. `newText`, move offsets, and cross-page fields are
    *  ignored — deletion removes the run from the saved PDF. */
   deleted?: boolean;
+  /** Optional source-edit box dimensions in page viewport pixels.
+   *  Used as the wrapping width for rich source edits; font size is
+   *  still controlled only by `style.fontSize` / source metadata. */
+  editBoxWidth?: number;
+  editBoxHeight?: number;
 };
 
 /** Drag + resize offset for an image XObject placement. Save injects a
@@ -88,6 +93,9 @@ export type TextInsert = {
    *  right-alignment so the saved-PDF glyphs land where the editor
    *  visually right-aligns the typed text. */
   pdfWidth: number;
+  /** Height of the editor's overlay box in PDF points. When present,
+   *  save clips wrapped text to match the browser preview box. */
+  pdfHeight?: number;
   fontSize: number;
   text: string;
   style?: EditStyle;

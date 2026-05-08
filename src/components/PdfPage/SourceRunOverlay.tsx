@@ -5,7 +5,7 @@ import { hasEditStyle, richTextHasStyle, richTextHasTextOrStyle } from "@/domain
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
-import { EditField } from "./EditField";
+import { EditField, sourceEditorText } from "./EditField";
 import { RichTextView } from "./RichTextEditor";
 import { cssTextDecoration } from "./helpers";
 import { displayTextForEditor } from "./rtlDisplayText";
@@ -22,7 +22,9 @@ function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): b
     value.deleted === true ||
     value.text !== run.text ||
     hasEditStyle(value.style) ||
-    hasMeaningfulRichText(value.richText, run.text)
+    hasMeaningfulRichText(value.richText, run.text) ||
+    value.editBoxWidth !== undefined ||
+    value.editBoxHeight !== undefined
   );
 }
 
@@ -187,8 +189,10 @@ export function SourceRunOverlay({
           // offset from editedValue.
           const merged: EditValue = {
             ...value,
-            dx: editedValue?.dx ?? 0,
-            dy: editedValue?.dy ?? 0,
+            dx: value.dx ?? editedValue?.dx ?? 0,
+            dy: value.dy ?? editedValue?.dy ?? 0,
+            editBoxWidth: value.editBoxWidth ?? editedValue?.editBoxWidth,
+            editBoxHeight: value.editBoxHeight ?? editedValue?.editBoxHeight,
             sourceRunIds,
           };
           const hasOffset = (merged.dx ?? 0) !== 0 || (merged.dy ?? 0) !== 0;
@@ -220,11 +224,16 @@ export function SourceRunOverlay({
       (style.dir !== "ltr" && (hasRtlText || /[\u0780-\u07bf]/u.test(run.text)));
     const geometry = sourceEditGeometry({
       run,
-      pageViewWidth: page.viewWidth,
       dx,
       dy,
       isRtlEditor,
+      editBoxWidth: editedValue.editBoxWidth,
+      editBoxHeight: editedValue.editBoxHeight,
     });
+    const sourceDisplayText = displayTextForEditor(editedValue.text, isRtlEditor);
+    const displayBlock = editedValue.richText
+      ? richTextOrPlain(editedValue.richText, editedValue.text, style)
+      : richTextOrPlain(undefined, sourceEditorText(sourceDisplayText, run, isRtlEditor), style);
     const defaultStyle = {
       fontFamily: style.fontFamily ?? run.fontFamily,
       fontSize: style.fontSize ?? defaultFontSizePt,
@@ -235,6 +244,13 @@ export function SourceRunOverlay({
       dir: style.dir ?? (isRtlEditor ? "rtl" : undefined),
       color: style.color,
     };
+    const shouldFlowText = true;
+    const displayTextAlign =
+      geometry.isParagraph && isRtlEditor
+        ? "justify"
+        : "textAlign" in run
+          ? run.textAlign
+          : undefined;
     // Edited / dragged run: paint the new text where the user wants
     // it, with a white cover behind it. The preview canvas SHOULD
     // have the original glyphs stripped, but the strip is content-
@@ -271,7 +287,7 @@ export function SourceRunOverlay({
           pointerEvents: "auto",
           cursor: isDragging ? "grabbing" : "text",
           display: "block",
-          overflow: "visible",
+          overflow: shouldFlowText ? "hidden" : "visible",
           // Once the user actually moves the cursor, the portal'd
           // clone (rendered by PdfPage) is what they see — the
           // in-place span stays mounted (its rect anchors the drop
@@ -315,22 +331,27 @@ export function SourceRunOverlay({
             height: "100%",
             lineHeight: `${geometry.lineHeight}px`,
             width: "100%",
-            whiteSpace: "pre",
-            paddingLeft: geometry.hasSourceLineLayouts ? 0 : padX * 2,
-            paddingRight: geometry.hasSourceLineLayouts ? 0 : padX * 2,
+            whiteSpace: shouldFlowText ? "pre-wrap" : "pre",
+            overflowWrap: shouldFlowText ? "break-word" : undefined,
+            overflow: shouldFlowText ? "hidden" : undefined,
+            paddingLeft: shouldFlowText ? padX * 2 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
+            paddingRight: shouldFlowText ? padX * 2 : geometry.hasSourceLineLayouts ? 0 : padX * 2,
           }}
         >
           <RichTextView
-            block={richTextOrPlain(editedValue.richText, editedValue.text, style)}
+            block={displayBlock}
             defaultStyle={defaultStyle}
             pageScale={page.scale}
             lineHeight={geometry.lineHeight}
-            textAlign={"textAlign" in run ? run.textAlign : undefined}
-            wrap={false}
-            lineLayouts={"lineLayouts" in run ? run.lineLayouts : undefined}
-            lineLayoutOffsetX={geometry.lineLayoutOffsetX}
-            lineLayoutOffsetY={geometry.lineLayoutOffsetY}
+            textAlign={displayTextAlign}
+            wrap={shouldFlowText}
+            lineLayouts={
+              shouldFlowText ? undefined : "lineLayouts" in run ? run.lineLayouts : undefined
+            }
+            lineLayoutOffsetX={shouldFlowText ? 0 : geometry.lineLayoutOffsetX}
+            lineLayoutOffsetY={shouldFlowText ? 0 : geometry.lineLayoutOffsetY}
             justifyLineLayouts={
+              !shouldFlowText &&
               "textAlign" in run &&
               run.textAlign === "justify" &&
               (hasEditStyle(style) || richTextHasStyle(editedValue.richText))

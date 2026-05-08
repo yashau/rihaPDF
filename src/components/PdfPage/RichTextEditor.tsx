@@ -502,6 +502,16 @@ function TrailingBlankClickPlugin({ enabled }: { enabled: boolean }) {
   return null;
 }
 
+function isEditorChromeTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement && !!target.closest("[data-edit-toolbar], [data-resize-handle]")
+  );
+}
+
+function isTextBoxResizeActive(): boolean {
+  return document.body.dataset.textBoxResizeActive === "true";
+}
+
 export function RichTextEditor({
   id,
   initial,
@@ -600,7 +610,8 @@ export function RichTextEditor({
       if (!(t instanceof Node)) return;
       const root = editorRef.current?.getRootElement();
       if (root?.contains(t)) return;
-      if (t instanceof HTMLElement && t.closest("[data-edit-toolbar]")) return;
+      if (isEditorChromeTarget(t)) return;
+      if (isTextBoxResizeActive()) return;
       commit();
     };
     document.addEventListener("click", onDocClick, true);
@@ -704,8 +715,7 @@ export function RichTextEditor({
               }
             }}
             onBlur={(e) => {
-              const next = e.relatedTarget;
-              if (next instanceof HTMLElement && next.closest("[data-edit-toolbar]")) return;
+              if (isEditorChromeTarget(e.relatedTarget)) return;
               commit();
             }}
           />

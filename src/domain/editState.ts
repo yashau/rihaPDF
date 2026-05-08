@@ -40,6 +40,11 @@ export type EditValue = {
    *  Tj/TJ ops without drawing a replacement; PdfPage hides the
    *  overlay entirely so the user can't re-grab a deleted run. */
   deleted?: boolean;
+  /** Optional source-edit box dimensions in page viewport pixels.
+   *  These change the editor's available real estate without changing
+   *  the text font size. */
+  editBoxWidth?: number;
+  editBoxHeight?: number;
 };
 
 /** Move + resize for one image instance, in viewport pixels (same axis

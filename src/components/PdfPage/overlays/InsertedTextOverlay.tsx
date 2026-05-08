@@ -1,11 +1,29 @@
 import type { RenderedPage } from "@/pdf/render/pdf";
 import type { TextInsertion } from "@/domain/insertions";
 import { richTextOrPlain, uniformSpanStyle } from "@/domain/richText";
-import { pdfBaselineToViewportBox } from "../geometry";
+import { pdfBaselineToViewportBox, screenDeltaToPdf, type ResizeCorner } from "../geometry";
 import { chooseToolbarTop, findPageAtPoint } from "../helpers";
 import type { InitialCaretPoint, ToolbarBlocker } from "../types";
 import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
+import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { RichTextEditor, RichTextView } from "../RichTextEditor";
+import { ResizeHandles } from "./ResizeHandle";
+
+const MIN_TEXT_BOX_PDF = 24;
+const INSERTED_TEXT_TOOLBAR_GAP_PX = 18;
+const RESIZE_CLICK_SUPPRESS_MS = 250;
+
+function setTextBoxResizeActive(active: boolean): void {
+  if (active) {
+    document.body.dataset.textBoxResizeActive = "true";
+    return;
+  }
+  window.setTimeout(() => {
+    if (document.body.dataset.textBoxResizeActive === "true") {
+      delete document.body.dataset.textBoxResizeActive;
+    }
+  }, RESIZE_CLICK_SUPPRESS_MS);
+}
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -61,17 +79,19 @@ export function InsertedTextOverlay({
   // EditField rendering: render text in a box of height = fontSize × 1.4
   // so descenders fit.
   const lineHeight = fontSizePt * 1.4;
+  const boxHeightPt = ins.pdfHeight ?? lineHeight;
   const { left, top, width, height } = pdfBaselineToViewportBox({
     pdfX: ins.pdfX,
     pdfY: ins.pdfY,
     fontSizePt,
-    lineHeightPt: lineHeight,
+    lineHeightPt: boxHeightPt,
     widthPt: ins.pdfWidth,
-    minWidthPx: 60,
+    minWidthPx: MIN_TEXT_BOX_PDF * page.scale,
     pageScale: page.scale,
     viewHeight: page.viewHeight,
   });
   const fontSizePx = fontSizePt * page.scale;
+  const lineHeightPx = lineHeight * page.scale;
   const defaultStyle = {
     fontFamily: family,
     fontSize: fontSizePt,
@@ -82,6 +102,7 @@ export function InsertedTextOverlay({
     dir: style.dir,
     color: style.color,
   };
+  const isRtlEditor = style.dir === "rtl" || (style.dir !== "ltr" && isRtlText);
   // Drag-pixel → PDF-unit conversion factor: a screen-pixel delta
   // divided by `effectivePdfScale` lands in PDF user space.
   const effectivePdfScale = page.scale * displayScale;
@@ -133,6 +154,43 @@ export function InsertedTextOverlay({
     if (isEditing) return;
     beginDrag(e, { baseX: ins.pdfX, baseY: ins.pdfY });
   };
+  type InsTextResizeCtx = {
+    corner: ResizeCorner;
+    base: { x: number; y: number; w: number; h: number };
+  };
+  const beginInsTextResize = useDragGesture<InsTextResizeCtx>({
+    touchActivation: "immediate",
+    onStart: () => setTextBoxResizeActive(true),
+    onMove: (ctx, info) => {
+      const { dxPdf, dyPdf } = screenDeltaToPdf(info.dxRaw, info.dyRaw, effectivePdfScale);
+      const isLeftHandle = ctx.corner === "tl" || ctx.corner === "bl";
+      const growsTop = ctx.corner === "tl" || ctx.corner === "tr";
+      const nextWidth = Math.max(MIN_TEXT_BOX_PDF, ctx.base.w + (isLeftHandle ? -dxPdf : dxPdf));
+      const nextHeight = Math.max(MIN_TEXT_BOX_PDF, ctx.base.h + (growsTop ? dyPdf : -dyPdf));
+      const widthDelta = nextWidth - ctx.base.w;
+      const anchorSideDragged = isRtlEditor ? !isLeftHandle : isLeftHandle;
+      onChange({
+        pdfX: anchorSideDragged
+          ? ctx.base.x + (isLeftHandle ? -widthDelta : widthDelta)
+          : ctx.base.x,
+        pdfWidth: nextWidth,
+        pdfHeight: nextHeight,
+      });
+    },
+    onEnd: () => setTextBoxResizeActive(false),
+    onCancel: () => setTextBoxResizeActive(false),
+  });
+  const startResize = (corner: ResizeCorner) => (e: React.PointerEvent) => {
+    beginInsTextResize(e, {
+      corner,
+      base: {
+        x: ins.pdfX,
+        y: ins.pdfY + fontSizePt - boxHeightPt,
+        w: ins.pdfWidth,
+        h: boxHeightPt,
+      },
+    });
+  };
 
   return (
     <>
@@ -146,7 +204,10 @@ export function InsertedTextOverlay({
           top={top}
           width={width}
           minHeight={height}
-          lineHeight={height}
+          maxHeight={height}
+          lineHeight={lineHeightPx}
+          wrap
+          scroll
           toolbarLeft={left - 2}
           toolbarTop={chooseToolbarTop({
             editorLeft: left - 2,
@@ -154,6 +215,7 @@ export function InsertedTextOverlay({
             editorBottom: top + height,
             blockers: toolbarBlockers,
             selfId: ins.id,
+            gap: INSERTED_TEXT_TOOLBAR_GAP_PX,
           })}
           boundaryWidth={page.viewWidth}
           initialCaretOffset={initialCaretPoint?.caretOffset}
@@ -177,6 +239,26 @@ export function InsertedTextOverlay({
             onClose();
           }}
         />
+      ) : null}
+      {isEditing ? (
+        <div
+          style={{
+            position: "absolute",
+            left,
+            top,
+            width,
+            height,
+            pointerEvents: "none",
+            zIndex: 35,
+          }}
+        >
+          <ResizeHandles
+            placement="outside"
+            parentW={width}
+            parentH={height}
+            onPointerDown={startResize}
+          />
+        </div>
       ) : null}
       <div
         ref={overlayRef}
@@ -203,7 +285,7 @@ export function InsertedTextOverlay({
           cursor: isEditing || !dragLive?.moved ? "text" : "grabbing",
           pointerEvents: "auto",
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           zIndex: 20,
           // Once the user actually moves, the in-parent copy stays
           // mounted (so its rect reference for the drop math is
@@ -238,18 +320,21 @@ export function InsertedTextOverlay({
         }}
       >
         {isEditing ? (
-          <span aria-hidden style={{ width: "100%" }}>
+          <span aria-hidden style={{ width: "100%", lineHeight: `${lineHeightPx}px` }}>
             {ins.text || " "}
           </span>
         ) : (
           <span
             dir={style.dir ?? "auto"}
             style={{
-              lineHeight: `${height}px`,
+              lineHeight: `${lineHeightPx}px`,
               paddingLeft: 4,
               paddingRight: 4,
-              whiteSpace: "pre",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "break-word",
+              overflow: "hidden",
               width: "100%",
+              height: "100%",
             }}
             title={ins.text || "(empty — click to type)"}
           >
@@ -258,7 +343,8 @@ export function InsertedTextOverlay({
                 block={richTextOrPlain(ins.richText, ins.text, style)}
                 defaultStyle={defaultStyle}
                 pageScale={page.scale}
-                lineHeight={height}
+                lineHeight={lineHeightPx}
+                wrap
               />
             ) : (
               " "
@@ -280,11 +366,14 @@ export function InsertedTextOverlay({
             // px inside a `transform: scale(displayScale)` container;
             // the portal lives in document.body (no transform) so
             // multiply once here to land at the same on-screen size.
-            lineHeight: `${height * displayScale}px`,
+            lineHeight: `${lineHeightPx * displayScale}px`,
             paddingLeft: 4,
             paddingRight: 4,
-            whiteSpace: "pre",
+            whiteSpace: "pre-wrap",
+            overflowWrap: "break-word",
+            overflow: "hidden",
             width: "100%",
+            height: "100%",
           }}
         >
           {ins.text ? (
@@ -292,7 +381,8 @@ export function InsertedTextOverlay({
               block={richTextOrPlain(ins.richText, ins.text, style)}
               defaultStyle={defaultStyle}
               pageScale={page.scale * displayScale}
-              lineHeight={height * displayScale}
+              lineHeight={lineHeightPx * displayScale}
+              wrap
             />
           ) : (
             " "

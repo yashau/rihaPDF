@@ -213,15 +213,17 @@ export function chooseToolbarTop({
   editorBottom,
   blockers,
   selfId,
+  gap = TOOLBAR_GAP_PX,
 }: {
   editorLeft: number;
   editorTop: number;
   editorBottom: number;
   blockers: readonly ToolbarBlocker[];
   selfId: string;
+  gap?: number;
 }): number {
-  const aboveTop = editorTop - TOOLBAR_HEIGHT_PX - TOOLBAR_GAP_PX;
-  const belowTop = editorBottom + TOOLBAR_GAP_PX;
+  const aboveTop = editorTop - TOOLBAR_HEIGHT_PX - gap;
+  const belowTop = editorBottom + gap;
   const right = editorLeft + TOOLBAR_WIDTH_PX;
   const overlaps = (top: number) => {
     const bottom = top + TOOLBAR_HEIGHT_PX;

@@ -28,6 +28,10 @@ export type TextInsertion = {
    *  for the EditField's measured width. The actual width on save is
    *  computed from the chosen font + text. */
   pdfWidth: number;
+  /** Optional editor box height in PDF points. Older insertions derive
+   *  this from the font size so existing documents keep rendering the
+   *  same until the user resizes the box. */
+  pdfHeight?: number;
   /** Font size in PDF points. */
   fontSize: number;
   text: string;

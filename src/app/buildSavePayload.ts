@@ -96,6 +96,8 @@ export function buildSavePayload({
         targetPdfX: value.targetPdfX,
         targetPdfY: value.targetPdfY,
         deleted: value.deleted,
+        editBoxWidth: value.editBoxWidth,
+        editBoxHeight: value.editBoxHeight,
       });
     }
   }
@@ -151,6 +153,7 @@ export function buildSavePayload({
         pdfX: t.pdfX,
         pdfY: t.pdfY,
         pdfWidth: t.pdfWidth,
+        pdfHeight: t.pdfHeight,
         fontSize: t.fontSize,
         text: t.text,
         style: t.style,

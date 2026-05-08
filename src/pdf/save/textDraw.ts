@@ -1,9 +1,12 @@
 import {
   PDFFont,
   PDFPage,
+  clip,
   concatTransformationMatrix,
+  endPath,
   popGraphicsState,
   pushGraphicsState,
+  rectangle,
   rgb,
 } from "pdf-lib";
 import bidiFactory from "bidi-js";
@@ -24,6 +27,7 @@ import type {
   CrossSourceDrawPlan,
   RichTextLineLayoutPdf,
   SameSourceDrawPlan,
+  TextClipBoxPdf,
 } from "./streamSurgery";
 
 type RichDrawLine = RichTextSpan[];
@@ -75,6 +79,16 @@ function splitLineTokens(line: RichDrawLine): RichDrawToken[] {
   const tokens: RichDrawToken[] = [];
   for (const span of line) {
     for (const part of span.text.split(/(\s+|\d+(?:[./:-]\d+)+|\d+|\p{P}+)/u)) {
+      if (part.length > 0) tokens.push({ text: part, style: span.style });
+    }
+  }
+  return tokens;
+}
+
+function splitLineWrapTokens(line: RichDrawLine): RichDrawToken[] {
+  const tokens: RichDrawToken[] = [];
+  for (const span of line) {
+    for (const part of span.text.split(/(\s+)/u)) {
       if (part.length > 0) tokens.push({ text: part, style: span.style });
     }
   }
@@ -390,6 +404,40 @@ async function measureRichLine(
   return width;
 }
 
+async function wrapRichLine(
+  line: RichDrawLine,
+  width: number,
+  baseStyle: EditStyle,
+  fallback: {
+    family: string;
+    fontSizePt: number;
+    bold: boolean;
+    italic: boolean;
+    dir: "rtl" | "ltr" | undefined;
+  },
+  getFont: EmbeddedFontFactory,
+): Promise<RichDrawLine[]> {
+  if (line.length === 0) return [[]];
+  const tokens = splitLineWrapTokens(line);
+  const out: RichDrawLine[] = [];
+  let current: RichDrawLine = [];
+  let currentWidth = 0;
+  for (const token of tokens) {
+    if (current.length === 0 && isWhitespaceToken(token)) continue;
+    const tokenWidth = await measureRichLine([token], baseStyle, fallback, getFont);
+    if (current.length > 0 && currentWidth + tokenWidth > width) {
+      out.push(current.filter((span) => !isWhitespaceToken(span) || span.text.length > 0));
+      current = [];
+      currentWidth = 0;
+      if (isWhitespaceToken(token)) continue;
+    }
+    current.push(token);
+    currentWidth += tokenWidth;
+  }
+  if (current.length > 0) out.push(current);
+  return out.length > 0 ? out : [[]];
+}
+
 async function drawTokenizedRichLine(
   page: PDFPage,
   line: RichDrawLine,
@@ -504,10 +552,35 @@ export async function drawRichTextBlock(
     fallbackBold: boolean;
     fallbackItalic: boolean;
     fallbackDir: "rtl" | "ltr" | undefined;
+    justifyWrapped?: boolean;
+    clipBox?: TextClipBoxPdf;
     getFont: EmbeddedFontFactory;
   },
 ): Promise<void> {
-  const lines = splitRichTextLines(block);
+  if (opts.clipBox) {
+    page.pushOperators(
+      pushGraphicsState(),
+      rectangle(opts.clipBox.x, opts.clipBox.y, opts.clipBox.width, opts.clipBox.height),
+      clip(),
+      endPath(),
+    );
+  }
+  const sourceLines = splitRichTextLines(block);
+  const fallback = {
+    family: opts.fallbackFamily,
+    fontSizePt: opts.fallbackSize,
+    bold: opts.fallbackBold,
+    italic: opts.fallbackItalic,
+    dir: opts.fallbackDir,
+  };
+  const lines: RichDrawLine[] = [];
+  if (opts.lineLayouts && opts.lineLayouts.length > 0) {
+    lines.push(...sourceLines);
+  } else {
+    for (const line of sourceLines) {
+      lines.push(...(await wrapRichLine(line, opts.width, opts.baseStyle, fallback, opts.getFont)));
+    }
+  }
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const layout = opts.lineLayouts?.[lineIndex];
     const line = layout ? trimLeadingLineSpaces(lines[lineIndex]) : lines[lineIndex];
@@ -517,18 +590,7 @@ export async function drawRichTextBlock(
     const lineX = opts.x + (layout?.xOffset ?? 0);
     const lineY = opts.y - (layout?.baselineOffset ?? opts.lineStep * lineIndex);
     const targetWidth = layout?.width ?? opts.width;
-    const lineWidth = await measureRichLine(
-      line,
-      opts.baseStyle,
-      {
-        family: opts.fallbackFamily,
-        fontSizePt: opts.fallbackSize,
-        bold: opts.fallbackBold,
-        italic: opts.fallbackItalic,
-        dir: opts.fallbackDir,
-      },
-      opts.getFont,
-    );
+    const lineWidth = await measureRichLine(line, opts.baseStyle, fallback, opts.getFont);
     const spaces = spaceCount(line);
     const hasFormattingOverride = lineHasDrawStyleOverride(line, opts.baseStyle, {
       family: opts.fallbackFamily,
@@ -537,7 +599,12 @@ export async function drawRichTextBlock(
       italic: opts.fallbackItalic,
       dir: opts.fallbackDir,
     });
-    if (layout?.justify && hasFormattingOverride && spaces > 0 && lineWidth < targetWidth) {
+    const shouldJustify =
+      spaces > 0 &&
+      lineWidth < targetWidth &&
+      ((layout?.justify && hasFormattingOverride) ||
+        (opts.justifyWrapped === true && !layout && lineIndex < lines.length - 1));
+    if (shouldJustify) {
       await drawTokenizedRichLine(page, line, {
         x: lineX,
         y: lineY,
@@ -616,6 +683,9 @@ export async function drawRichTextBlock(
       cursorX = isRtl ? lineX + targetWidth - lineWidth : lineX + lineWidth;
     }
   }
+  if (opts.clipBox) {
+    page.pushOperators(popGraphicsState());
+  }
 }
 
 export async function emitTextDraw(
@@ -636,6 +706,9 @@ export async function emitTextDraw(
   // Explicit `style.dir` wins; otherwise auto-detect.
   const isRtl = style.dir === "rtl" || (style.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(edit.newText));
   const dir: "rtl" | "ltr" | undefined = style.dir;
+  const justifyWrapped =
+    ("textAlign" in run && run.textAlign === "justify") ||
+    ("isParagraph" in run && run.isParagraph && isRtl);
   const widthPt = await measureTextWidth(
     edit.newText,
     pdfFont,
@@ -667,6 +740,8 @@ export async function emitTextDraw(
       fallbackBold: run.bold,
       fallbackItalic: run.italic,
       fallbackDir: dir,
+      justifyWrapped,
+      clipBox: plan.clipBoxPdf,
       getFont: ctx.getFont,
     });
     return;

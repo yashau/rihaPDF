@@ -11,6 +11,7 @@ import {
 import fontkit from "@pdf-lib/fontkit";
 import type { PageSlot } from "@/domain/slots";
 import type { LoadedSource } from "@/pdf/source/loadSource";
+import { richTextOrPlain } from "@/domain/richText";
 import { blankSourceKey, isBlankSourceKey, slotIdFromBlankSourceKey } from "@/domain/blankSource";
 import type { Annotation } from "@/domain/annotations";
 import { applyAnnotationsToDoc } from "./annotations";
@@ -25,13 +26,7 @@ import {
 import { removeParsedSourceAnnotationsFromDoc } from "@/pdf/source/sourceAnnotations";
 import type { Edit, ImageInsert, ImageMove, ShapeDelete, TextInsert } from "./types";
 import { makeFontFactory, type LoadedSourceContext } from "./context";
-import {
-  drawDecorations,
-  drawRichTextBlock,
-  drawTextWithStyle,
-  emitTextDraw,
-  measureTextWidth,
-} from "./textDraw";
+import { drawRichTextBlock, emitTextDraw } from "./textDraw";
 import {
   applyStreamSurgeryForSource,
   type CrossSourceDrawPlan,
@@ -247,65 +242,30 @@ export async function applyEditsAndSave(
       (/[֐-׿؀-ۿހ-޿]/u.test(ins.text) ? DEFAULT_FONT_FAMILY : "Arial");
     const bold = !!ins.style?.bold;
     const italic = !!ins.style?.italic;
-    const { pdfFont, bytes: fontBytes } = await ctx.getFont(family, bold, italic);
     const fontSizePt = ins.fontSize;
-    // Explicit `style.dir` wins; otherwise auto-detect from the text's
-    // strong codepoints. RTL right-aligns the rendered text to the
-    // overlay box's RIGHT edge (= `pdfX + pdfWidth`) so the saved-PDF
-    // glyphs land where the editor right-aligns the typed text in its
-    // 120pt-wide box. Anchoring to `pdfX` itself (the box's LEFT) put
-    // RTL text a full box-width too far left in the saved file
-    // — visible on mobile where the overlay box and the saved text
-    // visibly disagreed by ~120pt.
-    const isRtl =
-      ins.style?.dir === "rtl" || (ins.style?.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(ins.text));
     const dir: "rtl" | "ltr" | undefined = ins.style?.dir;
-    if (ins.richText) {
-      await drawRichTextBlock(page, ins.richText, {
-        x: ins.pdfX,
-        y: ins.pdfY,
-        width: ins.pdfWidth,
-        lineStep: fontSizePt * 1.4,
-        baseStyle: ins.style ?? {},
-        fallbackFamily: family,
-        fallbackSize: fontSizePt,
-        fallbackBold: bold,
-        fallbackItalic: italic,
-        fallbackDir: dir,
-        getFont: ctx.getFont,
-      });
-      continue;
-    }
-    const widthPt = await measureTextWidth(
-      ins.text,
-      pdfFont,
-      fontBytes,
-      family,
-      fontSizePt,
-      dir,
-      ctx.getFont,
-    );
-    const baseX = isRtl ? ins.pdfX + ins.pdfWidth - widthPt : ins.pdfX;
-    await drawTextWithStyle(page, ins.text, {
-      x: baseX,
+
+    await drawRichTextBlock(page, richTextOrPlain(ins.richText, ins.text, ins.style), {
+      x: ins.pdfX,
       y: ins.pdfY,
-      size: fontSizePt,
-      font: pdfFont,
-      fontBytes,
-      family,
-      italic,
-      dir,
+      width: ins.pdfWidth,
+      lineStep: fontSizePt * 1.4,
+      baseStyle: ins.style ?? {},
+      fallbackFamily: family,
+      fallbackSize: fontSizePt,
+      fallbackBold: bold,
+      fallbackItalic: italic,
+      fallbackDir: dir,
+      clipBox:
+        ins.pdfHeight !== undefined
+          ? {
+              x: ins.pdfX,
+              y: ins.pdfY + fontSizePt - ins.pdfHeight,
+              width: ins.pdfWidth,
+              height: ins.pdfHeight,
+            }
+          : undefined,
       getFont: ctx.getFont,
-      color: ins.style?.color,
-    });
-    drawDecorations(page, {
-      x: baseX,
-      y: ins.pdfY,
-      width: widthPt,
-      size: fontSizePt,
-      underline: !!ins.style?.underline,
-      strikethrough: !!ins.style?.strikethrough,
-      color: ins.style?.color,
     });
   }
 

@@ -23,7 +23,7 @@ const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u;
  *  at (boxLeftPdf, baselineYPdf) on `targetPageIndex`. */
 export type SameSourceDrawPlan = {
   edit: Edit;
-  run: TextRun;
+  run: TextRun | SourceTextBlock;
   sourceKey: string;
   targetPageIndex: number;
   boxLeftPdf: number;
@@ -32,13 +32,14 @@ export type SameSourceDrawPlan = {
   runPdfHeight: number;
   lineStepPdf?: number;
   lineLayoutsPdf?: RichTextLineLayoutPdf[];
+  clipBoxPdf?: TextClipBoxPdf;
 };
 
 /** Plan for a cross-source draw: drawText on the TARGET source's doc,
  *  but the run / styling came from a different source. */
 export type CrossSourceDrawPlan = {
   edit: Edit;
-  run: TextRun;
+  run: TextRun | SourceTextBlock;
   targetSourceKey: string;
   targetPageIndex: number;
   boxLeftPdf: number;
@@ -47,6 +48,14 @@ export type CrossSourceDrawPlan = {
   runPdfHeight: number;
   lineStepPdf?: number;
   lineLayoutsPdf?: RichTextLineLayoutPdf[];
+  clipBoxPdf?: TextClipBoxPdf;
+};
+
+export type TextClipBoxPdf = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 export type RichTextLineLayoutPdf = {
@@ -174,8 +183,9 @@ export async function applyStreamSurgeryForSource(
       const runPdfWidth = run.bounds.width / scale;
       const runPdfHeight = run.height / scale;
       const lineStepPdf = lineStepForRuns(sourceRuns, scale);
-      const lineLayoutsPdf = lineLayoutsForRuns(sourceRuns, run, scale);
+      const lineLayoutsPdf = undefined;
       const drawBox = drawBoxForEdit(run, edit, scale, runPdfX, runPdfWidth, lineLayoutsPdf);
+      const clipBoxPdf = sourceEditClipBoxForEdit(run, edit, pageHeight, scale, drawBox.left);
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
       let matched = shows.filter((s) => editOpIndices.has(s.index));
@@ -250,6 +260,7 @@ export async function applyStreamSurgeryForSource(
             runPdfHeight,
             lineStepPdf,
             lineLayoutsPdf,
+            clipBoxPdf: undefined,
           });
         } else {
           crossSourceDraws.push({
@@ -263,6 +274,7 @@ export async function applyStreamSurgeryForSource(
             runPdfHeight,
             lineStepPdf,
             lineLayoutsPdf,
+            clipBoxPdf: undefined,
           });
         }
         continue;
@@ -309,6 +321,7 @@ export async function applyStreamSurgeryForSource(
         runPdfHeight,
         lineStepPdf,
         lineLayoutsPdf,
+        clipBoxPdf,
       });
     }
 
@@ -610,26 +623,6 @@ function lineStepForRuns(runs: TextRun[], scale: number): number | undefined {
   return deltas[Math.floor(deltas.length / 2)];
 }
 
-function lineLayoutsForRuns(
-  sourceRuns: TextRun[],
-  run: TextRun | SourceTextBlock,
-  scale: number,
-): RichTextLineLayoutPdf[] | undefined {
-  if (!("lineLayouts" in run) || !run.lineLayouts || run.lineLayouts.length === 0) return undefined;
-  const sourceById = new Map(sourceRuns.map((sourceRun) => [sourceRun.id, sourceRun]));
-  return run.lineLayouts.map((layout, index) => {
-    const sourceRunId = "sourceRunIds" in run ? run.sourceRunIds[index] : undefined;
-    const sourceRun = sourceRunId ? sourceById.get(sourceRunId) : sourceRuns[index];
-    const baselineOffset = sourceRun ? (sourceRun.baselineY - run.baselineY) / scale : 0;
-    return {
-      xOffset: layout.left / scale,
-      baselineOffset,
-      width: layout.width / scale,
-      justify: layout.justify,
-    };
-  });
-}
-
 function drawBoxForEdit(
   run: TextRun | SourceTextBlock,
   edit: Edit,
@@ -638,15 +631,43 @@ function drawBoxForEdit(
   runPdfWidth: number,
   lineLayoutsPdf: RichTextLineLayoutPdf[] | undefined,
 ): { left: number; width: number } {
-  if (lineLayoutsPdf && lineLayoutsPdf.length > 0) return { left: runPdfX, width: runPdfWidth };
+  const overrideWidth =
+    edit.editBoxWidth !== undefined ? Math.max(1, edit.editBoxWidth / scale) : undefined;
+  if (lineLayoutsPdf && lineLayoutsPdf.length > 0) {
+    return { left: runPdfX, width: overrideWidth ?? runPdfWidth };
+  }
   const text = edit.richText?.text ?? edit.newText;
   const isRtl = edit.style?.dir === "rtl" || (edit.style?.dir !== "ltr" && RTL_RE.test(text));
-  if (!isRtl) return { left: runPdfX, width: runPdfWidth };
+  if (!isRtl) return { left: runPdfX, width: overrideWidth ?? runPdfWidth };
   const widthPadding = Math.max(96, run.height * 6) / scale;
-  const width = runPdfWidth + widthPadding;
+  const width = overrideWidth ?? runPdfWidth + widthPadding;
   return {
     left: runPdfX + runPdfWidth - width,
     width,
+  };
+}
+
+function sourceEditClipBoxForEdit(
+  run: TextRun | SourceTextBlock,
+  edit: Edit,
+  pageHeight: number,
+  scale: number,
+  boxLeftPdf: number,
+): TextClipBoxPdf | undefined {
+  if (edit.editBoxHeight === undefined) return undefined;
+  const dx = edit.dx ?? 0;
+  const dy = edit.dy ?? 0;
+  const width =
+    edit.editBoxWidth !== undefined
+      ? Math.max(1, edit.editBoxWidth / scale)
+      : run.bounds.width / scale;
+  const height = Math.max(1, edit.editBoxHeight / scale);
+  const topPdf = pageHeight - (run.bounds.top + dy) / scale;
+  return {
+    x: boxLeftPdf + dx / scale,
+    y: topPdf - height,
+    width,
+    height,
   };
 }
 
