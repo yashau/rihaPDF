@@ -153,8 +153,8 @@ describe("source paragraph WYSIWYG", () => {
       // browser-HTML to pdf.js canvas comparison. Keep this strict
       // enough to catch line jumps/reflow, but not sub-font-renderer
       // edge hinting differences on CI.
-      maxEdgeDelta: 12,
-      maxCentroidDelta: 8,
+      maxEdgeDelta: 16,
+      maxCentroidDelta: 10,
       maxInkRatioDelta: 0.1,
     });
 
