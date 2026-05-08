@@ -5,10 +5,11 @@ import { hasEditStyle, richTextHasStyle, richTextHasTextOrStyle } from "@/domain
 import type { RenderedPage, TextRun } from "@/pdf/render/pdf";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import type { ToolMode } from "@/domain/toolMode";
-import { EditField, sourceEditorText } from "./EditField";
+import { EditField } from "./EditField";
 import { RichTextView } from "./RichTextEditor";
 import { cssTextDecoration } from "./helpers";
 import { displayTextForEditor } from "./rtlDisplayText";
+import { sourceEditorText } from "./sourceEditorText";
 import { sourceEditGeometry } from "./sourceEditGeometry";
 import type { InitialCaretPoint, ToolbarBlocker } from "./types";
 import type { RunDragState } from "./useRunDrag";

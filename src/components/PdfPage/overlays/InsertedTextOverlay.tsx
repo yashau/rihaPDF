@@ -8,22 +8,10 @@ import { useCrossPageDragPreview } from "../useCrossPageDragPreview";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { RichTextEditor, RichTextView } from "../RichTextEditor";
 import { ResizeHandles } from "./ResizeHandle";
+import { resizeTextBoxRealEstateFromCorner, setTextBoxResizeActive } from "../textBoxResize";
 
 const MIN_TEXT_BOX_PDF = 24;
 const INSERTED_TEXT_TOOLBAR_GAP_PX = 18;
-const RESIZE_CLICK_SUPPRESS_MS = 250;
-
-function setTextBoxResizeActive(active: boolean): void {
-  if (active) {
-    document.body.dataset.textBoxResizeActive = "true";
-    return;
-  }
-  window.setTimeout(() => {
-    if (document.body.dataset.textBoxResizeActive === "true") {
-      delete document.body.dataset.textBoxResizeActive;
-    }
-  }, RESIZE_CLICK_SUPPRESS_MS);
-}
 
 /** Net-new text the user typed at a fresh position on the page (not
  *  associated with any source run). Click-to-edit, drag-to-move,
@@ -163,18 +151,18 @@ export function InsertedTextOverlay({
     onStart: () => setTextBoxResizeActive(true),
     onMove: (ctx, info) => {
       const { dxPdf, dyPdf } = screenDeltaToPdf(info.dxRaw, info.dyRaw, effectivePdfScale);
-      const isLeftHandle = ctx.corner === "tl" || ctx.corner === "bl";
-      const growsTop = ctx.corner === "tl" || ctx.corner === "tr";
-      const nextWidth = Math.max(MIN_TEXT_BOX_PDF, ctx.base.w + (isLeftHandle ? -dxPdf : dxPdf));
-      const nextHeight = Math.max(MIN_TEXT_BOX_PDF, ctx.base.h + (growsTop ? dyPdf : -dyPdf));
-      const widthDelta = nextWidth - ctx.base.w;
-      const anchorSideDragged = isRtlEditor ? !isLeftHandle : isLeftHandle;
+      const next = resizeTextBoxRealEstateFromCorner({
+        base: { width: ctx.base.w, height: ctx.base.h },
+        corner: ctx.corner,
+        dx: dxPdf,
+        dy: -dyPdf,
+        min: MIN_TEXT_BOX_PDF,
+        isRtl: isRtlEditor,
+      });
       onChange({
-        pdfX: anchorSideDragged
-          ? ctx.base.x + (isLeftHandle ? -widthDelta : widthDelta)
-          : ctx.base.x,
-        pdfWidth: nextWidth,
-        pdfHeight: nextHeight,
+        pdfX: ctx.base.x + next.anchorDx,
+        pdfWidth: next.width,
+        pdfHeight: next.height,
       });
     },
     onEnd: () => setTextBoxResizeActive(false),

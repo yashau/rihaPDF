@@ -9,95 +9,17 @@ import { RichTextEditor } from "./RichTextEditor";
 import type { SourceTextBlock } from "@/pdf/text/textBlocks";
 import { sourceEditGeometry } from "./sourceEditGeometry";
 import { displayTextForEditor } from "./rtlDisplayText";
+import { sourceEditorText } from "./sourceEditorText";
 import { useDragGesture } from "@/platform/hooks/useDragGesture";
 import { ResizeHandles, type ResizeHandlePosition } from "./overlays/ResizeHandle";
+import { resizeTextBoxRealEstateFromCorner, setTextBoxResizeActive } from "./textBoxResize";
 
 const RTL_TEXT_RE = /[\u0590-\u05ff\u0600-\u06ff\u0780-\u07bf]/u;
 const MIN_SOURCE_TEXT_BOX_PX = 24;
 const SOURCE_TEXT_TOOLBAR_GAP_PX = 18;
-const RESIZE_CLICK_SUPPRESS_MS = 250;
-
-function setTextBoxResizeActive(active: boolean): void {
-  if (active) {
-    document.body.dataset.textBoxResizeActive = "true";
-    return;
-  }
-  window.setTimeout(() => {
-    if (document.body.dataset.textBoxResizeActive === "true") {
-      delete document.body.dataset.textBoxResizeActive;
-    }
-  }, RESIZE_CLICK_SUPPRESS_MS);
-}
 
 function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlock {
   return "isParagraph" in run;
-}
-
-function cssSpaceWidth(run: TextRun): number {
-  if (typeof document === "undefined") return run.height * 0.25;
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return run.height * 0.25;
-  ctx.font = `${run.italic ? "italic " : ""}${run.bold ? "700" : "400"} ${run.height}px "${run.fontFamily}"`;
-  const width = ctx.measureText(" ").width;
-  return width > 0 ? width : run.height * 0.25;
-}
-
-function spacesForIndent(gapPx: number, run: TextRun): string {
-  if (gapPx <= 0) return "";
-  return " ".repeat(Math.max(0, Math.round(gapPx / cssSpaceWidth(run))));
-}
-
-function lineRight(run: TextRun): number {
-  return run.bounds.left + run.bounds.width;
-}
-
-export function sourceEditorText(
-  displayText: string,
-  run: TextRun | SourceTextBlock,
-  isRtl: boolean,
-) {
-  if (!isRtl || !isSourceTextBlock(run) || run.lines.length < 2) return displayText;
-  const textLines = displayText.split("\n");
-  const baseRight = Math.max(...run.lines.map(lineRight));
-  return textLines
-    .map((lineText, index) => {
-      const sourceLine = run.lines[index];
-      if (!sourceLine) return lineText;
-      return `${spacesForIndent(baseRight - lineRight(sourceLine), sourceLine)}${lineText}`;
-    })
-    .join("\n");
-}
-
-function resizeRealEstateFromCorner(
-  base: { width: number; height: number },
-  corner: ResizeHandlePosition,
-  dx: number,
-  dy: number,
-  min: number,
-  isRtl: boolean,
-): { dx: number; width: number; height: number } {
-  const isLeftHandle = corner === "tl" || corner === "bl";
-  const width = Math.max(min, base.width + (isLeftHandle ? -dx : dx));
-  let height = base.height;
-  switch (corner) {
-    case "br":
-      height = Math.max(min, base.height + dy);
-      break;
-    case "tr":
-      height = Math.max(min, base.height - dy);
-      break;
-    case "tl":
-      height = Math.max(min, base.height - dy);
-      break;
-    case "bl":
-      height = Math.max(min, base.height + dy);
-      break;
-  }
-  const widthDelta = width - base.width;
-  const anchorSideDragged = isRtl ? !isLeftHandle : isLeftHandle;
-  const dxDelta = anchorSideDragged ? (isLeftHandle ? -widthDelta : widthDelta) : 0;
-  return { dx: dxDelta, width, height };
 }
 
 export function EditField({
@@ -165,16 +87,16 @@ export function EditField({
     touchActivation: "immediate",
     onStart: () => setTextBoxResizeActive(true),
     onMove: (ctx, info) => {
-      const next = resizeRealEstateFromCorner(
-        ctx.base,
-        ctx.corner,
-        info.dxRaw,
-        info.dyRaw,
-        MIN_SOURCE_TEXT_BOX_PX,
-        isRtlEditor,
-      );
+      const next = resizeTextBoxRealEstateFromCorner({
+        base: ctx.base,
+        corner: ctx.corner,
+        dx: info.dxRaw,
+        dy: info.dyRaw,
+        min: MIN_SOURCE_TEXT_BOX_PX,
+        isRtl: isRtlEditor,
+      });
       setBox({
-        dx: ctx.baseDx + next.dx,
+        dx: ctx.baseDx + next.anchorDx,
         dy: ctx.baseDy,
         width: next.width,
         height: next.height,

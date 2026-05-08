@@ -40,7 +40,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 110 e2e tests.
+The suite currently has 119 e2e tests.
 
 | File                                          | What it covers                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ The suite currently has 110 e2e tests.
 | `image-move.test.ts`                          | drag image -> cm rewrite, neighbours untouched                                   |
 | `image-resize.test.ts`                        | corner-drag resize anchors the opposite corner across save+reload                |
 | `insert-format.test.ts`                       | font / size / bold round-trip from the inserted-text toolbar                     |
-| `insert.test.ts`                              | drop text + image -> both persist after save                                     |
+| `insert.test.ts`                              | drop text + image -> both persist                                                |
 | `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                             |
 | `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint               |
 | `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag and resize               |
@@ -79,6 +79,7 @@ The suite currently has 110 e2e tests.
 | `sidebar-pdf-drop.test.ts`                    | PDF file drops show a sidebar insertion marker and add pages at that gap         |
 | `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font            |
 | `source-paragraph-wysiwyg.test.ts`            | Maldivian source paragraph edit/commit/save visual ink geometry stays aligned    |
+| `text-box-resize.test.ts`                     | resized inserted/source text boxes reflow and save within tight geometry bounds  |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                         |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                            |
 
