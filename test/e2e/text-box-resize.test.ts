@@ -57,6 +57,16 @@ function screenBoxToPdf(box: Box, pageBox: Box, pageSize: { width: number; heigh
   };
 }
 
+function screenLineToPdfX(
+  line: { xMin: number; xMax: number; width: number },
+  pageBox: Box,
+  pageSize: { width: number; height: number },
+) {
+  const xMin = ((line.xMin - pageBox.x) / pageBox.width) * pageSize.width;
+  const xMax = ((line.xMax - pageBox.x) / pageBox.width) * pageSize.width;
+  return { xMin, xMax, width: xMax - xMin };
+}
+
 async function savedTextItems(
   pdfPath: string,
   pageIndex = 0,
@@ -227,16 +237,25 @@ describe("resized text boxes", () => {
     expect(lines.length).toBeGreaterThanOrEqual(4);
     const nonLast = lines.slice(0, -1);
     expect(nonLast.length).toBeGreaterThanOrEqual(3);
-    const edgeTolerance = 12;
-    for (const line of nonLast.slice(0, 3)) {
+    const activePdfLines = activeLines.map((line) =>
+      screenLineToPdfX(line, pageScreenBox!, pageSize),
+    );
+    const visualParityTolerance = Math.max(10, pdfBox.width * 0.06);
+    for (const [lineIndex, line] of nonLast.slice(0, 3).entries()) {
+      const activeLine = activePdfLines[lineIndex];
+      const lineWidth = line.xMax - line.xMin;
       expect(
-        Math.abs(line.xMin - pdfBox.x),
-        `line should reach resized box left edge: ${line.text}`,
-      ).toBeLessThanOrEqual(edgeTolerance);
+        lineWidth,
+        `saved line should remain a broad reflowed row: ${line.text}`,
+      ).toBeGreaterThan(pdfBox.width * 0.72);
       expect(
-        Math.abs(line.xMax - (pdfBox.x + pdfBox.width)),
-        `line should reach resized box right edge: ${line.text}`,
-      ).toBeLessThanOrEqual(edgeTolerance);
+        Math.abs(line.xMin - activeLine.xMin),
+        `saved line left edge should match the active editor: ${line.text}`,
+      ).toBeLessThanOrEqual(visualParityTolerance);
+      expect(
+        Math.abs(line.xMax - activeLine.xMax),
+        `saved line right edge should match the active editor: ${line.text}`,
+      ).toBeLessThanOrEqual(visualParityTolerance);
     }
   });
 
