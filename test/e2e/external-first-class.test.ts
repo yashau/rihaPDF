@@ -114,9 +114,9 @@ describe("first-class external pages", () => {
     const ext1 = await pageBox(h.page, 1);
     await h.page.mouse.click(ext1.x + ext1.width * 0.3, ext1.y + ext1.height * 0.4);
     await h.page.waitForTimeout(200);
-    const input = h.page.locator("[data-text-insert-id] input").first();
+    const input = h.page.locator('[data-editor][contenteditable="true"]').first();
     await input.fill(SENTINEL);
-    await input.press("Enter");
+    await input.press("Control+Enter");
     await h.page.waitForTimeout(300);
 
     const saved = await saveAndDownload(h.page, "ext-insert-text.pdf");
@@ -181,9 +181,9 @@ describe("first-class external pages", () => {
     const p0 = await pageBox(h.page, 0);
     await h.page.mouse.click(p0.x + p0.width * 0.4, p0.y + p0.height * 0.5);
     await h.page.waitForTimeout(200);
-    const input = h.page.locator("[data-text-insert-id] input").first();
+    const input = h.page.locator('[data-editor][contenteditable="true"]').first();
     await input.fill(SENTINEL);
-    await input.press("Enter");
+    await input.press("Control+Enter");
     await h.page.waitForTimeout(300);
 
     // Drag the overlay onto slot 2 (external page 2).
@@ -226,10 +226,23 @@ describe("first-class external pages", () => {
     // EditField marks its <input> with `data-editor` so we can find it
     // unambiguously even when the toolbar's font-size <input> is in the
     // same DOM subtree.
-    const editInput = h.page.locator("input[data-editor]").first();
+    const editInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await editInput.waitFor({ state: "attached", timeout: 5000 });
-    await editInput.fill("EDITED_EXT_RUN");
-    await editInput.press("Enter");
+    await editInput.evaluate((el) => {
+      const root = el as HTMLElement;
+      root.focus();
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    await h.page.keyboard.press("Backspace");
+    await h.page.keyboard.insertText("EDITED_EXT_RUN");
+    const pageBox = await h.page.locator('[data-page-index="1"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
     await h.page.waitForTimeout(400);
 
     const saved = await saveAndDownload(h.page, "ext-edit-run.pdf");

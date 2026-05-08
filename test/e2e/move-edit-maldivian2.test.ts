@@ -159,14 +159,28 @@ async function runScenario({
   if (edit) {
     await h.page.locator(`[data-run-id="${titleRunId}"]`).click();
     await h.page.waitForTimeout(200);
-    const inp = h.page.locator("input[data-editor]").first();
-    await inp.fill(edit);
-    await inp.press("Enter");
-    await h.page.locator("input[data-editor]").first().waitFor({ state: "detached" });
+    const inp = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await inp.evaluate((el) => {
+      const root = el as HTMLElement;
+      root.focus();
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    await h.page.keyboard.press("Backspace");
+    await h.page.keyboard.insertText(edit);
+    await inp.press("Control+Enter");
+    await h.page
+      .locator('[data-editor][contenteditable="true"]')
+      .first()
+      .waitFor({ state: "detached" });
     await h.page.waitForFunction(
       ({ selector, text }) =>
-        Array.from(document.querySelectorAll(selector)).some(
-          (el) => (el.textContent || "") === text,
+        Array.from(document.querySelectorAll(selector)).some((el) =>
+          (el.textContent || "").replace(/[\u2066-\u2069]/g, "").includes(text),
         ),
       { selector: `[data-run-id="${titleRunId}"]:not(input)`, text: edit },
       { timeout: 20_000 },

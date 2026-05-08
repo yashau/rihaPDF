@@ -165,15 +165,18 @@ async function runScenario({
   if (edit) {
     await h.page.locator(`[data-run-id="${titleRunId}"]`).click();
     await h.page.waitForTimeout(200);
-    const inp = h.page.locator("input[data-editor]").first();
+    const inp = h.page.locator('[data-editor][contenteditable="true"]').first();
     await inp.fill(edit);
-    await inp.press("Enter");
+    await inp.press("Control+Enter");
     // Wait for the commit to land instead of sleeping a fixed 300ms:
     // under full-suite concurrent load on the dev server React's commit
     // can stretch past 300ms and the Save button stays disabled when
     // the click below fires. Detach + enabled-poll is bounded by the
     // 20s deadline below.
-    await h.page.locator("input[data-editor]").first().waitFor({ state: "detached" });
+    await h.page
+      .locator('[data-editor][contenteditable="true"]')
+      .first()
+      .waitFor({ state: "detached" });
   }
 
   // 20s click timeout: Playwright's default 8s isn't enough when the

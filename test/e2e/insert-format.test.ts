@@ -41,26 +41,33 @@ describe("inserted-text formatting toolbar", () => {
     expect(pageBox).not.toBeNull();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.5);
     await h.page.waitForTimeout(200);
-    const insertInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertInput.fill(SENTINEL);
+    await insertInput.press("Control+A");
     await h.page.waitForTimeout(150);
 
     // Toolbar: Times New Roman / 28pt / bold.
     const toolbar = h.page.locator("[data-edit-toolbar]");
+    await insertInput.press("Control+A");
     await toolbar.locator("select").selectOption("Times New Roman");
     await h.page.waitForTimeout(120);
     const sizeInput = toolbar.locator('input[aria-label="Font size"]');
+    await insertInput.press("Control+A");
     await sizeInput.fill("28");
     await sizeInput.press("Tab");
     await h.page.waitForTimeout(120);
-    await toolbar.locator("button[aria-pressed]").first().click();
+    await insertInput.press("Control+A");
+    await h.page.keyboard.press("Control+B");
     await h.page.waitForTimeout(150);
 
     // Live-overlay computed style sanity.
     const live = await h.page.evaluate(() => {
-      const el = document.querySelector("[data-text-insert-id] input");
+      const el = document.querySelector('[data-editor][contenteditable="true"]');
       if (!el) return null;
-      const cs = getComputedStyle(el);
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const textNode = walker.nextNode();
+      const styleHost = textNode?.parentElement ?? el;
+      const cs = getComputedStyle(styleHost);
       return {
         fontFamily: cs.fontFamily,
         fontSize: cs.fontSize,

@@ -91,9 +91,9 @@ describe("undo/redo: every mutation path", () => {
 
     await run.click();
     await h.page.waitForTimeout(150);
-    const editor = h.page.locator("input[data-editor]").first();
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
     await editor.fill("UNDO_PROBE_EDIT");
-    await editor.press("Enter");
+    await editor.press("Control+Enter");
     await editor.waitFor({ state: "detached" });
 
     expect(await saveDisabled(), "save enables after edit").toBe(false);
@@ -114,11 +114,11 @@ describe("undo/redo: every mutation path", () => {
     const run = h.page.locator('[data-page-index="0"] [data-run-id]').first();
     await run.click();
     await h.page.waitForTimeout(150);
-    const editor = h.page.locator("input[data-editor]").first();
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
     // Type a few characters in quick succession (well within the
     // 500ms coalesce window) — should collapse to one snapshot.
     await editor.fill("ABC");
-    await editor.press("Enter");
+    await editor.press("Control+Enter");
     await editor.waitFor({ state: "detached" });
 
     expect(await saveDisabled()).toBe(false);
@@ -192,9 +192,9 @@ describe("undo/redo: every mutation path", () => {
     expect(pageBox).not.toBeNull();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.4, pageBox!.y + pageBox!.height * 0.4);
     await h.page.waitForTimeout(200);
-    const insertedInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertedInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertedInput.fill("UNDO_INSERT_TEXT");
-    await insertedInput.press("Enter");
+    await insertedInput.press("Control+Enter");
     await h.page.waitForTimeout(150);
 
     expect(await h.page.locator("[data-text-insert-id]").count()).toBe(1);
@@ -309,9 +309,9 @@ describe("undo/redo: every mutation path", () => {
     expect(pageBox).not.toBeNull();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.3);
     await h.page.waitForTimeout(200);
-    const inputLoc = h.page.locator("[data-text-insert-id] input").first();
+    const inputLoc = h.page.locator('[data-editor][contenteditable="true"]').first();
     await inputLoc.fill("DELETE_AND_UNDO");
-    await inputLoc.press("Enter");
+    await inputLoc.press("Control+Enter");
     await h.page.waitForTimeout(150);
     expect(await h.page.locator("[data-text-insert-id]").count()).toBe(1);
 
@@ -417,9 +417,9 @@ describe("undo/redo: every mutation path", () => {
       .click();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.3);
     await h.page.waitForTimeout(200);
-    const insIn = h.page.locator("[data-text-insert-id] input").first();
+    const insIn = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insIn.fill("STEP_ONE");
-    await insIn.press("Enter");
+    await insIn.press("Control+Enter");
     await h.page.waitForTimeout(150);
     await breakCoalesceWindow();
 

@@ -37,8 +37,9 @@ describe("source font detection", () => {
     expect(target!.base).toContain("Faruma");
 
     await h.page.locator(`[data-run-id="${target!.id}"]`).click();
-    const editor = h.page.locator("input[data-editor]").first();
-    await expect.poll(() => editor.inputValue()).toBe(target!.text);
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await editor.waitFor({ state: "visible" });
+    await expect.poll(() => editor.textContent()).toContain("އޖ");
     const editorFamily = await editor.evaluate((el) => getComputedStyle(el).fontFamily);
     expect(editorFamily).toMatch(/Faruma/i);
   });

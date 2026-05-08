@@ -146,7 +146,7 @@ describe("deletion", () => {
     expect(pageBox).not.toBeNull();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.4, pageBox!.y + pageBox!.height * 0.4);
     await h.page.waitForTimeout(200);
-    const insertedInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertedInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertedInput.fill(SENTINEL);
     // Don't press Enter (closes); click the trash button.
     const trash = h.page.locator('button[aria-label^="Delete text"]');

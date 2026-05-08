@@ -146,9 +146,9 @@ describe("cross-page move", () => {
     const p1 = await pageBox(h.page, 0);
     await h.page.mouse.click(p1.x + p1.width * 0.4, p1.y + p1.height * 0.5);
     await h.page.waitForTimeout(200);
-    const input = h.page.locator("[data-text-insert-id] input").first();
+    const input = h.page.locator('[data-editor][contenteditable="true"]').first();
     await input.fill(SENTINEL);
-    await input.press("Enter");
+    await input.press("Control+Enter");
     await h.page.waitForTimeout(300);
 
     // Now drag the inserted text box onto page 2.

@@ -181,7 +181,7 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     await h.page.touchscreen.tap(target!.cx, target!.cy);
     await h.page.waitForTimeout(300);
     expect(
-      await h.page.locator("input[data-editor]").first().isVisible(),
+      await h.page.locator('[data-editor][contenteditable="true"]').first().isVisible(),
       "edit input should appear after tap",
     ).toBe(true);
     // The mobile toolbar should be fixed-bottom — assert position:fixed
@@ -197,9 +197,9 @@ describe("mobile interaction (390×844, hasTouch)", () => {
   test("tap-to-edit, type, Enter commits", async () => {
     // Continues from previous test's loaded fixture / open editor —
     // the input should still be focused.
-    const input = h.page.locator("input[data-editor]").first();
+    const input = h.page.locator('[data-editor][contenteditable="true"]').first();
     await input.fill("ޓެސްޓު");
-    await input.press("Enter");
+    await input.press("Control+Enter");
     await h.page.waitForTimeout(200);
     // Editor closes; the edited overlay is now visible with new text.
     const editedText = await h.page.evaluate(() => {

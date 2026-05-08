@@ -61,10 +61,10 @@ describe("mixed-script insert", () => {
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.3);
     await h.page.waitForTimeout(200);
 
-    const insertInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertInput.fill(MIXED);
     await h.page.waitForTimeout(150);
-    await insertInput.press("Enter");
+    await insertInput.press("Control+Enter");
     await h.page.waitForTimeout(200);
 
     const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });

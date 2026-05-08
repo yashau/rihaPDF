@@ -135,9 +135,9 @@ describe("mobile positioning round-trip", () => {
     await h.page.touchscreen.tap(clickClientX, clickClientY);
     await h.page.waitForTimeout(250);
 
-    const insertInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertInput.fill("MOBILE_INS");
-    await insertInput.press("Enter");
+    await insertInput.press("Control+Enter");
     await h.page.waitForTimeout(200);
 
     const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });
@@ -192,9 +192,9 @@ describe("mobile positioning round-trip", () => {
     await h.page.touchscreen.tap(clickClientX, clickClientY);
     await h.page.waitForTimeout(250);
 
-    const insertInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertInput.fill("ދިވެހި");
-    await insertInput.press("Enter");
+    await insertInput.press("Control+Enter");
     await h.page.waitForTimeout(200);
 
     const dlPromise = h.page.waitForEvent("download", { timeout: 12_000 });

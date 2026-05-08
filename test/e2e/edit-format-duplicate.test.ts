@@ -68,11 +68,11 @@ describe("font change on Form-XObject text", () => {
     await h.page.waitForTimeout(150);
 
     // Issue 1: click outside the toolbar/editor must commit.
-    expect(await h.page.locator("input[data-editor]").count()).toBe(1);
+    expect(await h.page.locator('[data-editor][contenteditable="true"]').count()).toBe(1);
     await h.page.mouse.click(40, 40);
     await h.page.waitForTimeout(300);
     expect(
-      await h.page.locator("input[data-editor]").count(),
+      await h.page.locator('[data-editor][contenteditable="true"]').count(),
       "click-outside should dismiss the editor after using the font picker",
     ).toBe(0);
 

@@ -56,9 +56,9 @@ describe("inserting net-new content", () => {
     expect(pageBox).not.toBeNull();
     await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.3);
     await h.page.waitForTimeout(200);
-    const insertedTextInput = h.page.locator("[data-text-insert-id] input").first();
+    const insertedTextInput = h.page.locator('[data-editor][contenteditable="true"]').first();
     await insertedTextInput.fill(SENTINEL);
-    await insertedTextInput.press("Enter");
+    await insertedTextInput.press("Control+Enter");
     await h.page.waitForTimeout(200);
 
     // Click "+ Image" → upload tmp PNG → click on page to place.

@@ -86,8 +86,9 @@ async function dropTextWithStyle(
   await h.page.mouse.click(pageBox!.x + pageBox!.width * 0.3, pageBox!.y + pageBox!.height * 0.5);
   await h.page.waitForTimeout(200);
 
-  const insertInput = h.page.locator("[data-text-insert-id] input").first();
+  const insertInput = h.page.locator('[data-editor][contenteditable="true"]').first();
   await insertInput.fill(SENTINEL);
+  await insertInput.press("Control+A");
   await h.page.waitForTimeout(150);
 
   const toolbar = h.page.locator("[data-edit-toolbar]");
@@ -96,6 +97,7 @@ async function dropTextWithStyle(
     await h.page.waitForTimeout(120);
   }
   if (options.italic) {
+    await insertInput.press("Control+A");
     await toolbar.locator('button[aria-label="Italic"]').click();
     await h.page.waitForTimeout(120);
   }
