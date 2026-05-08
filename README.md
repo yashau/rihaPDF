@@ -49,11 +49,16 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 ## Stack
 
-- **Vite + React + TypeScript** — UI
-- **pdf.js** — page rendering + text extraction
-- **pdf-lib** — page operations + font embedding + saving
-- **HeroUI v3 + Tailwind v4 + lucide-react** — components / styling / icons
-- **@dnd-kit** — sortable thumbnails
+- **Vite 8 + React 19 + TypeScript 6** — browser app shell and strict UI code.
+- **HeroUI 3 + Tailwind CSS 4 + lucide-react** — components, styling, theme chrome, and icons.
+- **Lexical 0.44** — bounded rich-text editing surface for page text fields.
+- **pdf.js 5** — page rendering, workers, and source text extraction.
+- **pdf-lib + @pdf-lib/fontkit** — page copying, object writes, font embedding, and save output.
+- **harfbuzzjs + bidi-js** — Thaana shaping and mixed-direction text segmentation.
+- **@dnd-kit + framer-motion** — sortable page thumbnails, drag sensors, and motion primitives.
+- **Vitest 4 + Playwright + V8 coverage** — unit and browser-driven E2E regression tests.
+- **Oxfmt + Oxlint** — formatting and lint/type-aware static checks.
+- **Wrangler 4 + Cloudflare Workers Static Assets** — production hosting with SPA fallback.
 
 `harfbuzzjs` does the Thaana shaping at save time — replacement runs are shaped via HarfBuzz and emitted as raw `Tj` operators against a `subset: false` Type 0 font, so GPOS mark anchoring is correct ([shapedDraw.ts](src/pdf/text/shapedDraw.ts)). `bidi-js` segments mixed-script runs by direction so each level-run shapes with its own font and direction ([shapedBidi.ts](src/pdf/text/shapedBidi.ts)).
 
