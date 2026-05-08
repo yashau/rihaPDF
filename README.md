@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-119%20e2e%20%2B%2040%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-119%20e2e%20%2B%2039%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -121,7 +121,8 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 ```bash
 pnpm dev            # vite dev server (localhost:5173)
 pnpm build          # tsc + vite build → dist/
-pnpm check          # tsc -b && oxfmt --check && oxlint  (CI gate)
+pnpm check          # tsc -b && oxfmt --check && oxlint
+pnpm check:ci       # CI variant with oxfmt/oxlint forced to one thread
 pnpm lint           # oxlint over src/test/config entry points
 pnpm format         # oxfmt
 pnpm test           # vitest unit + E2E suite (E2E needs dev server up)
@@ -181,7 +182,7 @@ For focused unit coverage that does not need the dev server:
 pnpm test:coverage test/unit
 ```
 
-The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping including table-row non-merging, RTL source-edit display normalization, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup. E2E coverage includes strict source-paragraph visual WYSIWYG checks across active edit, committed render, and saved/reopened PDF output.
+The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping including table-row non-merging, RTL source-edit display normalization, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup. E2E coverage includes strict source-paragraph visual WYSIWYG checks across active edit, committed render, and saved/reopened PDF output, plus resized source/inserted text boxes that must reflow, preserve indentation, and save with browser-matching geometry.
 
 One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 

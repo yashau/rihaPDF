@@ -46,7 +46,7 @@ The suite currently has 119 e2e tests.
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
 | `acroform-save.test.ts`                       | unrelated saves of fillable PDFs rebuild `/Root /AcroForm /Fields`               |
 | `annotations.test.ts`                         | annotation save/move/resize/delete; source `/Annots`; same-session ink redaction |
-| `caret-at-click.test.ts`                      | source-glyph and trailing-blank clicks place paragraph carets correctly          |
+| `caret-at-click.test.ts`                      | source-glyph and trailing-blank clicks place paragraph carets in reflowed text   |
 | `cross-page-move.test.ts`                     | drag text run / source image / inserted text / inserted image across pages       |
 | `decoration-roundtrip.test.ts`                | inserted underline + strikethrough decorations are emitted into saved PDFs       |
 | `delete-objects.test.ts`                      | source image, inserted image, source text, inserted text - all deletable         |
@@ -78,8 +78,8 @@ The suite currently has 119 e2e tests.
 | `signature.test.ts`                           | visual signature draw/import -> local library, cleanup, insert, save             |
 | `sidebar-pdf-drop.test.ts`                    | PDF file drops show a sidebar insertion marker and add pages at that gap         |
 | `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font            |
-| `source-paragraph-wysiwyg.test.ts`            | Maldivian source paragraph edit/commit/save visual ink geometry stays aligned    |
-| `text-box-resize.test.ts`                     | resized inserted/source text boxes reflow and save within tight geometry bounds  |
+| `source-paragraph-wysiwyg.test.ts`            | active/committed/saved source paragraphs preserve indentation and ink geometry   |
+| `text-box-resize.test.ts`                     | resized inserted/source text boxes reflow, justify, and save to the same bounds  |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                         |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                            |
 

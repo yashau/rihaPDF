@@ -78,6 +78,7 @@ The dev server is expected at `http://localhost:5173` for tests.
 pnpm dev            # Vite dev server
 pnpm build          # TypeScript build + Vite production build
 pnpm check          # TypeScript + Oxfmt check + Oxlint
+pnpm check:ci       # CI check variant; forces Oxfmt/Oxlint to one thread
 pnpm lint           # Oxlint over src/test/config entry points
 pnpm format         # Oxfmt write
 pnpm format:check   # Oxfmt check only
@@ -153,6 +154,8 @@ When adjusting UI, preserve:
 - Keyboard shortcuts for delete, undo, and redo.
 - Existing dark/light/system theme behavior.
 
+Resizable text edit boxes change editing real estate only; they must not scale the text. Source and inserted text boxes should reflow within their committed bounds, preserve existing whitespace/indentation unless the user edits it away, and keep the text anchored on the appropriate side for the text direction. Saved PDFs should match the browser preview through content-stream surgery, not by covering or cropping the original content.
+
 ### Text, Fonts, and Shaping
 
 - Thaana replacement text must use the font pipeline in `src/pdf/text/fonts.ts`.
@@ -219,7 +222,7 @@ The unit suite under `test/unit/` covers pure parser, geometry, text-run, and re
 pnpm test test/unit
 ```
 
-The E2E suite is the main user-workflow regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup.
+The E2E suite is the main user-workflow regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup. Current coverage includes source/inserted text-box resize, paragraph reflow, indentation preservation, and saved-PDF parity for browser-visible text geometry.
 
 Common targeted test runs use `pnpm test run <name-fragment>`. The repo's `test` script already runs `vitest run`; the extra `run` and name fragment are passed through as Vitest filters.
 
