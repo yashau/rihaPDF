@@ -64,6 +64,24 @@ function splitRichTextLines(block: RichTextBlock): RichDrawLine[] {
   return lines.length > 0 ? lines : [[]];
 }
 
+function richTextWithSoftLineBreaks(block: RichTextBlock): RichTextBlock {
+  const spans: RichTextSpan[] = [];
+  block.spans.forEach((span, spanIndex) => {
+    const text = span.text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join(" ");
+    if (text.length === 0) return;
+    if (spans.length > 0 && spanIndex > 0) spans.push({ text: " " });
+    spans.push({ text, style: span.style });
+  });
+  return {
+    text: spans.map((span) => span.text).join(""),
+    spans,
+  };
+}
+
 function trimLeadingLineSpaces(line: RichDrawLine): RichDrawLine {
   let trimming = true;
   return line
@@ -561,6 +579,7 @@ export async function drawRichTextBlock(
     fallbackDir: "rtl" | "ltr" | undefined;
     textAlign?: TextAlignment;
     justifyWrapped?: boolean;
+    softLineBreaks?: boolean;
     clipBox?: TextClipBoxPdf;
     getFont: EmbeddedFontFactory;
   },
@@ -573,7 +592,8 @@ export async function drawRichTextBlock(
       endPath(),
     );
   }
-  const sourceLines = splitRichTextLines(block);
+  const drawBlock = opts.softLineBreaks ? richTextWithSoftLineBreaks(block) : block;
+  const sourceLines = splitRichTextLines(drawBlock);
   const fallback = {
     family: opts.fallbackFamily,
     fontSizePt: opts.fallbackSize,
@@ -758,12 +778,11 @@ export async function emitTextDraw(
   // Browser text paints a little lower inside source line-layout boxes
   // than the raw PDF baseline. Apply the same visual baseline for
   // paragraph rewrites so commit and saved render stay WYSIWYG.
-  const drawY =
-    edit.richText && plan.lineLayoutsPdf && plan.lineLayoutsPdf.length > 0
-      ? baselineYPdf - fontSizePt * 0.15
-      : baselineYPdf;
+  const hasSourceLineLayouts = !!plan.lineLayoutsPdf && plan.lineLayoutsPdf.length > 0;
+  const drawY = hasSourceLineLayouts ? baselineYPdf - fontSizePt * 0.15 : baselineYPdf;
+  const softLineBreaks = !hasSourceLineLayouts && "isParagraph" in run && run.isParagraph === true;
 
-  if (edit.richText) {
+  if (edit.richText || hasSourceLineLayouts || softLineBreaks) {
     await drawRichTextBlock(targetPage, richTextOrPlain(edit.richText, edit.newText, style), {
       x: boxLeftPdf,
       y: drawY,
@@ -778,6 +797,7 @@ export async function emitTextDraw(
       fallbackDir: dir,
       textAlign: edit.textAlign,
       justifyWrapped,
+      softLineBreaks,
       clipBox: plan.clipBoxPdf,
       getFont: ctx.getFont,
     });

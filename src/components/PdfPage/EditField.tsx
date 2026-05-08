@@ -22,6 +22,27 @@ function isSourceTextBlock(run: TextRun | SourceTextBlock): run is SourceTextBlo
   return "isParagraph" in run;
 }
 
+function sourceLineLayoutsFitBox(
+  run: TextRun | SourceTextBlock,
+  boxLeft: number,
+  boxWidth: number,
+): boolean {
+  if (!isSourceTextBlock(run) || !run.lineLayouts || run.lineLayouts.length === 0) return false;
+  const tolerance = Math.max(1, run.height * 0.25);
+  return run.lineLayouts.every((layout) => {
+    const left = run.bounds.left + layout.left - boxLeft;
+    return left >= -tolerance && left + layout.width <= boxWidth + tolerance;
+  });
+}
+
+function sourceTextWithSoftLineBreaks(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
+}
+
 export function EditField({
   run,
   pageScale,
@@ -119,9 +140,21 @@ export function EditField({
   const sourceText = initial.richText?.text ?? initial.text;
   const displayText = displayTextForEditor(sourceText, isRtlEditor);
   const flowSourceText = true;
+  const preserveSourceLineLayout =
+    flowSourceText &&
+    isSourceTextBlock(run) &&
+    run.isParagraph &&
+    sourceLineLayoutsFitBox(run, geometry.left, geometry.width);
+  const editorSourceText = preserveSourceLineLayout
+    ? displayText
+    : isSourceTextBlock(run) && run.isParagraph
+      ? sourceTextWithSoftLineBreaks(displayText)
+      : displayText;
   const editorDisplayText = flowSourceText
-    ? sourceEditorText(displayText, run, isRtlEditor)
-    : displayText;
+    ? preserveSourceLineLayout
+      ? sourceEditorText(editorSourceText, run, isRtlEditor)
+      : editorSourceText
+    : editorSourceText;
   const initialBlock = richTextOrPlain(
     initial.richText,
     initial.richText ? initial.text : editorDisplayText,
@@ -138,6 +171,7 @@ export function EditField({
   return (
     <>
       <RichTextEditor
+        key={`${run.id}-${preserveSourceLineLayout ? "source-lines" : "flow"}`}
         id={run.id}
         initial={initialBlock}
         defaultStyle={defaultStyle}

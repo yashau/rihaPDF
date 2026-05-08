@@ -126,6 +126,42 @@ function linesInsideBox(items: TextItem[], box: Box, tolerance = 3): TextLine[] 
     .sort((a, b) => b.y - a.y);
 }
 
+async function editorVisualLines(): Promise<Array<{ xMin: number; xMax: number; width: number }>> {
+  return h.page.evaluate(() => {
+    const editor = document.querySelector<HTMLElement>('[data-editor][contenteditable="true"]');
+    if (!editor) throw new Error("editor not found");
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    const rects: DOMRect[] = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.textContent || node.textContent.trim().length === 0) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      rects.push(...Array.from(range.getClientRects()));
+      range.detach();
+    }
+    const rows: DOMRect[][] = [];
+    for (const rect of rects) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      const row = rows.find((candidate) => Math.abs(candidate[0].top - rect.top) <= 3);
+      if (row) {
+        row.push(rect);
+      } else {
+        rows.push([rect]);
+      }
+    }
+    return rows
+      .map((row) => {
+        const xMin = Math.min(...row.map((rect) => rect.left));
+        const xMax = Math.max(...row.map((rect) => rect.right));
+        const top = row.reduce((sum, rect) => sum + rect.top, 0) / row.length;
+        return { xMin, xMax, width: xMax - xMin, top };
+      })
+      .sort((a, b) => a.top - b.top)
+      .map(({ xMin, xMax, width }) => ({ xMin, xMax, width }));
+  });
+}
+
 async function openLargestSourceTextBox(): Promise<number> {
   const { index, pageIndex } = await h.page.evaluate(() => {
     const candidates = Array.from(document.querySelectorAll<HTMLElement>("[data-run-id]")).map(
@@ -153,7 +189,7 @@ async function openLargestSourceTextBox(): Promise<number> {
 }
 
 describe("resized text boxes", () => {
-  test("RTL source paragraph saves as reflowed justified replacement text", async () => {
+  test("RTL source paragraph reflows when resized smaller and saves to the resized bounds", async () => {
     await loadFixture(h.page, FIXTURE.maldivian);
     const sourcePageIndex = await openLargestSourceTextBox();
 
@@ -169,6 +205,14 @@ describe("resized text boxes", () => {
     expect(resized!.width).toBeLessThan(before!.width - 90);
     expect(resized!.height).toBeGreaterThan(before!.height + 80);
     expect(resized!.x + resized!.width).toBeCloseTo(beforeRight, 1);
+    const activeLines = await editorVisualLines();
+    expect(activeLines.length).toBeGreaterThanOrEqual(4);
+    for (const line of activeLines.slice(0, -1).slice(0, 3)) {
+      expect(
+        line.width,
+        "active editor should reflow to broad rows after resize-down",
+      ).toBeGreaterThan(resized!.width * 0.72);
+    }
 
     const pageScreenBox = await h.page
       .locator(`[data-page-index="${sourcePageIndex}"]`)

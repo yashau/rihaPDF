@@ -183,8 +183,14 @@ export async function applyStreamSurgeryForSource(
       const runPdfWidth = run.bounds.width / scale;
       const runPdfHeight = run.height / scale;
       const lineStepPdf = lineStepForRuns(sourceRuns, scale);
-      const lineLayoutsPdf = undefined;
-      const drawBox = drawBoxForEdit(edit, scale, runPdfX, runPdfWidth, lineLayoutsPdf);
+      const drawBox = drawBoxForEdit(edit, scale, runPdfX, runPdfWidth);
+      const lineLayoutsPdf = sourceLineLayoutsForEdit(
+        run,
+        edit,
+        scale,
+        drawBox.left,
+        drawBox.width,
+      );
       const clipBoxPdf = sourceEditClipBoxForEdit(run, edit, pageHeight, scale, drawBox.left);
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
@@ -623,18 +629,40 @@ function lineStepForRuns(runs: TextRun[], scale: number): number | undefined {
   return deltas[Math.floor(deltas.length / 2)];
 }
 
+function sourceLineLayoutsForEdit(
+  run: TextRun | SourceTextBlock,
+  edit: Edit,
+  scale: number,
+  boxLeftPdf: number,
+  boxWidthPdf: number,
+): RichTextLineLayoutPdf[] | undefined {
+  if (!("lines" in run)) return undefined;
+  const lineLayouts = "lineLayouts" in run ? run.lineLayouts : undefined;
+  if (!lineLayouts || lineLayouts.length === 0) return undefined;
+  if (edit.textAlign !== undefined) return undefined;
+  const firstBaselineY = run.lines[0]?.baselineY ?? run.baselineY;
+  const layouts = lineLayouts.map((layout, index) => ({
+    xOffset: (run.bounds.left + layout.left) / scale - boxLeftPdf,
+    baselineOffset: ((run.lines[index]?.baselineY ?? firstBaselineY) - firstBaselineY) / scale,
+    width: layout.width / scale,
+    justify: layout.justify,
+  }));
+  const tolerance = Math.max(1, (run.height / scale) * 0.25);
+  const fitsInBox = layouts.every(
+    (layout) =>
+      layout.xOffset >= -tolerance && layout.xOffset + layout.width <= boxWidthPdf + tolerance,
+  );
+  return fitsInBox ? layouts : undefined;
+}
+
 function drawBoxForEdit(
   edit: Edit,
   scale: number,
   runPdfX: number,
   runPdfWidth: number,
-  lineLayoutsPdf: RichTextLineLayoutPdf[] | undefined,
 ): { left: number; width: number } {
   const overrideWidth =
     edit.editBoxWidth !== undefined ? Math.max(1, edit.editBoxWidth / scale) : undefined;
-  if (lineLayoutsPdf && lineLayoutsPdf.length > 0) {
-    return { left: runPdfX, width: overrideWidth ?? runPdfWidth };
-  }
   const text = edit.richText?.text ?? edit.newText;
   const isRtl = edit.style?.dir === "rtl" || (edit.style?.dir !== "ltr" && RTL_RE.test(text));
   if (!isRtl) return { left: runPdfX, width: overrideWidth ?? runPdfWidth };

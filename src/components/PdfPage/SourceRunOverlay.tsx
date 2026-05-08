@@ -74,6 +74,27 @@ function sourceCaretOffsetFromClick(
   return best.offset;
 }
 
+function sourceLineLayoutsFitBox(
+  run: TextRun | SourceTextBlock,
+  boxLeft: number,
+  boxWidth: number,
+): boolean {
+  if (!("lineLayouts" in run) || !run.lineLayouts || run.lineLayouts.length === 0) return false;
+  const tolerance = Math.max(1, run.height * 0.25);
+  return run.lineLayouts.every((layout) => {
+    const left = run.bounds.left + layout.left - boxLeft;
+    return left >= -tolerance && left + layout.width <= boxWidth + tolerance;
+  });
+}
+
+function sourceTextWithSoftLineBreaks(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
+}
+
 /** One source-page text run as an interactive overlay. Renders one of
  *  three branches based on state:
  *
@@ -233,9 +254,21 @@ export function SourceRunOverlay({
       editBoxHeight: editedValue.editBoxHeight,
     });
     const sourceDisplayText = displayTextForEditor(editedValue.text, isRtlEditor);
+    const preserveSourceLineLayout =
+      "isParagraph" in run &&
+      run.isParagraph &&
+      sourceLineLayoutsFitBox(run, geometry.left, geometry.width);
+    const overlayText =
+      preserveSourceLineLayout || !("isParagraph" in run) || !run.isParagraph
+        ? sourceDisplayText
+        : sourceTextWithSoftLineBreaks(sourceDisplayText);
     const displayBlock = editedValue.richText
       ? richTextOrPlain(editedValue.richText, editedValue.text, style)
-      : richTextOrPlain(undefined, sourceEditorText(sourceDisplayText, run, isRtlEditor), style);
+      : richTextOrPlain(
+          undefined,
+          preserveSourceLineLayout ? sourceEditorText(overlayText, run, isRtlEditor) : overlayText,
+          style,
+        );
     const defaultStyle = {
       fontFamily: style.fontFamily ?? run.fontFamily,
       fontSize: style.fontSize ?? defaultFontSizePt,
