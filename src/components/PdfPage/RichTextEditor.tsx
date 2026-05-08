@@ -41,6 +41,7 @@ type ToolbarPatch = Parameters<typeof EditTextToolbar>[0]["onChange"] extends (
 ) => void
   ? P
   : never;
+type RichTextDefaultStyle = Required<Pick<EditStyle, "fontFamily" | "fontSize">> & EditStyle;
 
 const BIDI_CONTROL_RE = /[\u2066-\u2069]/gu;
 const NUMERIC_MARKER_RE = /(^|[\s\p{P}])([.-]?\d[\d./:-]*)(?=$|\s|\p{P})/gu;
@@ -111,22 +112,21 @@ function parseStyleString(style: string, pageScale: number): Partial<EditStyle> 
   const fontFamily = el.style.fontFamily.replace(/^["']|["']$/g, "") || undefined;
   const fontSize = el.style.fontSize ? cssSizeToPoints(el.style.fontSize, pageScale) : undefined;
   const color = el.style.color ? parseCssColor(el.style.color) : undefined;
-  return {
-    fontFamily,
-    fontSize,
-    color,
-  };
+  const out: Partial<EditStyle> = {};
+  if (fontFamily !== undefined) out.fontFamily = fontFamily;
+  if (fontSize !== undefined) out.fontSize = fontSize;
+  if (color !== undefined) out.color = color;
+  return out;
 }
 
 function styleFromTextNode(node: ReturnType<typeof $createTextNode>, pageScale: number): EditStyle {
   const cssStyle = parseStyleString(node.getStyle(), pageScale);
-  return {
-    ...cssStyle,
-    bold: node.hasFormat("bold") || undefined,
-    italic: node.hasFormat("italic") || undefined,
-    underline: node.hasFormat("underline") || undefined,
-    strikethrough: node.hasFormat("strikethrough") || undefined,
-  };
+  const out: EditStyle = { ...cssStyle };
+  if (node.hasFormat("bold")) out.bold = true;
+  if (node.hasFormat("italic")) out.italic = true;
+  if (node.hasFormat("underline")) out.underline = true;
+  if (node.hasFormat("strikethrough")) out.strikethrough = true;
+  return out;
 }
 
 function createInitialEditorState(block: RichTextBlock, pageScale: number, rtl: boolean) {
@@ -307,7 +307,7 @@ function SelectionStylePlugin({
   useEffect(() => {
     const update = () => onStyleChange(activeStyleFromSelection(editor, pageScale, defaults));
     update();
-    return editor.registerCommand(
+    const unregisterSelection = editor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       () => {
         update();
@@ -315,6 +315,13 @@ function SelectionStylePlugin({
       },
       COMMAND_PRIORITY_HIGH,
     );
+    const unregisterUpdate = editor.registerUpdateListener(() => {
+      update();
+    });
+    return () => {
+      unregisterSelection();
+      unregisterUpdate();
+    };
   }, [defaults, editor, onStyleChange, pageScale]);
   return null;
 }
@@ -829,6 +836,23 @@ function displaySpanText(text: string, style: EditStyle): string {
   return protectRtlNumericMarkers(text, style.dir === "rtl");
 }
 
+function mergeSpanStyle(
+  defaultStyle: RichTextDefaultStyle,
+  spanStyle: EditStyle | undefined,
+): RichTextDefaultStyle {
+  if (!spanStyle) return { ...defaultStyle };
+  const out: RichTextDefaultStyle = { ...defaultStyle };
+  if (spanStyle.fontFamily !== undefined) out.fontFamily = spanStyle.fontFamily;
+  if (spanStyle.fontSize !== undefined) out.fontSize = spanStyle.fontSize;
+  if (spanStyle.bold !== undefined) out.bold = spanStyle.bold;
+  if (spanStyle.italic !== undefined) out.italic = spanStyle.italic;
+  if (spanStyle.underline !== undefined) out.underline = spanStyle.underline;
+  if (spanStyle.strikethrough !== undefined) out.strikethrough = spanStyle.strikethrough;
+  if (spanStyle.dir !== undefined) out.dir = spanStyle.dir;
+  if (spanStyle.color !== undefined) out.color = spanStyle.color;
+  return out;
+}
+
 export function RichTextView({
   block,
   defaultStyle,
@@ -915,7 +939,7 @@ export function RichTextView({
               {line.length === 0
                 ? " "
                 : line.map((span, spanIndex) => {
-                    const style = { ...defaultStyle, ...span.style };
+                    const style = mergeSpanStyle(defaultStyle, span.style);
                     const explicitDir = span.style?.dir;
                     return (
                       <span
@@ -971,7 +995,7 @@ export function RichTextView({
           {line.length === 0
             ? " "
             : line.map((span, spanIndex) => {
-                const style = { ...defaultStyle, ...span.style };
+                const style = mergeSpanStyle(defaultStyle, span.style);
                 const explicitDir = span.style?.dir;
                 return (
                   <span
