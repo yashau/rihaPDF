@@ -289,7 +289,7 @@ export function PageSidebar({
     <aside
       ref={sidebarRef}
       data-testid="page-sidebar"
-      className={`flex-shrink-0 ${widthClass} h-full border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]`}
+      className={`shrink-0 ${widthClass} h-full border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-y-auto py-2 [scrollbar-gutter:stable]`}
       onDragOver={handleFileDragOver}
       onDragLeave={(e) => {
         const nextTarget = e.relatedTarget;
