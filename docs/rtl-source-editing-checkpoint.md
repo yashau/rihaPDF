@@ -253,3 +253,33 @@ Current display cleanup:
 - Commit and save behavior after edits still need careful visual verification, especially around dates, parentheses, section markers, list markers, table rows, and mixed formatted spans.
 - The saved PDF path is close for tested parenthesis/date/formatting cases, but it is a separate renderer and can still diverge from browser layout in untested mixed-script cases.
 - A future lower-layer approach may still be valid, but only if character-to-glyph pairing is proven against physical render boxes first.
+
+## 2026-05-08 End State
+
+This round ended with the source paragraph editor in a usable, much better state for the known Maldivian agenda cases. It is not perfect, but it is good enough that the tested edit box, committed overlay, and saved/reopened PDF are now close to each other under visual regression tests.
+
+What is working now:
+
+- `maldivian.pdf` agenda paragraphs `6.1` and `6.2` are covered by E2E visual comparisons while editing, after committing, and after saving/reopening.
+- The live edit box and committed overlay are kept on a near-zero tolerance path. This is the most important WYSIWYG check because both are browser-rendered and should not meaningfully reflow relative to each other.
+- The saved/reopened PDF comparison is intentionally a little looser. The saved output is rendered back through pdf.js canvas, while the committed overlay is browser HTML. CI showed real edge and centroid differences from font rasterization and hinting even when the paragraph shape was correct.
+- Source paragraph line layouts now preserve explicit PDF line breaks and source-derived line geometry. The implementation avoids letting the browser rewrap Thaana paragraphs from scratch.
+- Applying partial formatting inside source paragraphs no longer punts the formatted word to the wrong visual side of the line in the tested cases.
+- Source save output now handles the tested mixed Thaana/date/parenthesis cases much better than the earlier attempts.
+- Single-line source edits retain extra box width/height headroom to avoid accidental wrapping from contenteditable rendering differences.
+- Table-adjacent text in `maldivian2.pdf` is guarded so table rows do not get merged into paragraph edit blocks.
+- The CI run for commit `955513f` passed after stabilizing the 6.2 saved-PDF visual threshold.
+
+The final visual thresholds are deliberate:
+
+- Edit box vs committed overlay should remain very tight. A failure there usually means real UI WYSIWYG drift.
+- Source PDF vs edit box and committed overlay vs saved PDF allow more edge movement because they compare different renderers and different font rasterization paths.
+- Thresholds should not be loosened casually. If they fail again, inspect the failure output line-by-line first; only widen when the geometry still clearly represents the same paragraph layout.
+
+Remaining gotchas:
+
+- This is still a pragmatic WYSIWYG approximation, not a true copy of the PDF renderer.
+- Browser HTML, pdf.js canvas, and saved PDF drawing are three different renderers. Small edge differences can be legitimate; line reordering, wrong indentation, punctuation migration, or line overlap are not.
+- The punctuation cleanup is based on observed extraction artifacts. New punctuation classes may need explicit tests before changing normalization rules.
+- Mixed bidi cases should be tested with the whole line, not only the numeric/date token. Parentheses, commas, and surrounding Thaana words are where regressions usually hide.
+- Lower-layer glyph matching may still be the right long-term solution, but only after proving actual character-to-glyph pairing and visual order against rendered boxes. The previous glyph-span reconstruction attempt made ordering worse.
