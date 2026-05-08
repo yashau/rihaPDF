@@ -987,7 +987,7 @@ export function RichTextView({
             lineHeight: `${lineHeight}px`,
             textAlign: effectiveTextAlign,
             textAlignLast:
-              effectiveTextAlign === "justify" && lineIndex < lines.length - 1 ? "justify" : "auto",
+              alignment === "justify" && lineIndex < lines.length - 1 ? "justify" : "auto",
             whiteSpace: wrap ? "pre-wrap" : "pre",
             unicodeBidi: "plaintext",
           }}
