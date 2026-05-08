@@ -14,6 +14,7 @@ import type { AnnotationColor } from "@/domain/annotations";
 import { DEFAULT_TEXT_COLOR } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
 import { richTextOrPlain, type RichTextBlock, type RichTextSpan } from "@/domain/richText";
+import type { TextAlignment } from "@/domain/textAlignment";
 import { DEFAULT_FONT_FAMILY, FONTS } from "@/pdf/text/fonts";
 import { drawShapedText, measureShapedWidth } from "@/pdf/text/shapedDraw";
 import { drawMixedShapedText, isMixedScriptText, measureMixedWidth } from "@/pdf/text/shapedBidi";
@@ -192,6 +193,12 @@ function lineHasDrawStyleOverride(
     styleOverridesFallback(baseStyle, fallback) ||
     line.some((span) => styleOverridesFallback(span.style, fallback))
   );
+}
+
+function alignedLineStart(x: number, width: number, lineWidth: number, align: TextAlignment) {
+  if (align === "center") return x + (width - lineWidth) / 2;
+  if (align === "right") return x + width - lineWidth;
+  return x;
 }
 
 /** Emit underline / strikethrough rules under a freshly-drawn text run.
@@ -552,6 +559,7 @@ export async function drawRichTextBlock(
     fallbackBold: boolean;
     fallbackItalic: boolean;
     fallbackDir: "rtl" | "ltr" | undefined;
+    textAlign?: TextAlignment;
     justifyWrapped?: boolean;
     clipBox?: TextClipBoxPdf;
     getFont: EmbeddedFontFactory;
@@ -602,8 +610,12 @@ export async function drawRichTextBlock(
     const shouldJustify =
       spaces > 0 &&
       lineWidth < targetWidth &&
-      ((layout?.justify && hasFormattingOverride) ||
-        (opts.justifyWrapped === true && !layout && lineIndex < lines.length - 1));
+      ((opts.textAlign === "justify" && lineIndex < lines.length - 1) ||
+        (!opts.textAlign && layout?.justify && hasFormattingOverride) ||
+        (!opts.textAlign &&
+          opts.justifyWrapped === true &&
+          !layout &&
+          lineIndex < lines.length - 1));
     if (shouldJustify) {
       await drawTokenizedRichLine(page, line, {
         x: lineX,
@@ -617,6 +629,39 @@ export async function drawRichTextBlock(
         fallbackItalic: opts.fallbackItalic,
         fallbackDir: opts.fallbackDir,
         extraSpace: (targetWidth - lineWidth) / spaces,
+        getFont: opts.getFont,
+      });
+      continue;
+    }
+    if (opts.textAlign) {
+      if (opts.textAlign === "justify") {
+        await drawTokenizedRichLine(page, line, {
+          x: lineX,
+          y: lineY,
+          width: targetWidth,
+          isRtl,
+          baseStyle: opts.baseStyle,
+          fallbackFamily: opts.fallbackFamily,
+          fallbackSize: opts.fallbackSize,
+          fallbackBold: opts.fallbackBold,
+          fallbackItalic: opts.fallbackItalic,
+          fallbackDir: opts.fallbackDir,
+          getFont: opts.getFont,
+        });
+        continue;
+      }
+      const lineStart = alignedLineStart(lineX, targetWidth, lineWidth, opts.textAlign);
+      await drawTokenizedRichLine(page, line, {
+        x: lineStart,
+        y: lineY,
+        width: lineWidth,
+        isRtl,
+        baseStyle: opts.baseStyle,
+        fallbackFamily: opts.fallbackFamily,
+        fallbackSize: opts.fallbackSize,
+        fallbackBold: opts.fallbackBold,
+        fallbackItalic: opts.fallbackItalic,
+        fallbackDir: opts.fallbackDir,
         getFont: opts.getFont,
       });
       continue;
@@ -707,18 +752,9 @@ export async function emitTextDraw(
   const isRtl = style.dir === "rtl" || (style.dir !== "ltr" && /[֐-׿؀-ۿހ-޿]/u.test(edit.newText));
   const dir: "rtl" | "ltr" | undefined = style.dir;
   const justifyWrapped =
-    ("textAlign" in run && run.textAlign === "justify") ||
-    ("isParagraph" in run && run.isParagraph && isRtl);
-  const widthPt = await measureTextWidth(
-    edit.newText,
-    pdfFont,
-    fontBytes,
-    family,
-    fontSizePt,
-    dir,
-    ctx.getFont,
-  );
-  const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
+    edit.textAlign === undefined &&
+    (("textAlign" in run && run.textAlign === "justify") ||
+      ("isParagraph" in run && run.isParagraph && isRtl));
   // Browser text paints a little lower inside source line-layout boxes
   // than the raw PDF baseline. Apply the same visual baseline for
   // paragraph rewrites so commit and saved render stay WYSIWYG.
@@ -740,12 +776,47 @@ export async function emitTextDraw(
       fallbackBold: run.bold,
       fallbackItalic: run.italic,
       fallbackDir: dir,
+      textAlign: edit.textAlign,
       justifyWrapped,
       clipBox: plan.clipBoxPdf,
       getFont: ctx.getFont,
     });
     return;
   }
+
+  if (edit.textAlign) {
+    await drawRichTextBlock(targetPage, richTextOrPlain(undefined, edit.newText, style), {
+      x: boxLeftPdf,
+      y: drawY,
+      width: runPdfWidth,
+      lineStep: plan.lineStepPdf ?? runPdfHeight * 1.4,
+      baseStyle: {
+        ...style,
+        underline: style.underline ?? run.underline ?? false,
+        strikethrough: style.strikethrough ?? run.strikethrough ?? false,
+      },
+      fallbackFamily: run.fontFamily ?? DEFAULT_FONT_FAMILY,
+      fallbackSize: runPdfHeight,
+      fallbackBold: run.bold,
+      fallbackItalic: run.italic,
+      fallbackDir: dir,
+      textAlign: edit.textAlign,
+      clipBox: plan.clipBoxPdf,
+      getFont: ctx.getFont,
+    });
+    return;
+  }
+
+  const widthPt = await measureTextWidth(
+    edit.newText,
+    pdfFont,
+    fontBytes,
+    family,
+    fontSizePt,
+    dir,
+    ctx.getFont,
+  );
+  const baseX = isRtl ? boxLeftPdf + runPdfWidth - widthPt : boxLeftPdf;
 
   await drawTextWithStyle(targetPage, edit.newText, {
     x: baseX,

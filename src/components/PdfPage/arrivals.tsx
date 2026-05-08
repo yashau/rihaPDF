@@ -104,6 +104,7 @@ export function CrossPageTextArrivalOverlay({
             textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
             color: colorToCss(arr.color) ?? "black",
             whiteSpace: "pre",
+            textAlign: arr.textAlign,
             pointerEvents: "none",
           }}
         >
@@ -129,6 +130,7 @@ export function CrossPageTextArrivalOverlay({
             textDecoration: cssTextDecoration(arr.underline, arr.strikethrough),
             color: colorToCss(arr.color) ?? "black",
             whiteSpace: "pre",
+            textAlign: arr.textAlign,
           }}
         >
           {arr.text}

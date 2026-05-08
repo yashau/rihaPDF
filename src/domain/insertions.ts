@@ -10,6 +10,7 @@
 
 import type { EditStyle } from "@/domain/editStyle";
 import type { RichTextBlock } from "@/domain/richText";
+import type { TextAlignment } from "@/domain/textAlignment";
 
 export type TextInsertion = {
   /** Stable id for state plumbing: "p<pageNumber>-t<index>". */
@@ -39,6 +40,9 @@ export type TextInsertion = {
   /** Rich text for partial formatting and multi-line inserted text.
    *  `text` stays as the plain-text mirror for legacy callers. */
   richText?: RichTextBlock;
+  /** Explicit block-level text alignment. Undefined keeps automatic
+   *  script-aware alignment. */
+  textAlign?: TextAlignment;
 };
 
 export type ImageInsertion = {

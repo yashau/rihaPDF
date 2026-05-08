@@ -194,6 +194,7 @@ export function InsertedTextOverlay({
           minHeight={height}
           maxHeight={height}
           lineHeight={lineHeightPx}
+          alignment={ins.textAlign}
           wrap
           scroll
           toolbarLeft={left - 2}
@@ -207,7 +208,7 @@ export function InsertedTextOverlay({
           })}
           boundaryWidth={page.viewWidth}
           initialCaretOffset={initialCaretPoint?.caretOffset}
-          onCommit={(richText) => {
+          onCommit={(richText, alignment) => {
             if (richText.text === "") {
               onDelete();
               onClose();
@@ -218,6 +219,7 @@ export function InsertedTextOverlay({
               text: richText.text,
               richText,
               style: nextStyle,
+              textAlign: alignment,
               fontSize: nextStyle?.fontSize ?? ins.fontSize,
             });
             onClose();
@@ -332,6 +334,7 @@ export function InsertedTextOverlay({
                 defaultStyle={defaultStyle}
                 pageScale={page.scale}
                 lineHeight={lineHeightPx}
+                alignment={ins.textAlign}
                 wrap
               />
             ) : (
@@ -370,6 +373,7 @@ export function InsertedTextOverlay({
               defaultStyle={defaultStyle}
               pageScale={page.scale * displayScale}
               lineHeight={lineHeightPx * displayScale}
+              alignment={ins.textAlign}
               wrap
             />
           ) : (

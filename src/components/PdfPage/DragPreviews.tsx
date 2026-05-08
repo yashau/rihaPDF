@@ -117,6 +117,7 @@ function RunDragPreview({
             defaultStyle={defaultStyle}
             pageScale={page.scale * ds}
             lineHeight={lineHeightScreen}
+            alignment={editedValue.textAlign}
           />
         ) : (
           text

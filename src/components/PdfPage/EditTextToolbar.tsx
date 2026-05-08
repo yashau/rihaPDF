@@ -1,5 +1,9 @@
 import { Button, ToggleButton as HeroToggleButton } from "@heroui/react";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
@@ -12,12 +16,13 @@ import {
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import type { AnnotationColor } from "@/domain/annotations";
+import type { TextAlignment } from "@/domain/textAlignment";
 import { FONTS } from "@/pdf/text/fonts";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
 import { useVisualViewportFollow } from "@/platform/hooks/useVisualViewport";
 import { ColorPickerPopover } from "./ColorPickerPopover";
 
-const DESKTOP_TOOLBAR_WIDTH_PX = 520;
+const DESKTOP_TOOLBAR_WIDTH_PX = 660;
 const DESKTOP_TOOLBAR_MARGIN_PX = 4;
 
 /** Shared formatting toolbar — font picker, size, B / I / U toggles.
@@ -39,6 +44,7 @@ export function EditTextToolbar({
   underline,
   strikethrough,
   dir,
+  textAlign,
   color,
   thaanaInput,
   onThaanaInputChange,
@@ -57,6 +63,9 @@ export function EditTextToolbar({
   strikethrough: boolean;
   /** Explicit text direction. `undefined` = auto-detect from text. */
   dir: "rtl" | "ltr" | undefined;
+  /** Explicit block alignment. `undefined` = automatic source/script
+   *  behavior, including inferred justification. */
+  textAlign?: TextAlignment;
   /** Current text fill color, 0..1 RGB. Undefined = no override
    *  (renders black). The picker shows the active swatch + hex
    *  reflecting this value. */
@@ -76,6 +85,7 @@ export function EditTextToolbar({
     strikethrough?: boolean;
     /** `null` clears an explicit direction back to auto-detect. */
     dir?: "rtl" | "ltr" | null;
+    textAlign?: TextAlignment;
     color?: AnnotationColor;
   }) => void;
   /** When provided, renders a trash button. Source-run deletion sets
@@ -166,13 +176,13 @@ export function EditTextToolbar({
         e.stopPropagation();
       }}
     >
-      {/* Mobile: font picker + size share row 1 (sub-flex with
-          flexBasis:100%) so the long font names don't truncate while
-          keeping size adjacent. Desktop: inline siblings. */}
+      {/* Mobile: font picker, size, direction, input mode, and delete
+          share row 1 so row 2 can stay dedicated to formatting and
+          alignment. Desktop: inline siblings. */}
       <div
         style={
           isMobile
-            ? { display: "flex", gap: 6, flexBasis: "100%", alignItems: "center" }
+            ? { display: "flex", gap: 6, flexBasis: "100%", alignItems: "center", minWidth: 0 }
             : { display: "contents" }
         }
       >
@@ -184,7 +194,7 @@ export function EditTextToolbar({
             padding: "4px 6px",
             borderRadius: 4,
             fontSize: 12,
-            minWidth: 140,
+            minWidth: isMobile ? 0 : 140,
             flex: isMobile ? 1 : undefined,
           }}
           onChange={(e) => onChange({ fontFamily: e.target.value })}
@@ -215,6 +225,43 @@ export function EditTextToolbar({
             if (Number.isFinite(v)) onChange({ fontSize: v });
           }}
         />
+        {isMobile ? (
+          <DirectionButton dir={dir} onChange={(next) => onChange({ dir: next })} />
+        ) : null}
+        {/* Mobile-only DV / EN input-mode toggle. DV = phonetic Latin →
+            Thaana transliteration on every keystroke (so a user with
+            the OS English keyboard can still type Thaana into a Faruma
+            run); EN = raw passthrough for typing Latin or for users
+            with a real Dhivehi system keyboard. Hidden on desktop and
+            when the parent doesn't pass the prop. */}
+        {isMobile && thaanaInput !== undefined && onThaanaInputChange ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onPress={() => onThaanaInputChange(!thaanaInput)}
+            onMouseDown={(e) => e.preventDefault()}
+            aria-label={
+              thaanaInput
+                ? "Thaana phonetic input (click to type Latin)"
+                : "Latin input (click to type Thaana)"
+            }
+            style={{ minWidth: 44, fontWeight: 600, fontSize: 12, flexShrink: 0 }}
+          >
+            {thaanaInput ? "DV" : "EN"}
+          </Button>
+        ) : null}
+        {isMobile && onDelete ? (
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            onPress={() => onDelete()}
+            aria-label="Delete text (Del)"
+            style={{ flexShrink: 0 }}
+          >
+            <Trash2 size={14} />
+          </Button>
+        ) : null}
       </div>
       <StyleToggle
         label="Bold"
@@ -248,6 +295,35 @@ export function EditTextToolbar({
         onChange={(c) => onChange({ color: c })}
         ariaLabel="Text color"
         trigger="text"
+        placement="top"
+      />
+      <AlignmentButton
+        label="Align left"
+        value="left"
+        active={textAlign}
+        onChange={(v) => onChange({ textAlign: v })}
+        icon={<AlignLeft size={14} />}
+      />
+      <AlignmentButton
+        label="Align center"
+        value="center"
+        active={textAlign}
+        onChange={(v) => onChange({ textAlign: v })}
+        icon={<AlignCenter size={14} />}
+      />
+      <AlignmentButton
+        label="Align right"
+        value="right"
+        active={textAlign}
+        onChange={(v) => onChange({ textAlign: v })}
+        icon={<AlignRight size={14} />}
+      />
+      <AlignmentButton
+        label="Justify"
+        value="justify"
+        active={textAlign}
+        onChange={(v) => onChange({ textAlign: v })}
+        icon={<AlignJustify size={14} />}
       />
       {/* Direction button — cycles auto → rtl → ltr → auto. Lets the
           user override the codepoint-based auto-detection used by the
@@ -255,47 +331,19 @@ export function EditTextToolbar({
           string is a mix or all-digits that the auto-detector
           misclassifies (a digit-only run inside a Dhivehi paragraph
           that should stay RTL, for example). */}
-      <Button
-        isIconOnly
-        size="sm"
-        variant={dir === undefined ? "ghost" : "primary"}
-        // Pass `null` to clear back to auto so the receiver can
-        // distinguish "no change" (key missing from patch) from
-        // "explicitly clear".
-        onPress={() => {
-          const next = dir === undefined ? "rtl" : dir === "rtl" ? "ltr" : null;
-          onChange({ dir: next });
-        }}
-        aria-label={
-          dir === "rtl"
-            ? "Direction: right-to-left (click for left-to-right)"
-            : dir === "ltr"
-              ? "Direction: left-to-right (click for auto)"
-              : "Direction: auto (click for right-to-left)"
-        }
-        // HeroUI ToggleButton suppresses focus shift via onMouseDown
-        // preventDefault — we need the same so clicking direction
-        // doesn't blur the editor input mid-edit.
-        onMouseDown={(e) => e.preventDefault()}
-      >
-        {dir === "rtl" ? (
-          <ArrowLeft size={14} />
-        ) : dir === "ltr" ? (
-          <ArrowRight size={14} />
-        ) : (
-          <ArrowLeftRight size={14} />
-        )}
-      </Button>
+      {!isMobile ? (
+        <DirectionButton dir={dir} onChange={(next) => onChange({ dir: next })} />
+      ) : null}
       {/* Mobile-only DV / EN input-mode toggle. DV = phonetic Latin →
           Thaana transliteration on every keystroke (so a user with the
           OS English keyboard can still type Thaana into a Faruma run);
           EN = raw passthrough for typing Latin or for users with a
           real Dhivehi system keyboard. Hidden on desktop and when the
           parent doesn't pass the prop. */}
-      {isMobile && thaanaInput !== undefined && onThaanaInputChange ? (
+      {isMobile ? null : thaanaInput !== undefined && onThaanaInputChange ? (
         <Button
           size="sm"
-          variant={thaanaInput ? "primary" : "ghost"}
+          variant="ghost"
           onPress={() => onThaanaInputChange(!thaanaInput)}
           onMouseDown={(e) => e.preventDefault()}
           aria-label={
@@ -308,18 +356,13 @@ export function EditTextToolbar({
           {thaanaInput ? "DV" : "EN"}
         </Button>
       ) : null}
-      {onDelete ? (
+      {!isMobile && onDelete ? (
         <Button
           isIconOnly
           size="sm"
-          variant="danger-soft"
+          variant="ghost"
           onPress={() => onDelete()}
           aria-label="Delete text (Del)"
-          // Mobile: push to the right edge of row 2 so it's reachable
-          // by the thumb that's already over there. `marginLeft: auto`
-          // on a flex item eats the leftover row space. Desktop keeps
-          // its inline placement.
-          style={isMobile ? { marginLeft: "auto" } : undefined}
         >
           <Trash2 size={14} />
         </Button>
@@ -338,6 +381,72 @@ export function EditTextToolbar({
     return createPortal(node, document.body);
   }
   return node;
+}
+
+function AlignmentButton({
+  label,
+  value,
+  active,
+  onChange,
+  icon,
+}: {
+  label: string;
+  value: TextAlignment;
+  active: TextAlignment | undefined;
+  onChange: (v: TextAlignment) => void;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Button
+      isIconOnly
+      size="sm"
+      variant={active === value ? "primary" : "ghost"}
+      onPress={() => onChange(value)}
+      aria-label={label}
+      aria-pressed={active === value}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {icon}
+    </Button>
+  );
+}
+
+function DirectionButton({
+  dir,
+  onChange,
+}: {
+  dir: "rtl" | "ltr" | undefined;
+  onChange: (v: "rtl" | "ltr" | null) => void;
+}) {
+  return (
+    <Button
+      isIconOnly
+      size="sm"
+      variant="ghost"
+      // Pass `null` to clear back to auto so the receiver can distinguish
+      // "no change" from "explicitly clear".
+      onPress={() => {
+        const next = dir === undefined ? "rtl" : dir === "rtl" ? "ltr" : null;
+        onChange(next);
+      }}
+      aria-label={
+        dir === "rtl"
+          ? "Direction: right-to-left (click for left-to-right)"
+          : dir === "ltr"
+            ? "Direction: left-to-right (click for auto)"
+            : "Direction: auto (click for right-to-left)"
+      }
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {dir === "rtl" ? (
+        <ArrowLeft size={14} />
+      ) : dir === "ltr" ? (
+        <ArrowRight size={14} />
+      ) : (
+        <ArrowLeftRight size={14} />
+      )}
+    </Button>
+  );
 }
 
 /** Wrapper around HeroUI's ToggleButton that suppresses focus-shift on

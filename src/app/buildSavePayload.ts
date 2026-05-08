@@ -89,6 +89,7 @@ export function buildSavePayload({
         newText: value.text,
         style: value.style,
         richText: value.richText,
+        textAlign: value.textAlign,
         dx: value.dx,
         dy: value.dy,
         targetSourceKey,
@@ -158,6 +159,7 @@ export function buildSavePayload({
         text: t.text,
         style: t.style,
         richText: t.richText,
+        textAlign: t.textAlign,
       });
     }
   }

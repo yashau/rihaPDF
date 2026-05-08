@@ -146,6 +146,7 @@ export function PageList({
         underline: style.underline ?? sourceRun.underline ?? false,
         strikethrough: style.strikethrough ?? sourceRun.strikethrough ?? false,
         dir: style.dir,
+        textAlign: edit.textAlign,
         color: style.color,
       });
       arrivalsBySlot.set(edit.targetSlotId, arr);

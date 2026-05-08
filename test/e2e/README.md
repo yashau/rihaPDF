@@ -40,7 +40,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 119 e2e tests.
+The suite currently has 115 e2e tests.
 
 | File                                          | What it covers                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -80,6 +80,7 @@ The suite currently has 119 e2e tests.
 | `source-font-detection.test.ts`               | source BaseFont selection keeps Thaana edit fields on the source font            |
 | `source-paragraph-wysiwyg.test.ts`            | active/committed/saved source paragraphs preserve indentation and ink geometry   |
 | `text-box-resize.test.ts`                     | resized inserted/source text boxes reflow, justify, and save to the same bounds  |
+| `text-alignment.test.ts`                      | source and inserted text alignment toolbar choices persist into saved PDFs       |
 | `theme.test.ts`                               | system default + override, OS-flip tracking, persistence                         |
 | `undo.test.ts`                                | every recordable mutation undoes + redoes; coalescing                            |
 

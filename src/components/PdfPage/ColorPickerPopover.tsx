@@ -31,6 +31,7 @@ export function ColorPickerPopover({
   presets = TEXT_COLOR_PRESETS,
   ariaLabel = "Color",
   trigger = "swatch",
+  placement = "bottom",
 }: {
   /** Current color, 0..1 RGB. Undefined means "no override" — the
    *  swatch renders black (the default) and the grid's Black preset
@@ -48,6 +49,8 @@ export function ColorPickerPopover({
   /** Trigger style. Text formatting uses the conventional "A" with a
    *  color bar; annotation/tool pickers keep the plain swatch. */
   trigger?: "swatch" | "text";
+  /** Popover placement relative to the trigger. */
+  placement?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement | null>(null);
@@ -76,12 +79,15 @@ export function ColorPickerPopover({
     };
   }, [open]);
 
-  // Anchor the popover under the trigger. Computed in the open-press
+  // Anchor the popover to the trigger. Computed in the open-press
   // handler so the rect reflects any toolbar reflow at the moment the
-  // user opens it (e.g. mobile keyboard show/hide). On mobile the
-  // popover is a centered sheet — no anchoring needed, the anchor is
-  // simply ignored by the mobile style branch.
-  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  // user opens it (e.g. mobile keyboard show/hide).
+  const [anchor, setAnchor] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width: number;
+  } | null>(null);
 
   const swatchCss = colorToCss(value) ?? "#000";
   const labelId = useId();
@@ -94,26 +100,26 @@ export function ColorPickerPopover({
       data-edit-toolbar
       className="border border-zinc-300 bg-white text-zinc-900 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
       style={
-        isMobile
+        anchor
           ? {
               position: "fixed",
-              left: "50%",
-              bottom: 80,
-              transform: "translateX(-50%)",
-              zIndex: 40,
-              borderRadius: 8,
-              padding: 12,
-              minWidth: 220,
+              left: anchor.left,
+              top: anchor.top,
+              bottom: anchor.bottom,
+              zIndex: 80,
+              borderRadius: isMobile ? 8 : 6,
+              padding: isMobile ? 12 : 8,
+              width: anchor.width,
             }
           : {
               position: "fixed",
-              left: anchor?.left ?? 0,
-              top: anchor?.top ?? 0,
-              zIndex: 40,
-              borderRadius: 6,
-              padding: 8,
-              minWidth: 180,
-              visibility: anchor ? "visible" : "hidden",
+              left: 0,
+              top: 0,
+              zIndex: 80,
+              borderRadius: isMobile ? 8 : 6,
+              padding: isMobile ? 12 : 8,
+              width: isMobile ? 220 : 180,
+              visibility: "hidden",
             }
       }
       // Same focus-preservation pattern as the toolbar buttons —
@@ -154,9 +160,9 @@ export function ColorPickerPopover({
             // Measure the trigger before flipping `open` so the popover's
             // first render already has its anchor — avoids the one-frame
             // flash you'd get if we deferred this to a useEffect.
-            if (!open && !isMobile) {
+            if (!open) {
               const r = triggerRef.current?.getBoundingClientRect();
-              setAnchor(r ? { left: r.left, top: r.bottom + 4 } : null);
+              setAnchor(r ? makeAnchor(r, isMobile, placement) : null);
             }
             setOpen((v) => !v);
           }}
@@ -199,6 +205,36 @@ export function ColorPickerPopover({
       {popover && typeof document !== "undefined" ? createPortal(popover, document.body) : popover}
     </>
   );
+}
+
+function makeAnchor(
+  triggerRect: DOMRect,
+  isMobile: boolean,
+  placement: "top" | "bottom",
+): { left: number; top?: number; bottom?: number; width: number } {
+  const width = isMobile ? 220 : 180;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || width;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const margin = 8;
+  const gap = 6;
+  const centeredLeft = triggerRect.left + triggerRect.width / 2 - width / 2;
+  const left = Math.min(
+    Math.max(margin, centeredLeft),
+    Math.max(margin, viewportWidth - width - margin),
+  );
+
+  if (placement === "top") {
+    return {
+      left,
+      bottom: Math.max(margin, viewportHeight - triggerRect.top + gap),
+      width,
+    };
+  }
+  return {
+    left,
+    top: triggerRect.bottom + gap,
+    width,
+  };
 }
 
 function SwatchGrid({

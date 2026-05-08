@@ -149,6 +149,7 @@ export function EditField({
         maxHeight={geometry.height}
         lineHeight={geometry.lineHeight}
         textAlign={textAlign}
+        alignment={initial.textAlign}
         wrap={flowSourceText}
         scroll={flowSourceText}
         textVisible={textVisible}
@@ -163,7 +164,7 @@ export function EditField({
         })}
         boundaryWidth={pageViewWidth}
         initialCaretOffset={initialCaretPoint?.caretOffset}
-        onCommit={(richText) => {
+        onCommit={(richText, alignment) => {
           const value = sourceEditCommitValue({
             richText,
             displayText: editorDisplayText,
@@ -171,12 +172,15 @@ export function EditField({
             isParagraph: flowSourceText,
           });
           const committedValue = flowSourceText && !value.richText ? { ...value, richText } : value;
+          const hasAlignmentChange = alignment !== undefined;
           const hasContentChange =
             committedValue.text !== sourceText ||
             committedValue.richText !== undefined ||
-            committedValue.style !== undefined;
+            committedValue.style !== undefined ||
+            hasAlignmentChange;
           onCommit({
             ...committedValue,
+            textAlign: alignment,
             dx,
             dy,
             editBoxWidth: box.width ?? (hasContentChange ? geometry.width : undefined),

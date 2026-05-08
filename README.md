@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-119%20e2e%20%2B%2039%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-115%20e2e%20%2B%2039%20unit-2ea44f?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)
 ![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)
@@ -29,9 +29,9 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 ## Features
 
-- **Edit text runs.** Click → source-glyph-positioned caret input + floating toolbar (font, size, B/I/U/S, RTL/LTR). Source edit boxes can be resized without changing font size, and style overrides survive close/reopen.
+- **Edit text runs.** Click → source-glyph-positioned caret input + floating toolbar (font, size, B/I/U/S, alignment, RTL/LTR). Source edit boxes can be resized without changing font size, and style overrides survive close/reopen.
 - **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
-- **Insert text and images.** Click-to-place tools that share the edit toolbar; inserted text boxes can be resized without changing font size.
+- **Insert text and images.** Click-to-place tools that share the edit toolbar; inserted text boxes can be resized without changing font size and support explicit left, center, right, or justified alignment.
 - **Visual signatures.** Draw a signature with signing colour presets or import one from an image. Imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse. These are visual PDF image inserts only, not cryptographic PDF signatures.
 - **Resize images.** 4 corner handles on source and inserted images, anchored opposite corner.
 - **Delete anything.** `Del`/`Backspace` on selected images; trash button on the text toolbar.

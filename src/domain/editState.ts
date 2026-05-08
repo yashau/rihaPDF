@@ -1,6 +1,7 @@
 import type { AnnotationColor } from "@/domain/annotations";
 import type { EditStyle } from "@/domain/editStyle";
 import type { RichTextBlock } from "@/domain/richText";
+import type { TextAlignment } from "@/domain/textAlignment";
 
 export type EditValue = {
   text: string;
@@ -9,6 +10,9 @@ export type EditValue = {
    *  paragraph edits. `text` remains the plain-text mirror for legacy
    *  callers and simple status checks. */
   richText?: RichTextBlock;
+  /** Explicit block-level text alignment. Undefined keeps the
+   *  automatic source/script alignment and justification behavior. */
+  textAlign?: TextAlignment;
   /** Source TextRun ids covered by this edit. Omitted for legacy
    *  single-run edits, where the map key is also the source run id. */
   sourceRunIds?: string[];
@@ -107,6 +111,7 @@ export type CrossPageArrival = {
   underline: boolean;
   strikethrough: boolean;
   dir: "rtl" | "ltr" | undefined;
+  textAlign?: TextAlignment;
   /** Override fill color from the edit's style. */
   color?: AnnotationColor;
 };

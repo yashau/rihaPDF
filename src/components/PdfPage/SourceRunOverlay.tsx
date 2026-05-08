@@ -24,6 +24,7 @@ function hasTextOrStyleEdit(run: TextRun | SourceTextBlock, value: EditValue): b
     value.text !== run.text ||
     hasEditStyle(value.style) ||
     hasMeaningfulRichText(value.richText, run.text) ||
+    value.textAlign !== undefined ||
     value.editBoxWidth !== undefined ||
     value.editBoxHeight !== undefined
   );
@@ -246,11 +247,12 @@ export function SourceRunOverlay({
       color: style.color,
     };
     const shouldFlowText = true;
-    const displayTextAlign = shouldFlowText
-      ? undefined
-      : "textAlign" in run
-        ? run.textAlign
-        : undefined;
+    const displayTextAlign =
+      "isParagraph" in run && run.isParagraph && isRtlEditor
+        ? "justify"
+        : "textAlign" in run
+          ? run.textAlign
+          : undefined;
     // Edited / dragged run: paint the new text where the user wants
     // it, with a white cover behind it. The preview canvas SHOULD
     // have the original glyphs stripped, but the strip is content-
@@ -344,6 +346,7 @@ export function SourceRunOverlay({
             pageScale={page.scale}
             lineHeight={geometry.lineHeight}
             textAlign={displayTextAlign}
+            alignment={editedValue.textAlign}
             wrap={shouldFlowText}
             lineLayouts={
               shouldFlowText ? undefined : "lineLayouts" in run ? run.lineLayouts : undefined

@@ -256,6 +256,7 @@ export async function applyEditsAndSave(
       fallbackBold: bold,
       fallbackItalic: italic,
       fallbackDir: dir,
+      textAlign: ins.textAlign,
       clipBox:
         ins.pdfHeight !== undefined
           ? {

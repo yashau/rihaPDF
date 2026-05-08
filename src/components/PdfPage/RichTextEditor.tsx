@@ -29,6 +29,7 @@ import type { AnnotationColor } from "@/domain/annotations";
 import { colorToCss, hexToColor } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
 import { normalizeRichTextBlock, type RichTextBlock, type RichTextSpan } from "@/domain/richText";
+import type { TextAlignment } from "@/domain/textAlignment";
 import { thaanaForLatin } from "@/domain/thaanaKeyboard";
 import type { SourceTextLineLayout } from "@/pdf/text/textBlocks";
 import { useIsMobile } from "@/platform/hooks/useMediaQuery";
@@ -63,6 +64,13 @@ function hasRtlText(text: string): boolean {
 
 function colorToCssValue(color: AnnotationColor | undefined): string | undefined {
   return colorToCss(color) ?? undefined;
+}
+
+function resolvedCssTextAlign(
+  textAlign: TextAlignment | undefined,
+  autoTextAlign: "justify" | "start" | undefined,
+): "left" | "center" | "right" | "justify" | "start" {
+  return textAlign ?? (autoTextAlign === "justify" ? "justify" : "start");
 }
 
 function styleToCss(style: EditStyle | undefined, pageScale: number): string {
@@ -338,12 +346,14 @@ function SourceLineLayoutPlugin({
   lineHeight,
   defaultStyle,
   pageScale,
+  textAlign,
 }: {
   layouts?: readonly SourceTextLineLayout[];
   offsetX?: number;
   offsetY?: number;
   lineHeight: number;
   pageScale: number;
+  textAlign?: TextAlignment;
   defaultStyle: Required<Pick<EditStyle, "fontFamily" | "fontSize">> &
     Pick<EditStyle, "bold" | "italic" | "underline" | "strikethrough" | "color" | "dir">;
 }) {
@@ -352,7 +362,8 @@ function SourceLineLayoutPlugin({
     if (!layouts || layouts.length === 0) return undefined;
     const apply = (root = editor.getRootElement()) => {
       if (!root) return;
-      Array.from(root.children).forEach((child, index) => {
+      const children = Array.from(root.children);
+      children.forEach((child, index) => {
         if (!(child instanceof HTMLElement)) return;
         const layout = layouts[index];
         child.style.margin = "0";
@@ -378,8 +389,13 @@ function SourceLineLayoutPlugin({
               style.color !== ""
             );
           });
-        child.style.textAlign = layout?.justify && hasFormattedDescendant ? "justify" : "start";
-        child.style.textAlignLast = layout?.justify && hasFormattedDescendant ? "justify" : "auto";
+        const forceJustify = textAlign === "justify" && index < children.length - 1;
+        child.style.textAlign =
+          textAlign ?? (layout?.justify && hasFormattedDescendant ? "justify" : "start");
+        child.style.textAlignLast =
+          forceJustify || (!textAlign && layout?.justify && hasFormattedDescendant)
+            ? "justify"
+            : "auto";
         child.style.whiteSpace = "pre";
         child.style.overflowWrap = "normal";
         child.style.wordBreak = "normal";
@@ -403,7 +419,7 @@ function SourceLineLayoutPlugin({
       unregisterRoot();
       unregisterUpdate();
     };
-  }, [defaultStyle, editor, layouts, offsetX, offsetY, lineHeight, pageScale]);
+  }, [defaultStyle, editor, layouts, offsetX, offsetY, lineHeight, pageScale, textAlign]);
   return null;
 }
 
@@ -523,7 +539,8 @@ export function RichTextEditor({
   minHeight,
   maxHeight,
   lineHeight,
-  textAlign: _textAlign,
+  textAlign: autoTextAlign,
+  alignment,
   lineLayouts,
   lineLayoutOffsetX,
   lineLayoutOffsetY,
@@ -549,6 +566,7 @@ export function RichTextEditor({
   maxHeight?: number;
   lineHeight: number;
   textAlign?: "justify" | "start";
+  alignment?: TextAlignment;
   lineLayouts?: readonly SourceTextLineLayout[];
   lineLayoutOffsetX?: number;
   lineLayoutOffsetY?: number;
@@ -559,7 +577,7 @@ export function RichTextEditor({
   toolbarLeft: number;
   boundaryWidth: number;
   initialCaretOffset?: number;
-  onCommit: (block: RichTextBlock) => void;
+  onCommit: (block: RichTextBlock, alignment?: TextAlignment) => void;
   onDelete?: () => void;
 }) {
   const isMobile = useIsMobile();
@@ -569,6 +587,7 @@ export function RichTextEditor({
   const hasLineLayouts = !!lineLayouts && lineLayouts.length > 0;
   const [thaanaInput, setThaanaInput] = useState(true);
   const [activeStyle, setActiveStyle] = useState<EditStyle>(defaultStyle);
+  const [activeTextAlign, setActiveTextAlign] = useState<TextAlignment | undefined>(alignment);
   useVisualViewportFollow(toolbarRef, "bottom", isMobile);
 
   const initialConfig = useMemo(
@@ -601,8 +620,8 @@ export function RichTextEditor({
   );
 
   const commit = useCallback(() => {
-    onCommit(latestBlockRef.current);
-  }, [onCommit]);
+    onCommit(latestBlockRef.current, activeTextAlign);
+  }, [activeTextAlign, onCommit]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -642,6 +661,7 @@ export function RichTextEditor({
         dir: patch.dir === null ? undefined : patch.dir,
       }));
     }
+    if (patch.textAlign !== undefined) setActiveTextAlign(patch.textAlign);
   };
 
   const fontFamily = activeStyle.fontFamily ?? defaultStyle.fontFamily;
@@ -664,6 +684,7 @@ export function RichTextEditor({
         lineHeight={lineHeight}
         defaultStyle={defaultStyle}
         pageScale={pageScale}
+        textAlign={activeTextAlign}
       />
       <TrailingBlankClickPlugin enabled={hasLineLayouts} />
       <HistoryPlugin />
@@ -698,7 +719,7 @@ export function RichTextEditor({
               fontFamily: `"${fontFamily}"`,
               fontSize: `${fontSize * pageScale}px`,
               lineHeight: `${lineHeight}px`,
-              textAlign: "start",
+              textAlign: resolvedCssTextAlign(activeTextAlign, autoTextAlign),
               textAlignLast: "auto",
               whiteSpace: wrap ? "pre-wrap" : "pre",
               overflowWrap: wrap ? "break-word" : "normal",
@@ -751,6 +772,7 @@ export function RichTextEditor({
           underline={!!activeStyle.underline}
           strikethrough={!!activeStyle.strikethrough}
           dir={activeStyle.dir}
+          textAlign={activeTextAlign}
           color={activeStyle.color}
           thaanaInput={thaanaInput}
           onThaanaInputChange={setThaanaInput}
@@ -813,6 +835,7 @@ export function RichTextView({
   pageScale,
   lineHeight,
   textAlign,
+  alignment,
   wrap = true,
   lineLayouts,
   lineLayoutOffsetX = 0,
@@ -825,6 +848,7 @@ export function RichTextView({
   pageScale: number;
   lineHeight: number;
   textAlign?: "justify" | "start";
+  alignment?: TextAlignment;
   wrap?: boolean;
   lineLayouts?: readonly SourceTextLineLayout[];
   lineLayoutOffsetX?: number;
@@ -864,64 +888,69 @@ export function RichTextView({
           width: "100%",
         }}
       >
-        {rows.map(({ line, layout, justify }, lineIndex) => (
-          <span
-            // oxlint-disable-next-line react/no-array-index-key -- render-only line projection.
-            key={lineIndex}
-            style={{
-              display: "block",
-              position: "absolute",
-              left: (layout?.left ?? 0) + lineLayoutOffsetX,
-              top: (layout?.top ?? lineHeight * lineIndex) + lineLayoutOffsetY,
-              width: layout?.width ?? "100%",
-              minHeight: lineHeight,
-              lineHeight: `${lineHeight}px`,
-              textAlign: justify ? "justify" : "start",
-              textAlignLast: justify ? "justify" : "auto",
-              whiteSpace: "pre",
-              overflowWrap: "normal",
-              wordBreak: "normal",
-              direction: defaultStyle.dir,
-              unicodeBidi: "plaintext",
-            }}
-          >
-            {line.length === 0
-              ? " "
-              : line.map((span, spanIndex) => {
-                  const style = { ...defaultStyle, ...span.style };
-                  const explicitDir = span.style?.dir;
-                  return (
-                    <span
-                      // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
-                      key={spanIndex}
-                      style={{
-                        fontFamily: `"${style.fontFamily}"`,
-                        fontSize: `${style.fontSize * pageScale}px`,
-                        lineHeight: `${lineHeight}px`,
-                        fontWeight: style.bold ? 700 : 400,
-                        fontStyle: style.italic ? "italic" : "normal",
-                        textDecoration: [
-                          style.underline ? "underline" : "",
-                          style.strikethrough ? "line-through" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" "),
-                        color: colorToCss(style.color) ?? "black",
-                        direction: explicitDir,
-                        unicodeBidi: explicitDir ? "isolate" : "normal",
-                        whiteSpace: "pre",
-                      }}
-                    >
-                      {displaySpanText(span.text, style)}
-                    </span>
-                  );
-                })}
-          </span>
-        ))}
+        {rows.map(({ line, layout, justify }, lineIndex) => {
+          const forceJustify = alignment === "justify" && lineIndex < rows.length - 1;
+          const lineAlign = alignment ?? (justify ? "justify" : "start");
+          return (
+            <span
+              // oxlint-disable-next-line react/no-array-index-key -- render-only line projection.
+              key={lineIndex}
+              style={{
+                display: "block",
+                position: "absolute",
+                left: (layout?.left ?? 0) + lineLayoutOffsetX,
+                top: (layout?.top ?? lineHeight * lineIndex) + lineLayoutOffsetY,
+                width: layout?.width ?? "100%",
+                minHeight: lineHeight,
+                lineHeight: `${lineHeight}px`,
+                textAlign: lineAlign,
+                textAlignLast: forceJustify || (!alignment && justify) ? "justify" : "auto",
+                whiteSpace: "pre",
+                overflowWrap: "normal",
+                wordBreak: "normal",
+                direction: defaultStyle.dir,
+                unicodeBidi: "plaintext",
+              }}
+            >
+              {line.length === 0
+                ? " "
+                : line.map((span, spanIndex) => {
+                    const style = { ...defaultStyle, ...span.style };
+                    const explicitDir = span.style?.dir;
+                    return (
+                      <span
+                        // oxlint-disable-next-line react/no-array-index-key -- render-only span projection.
+                        key={spanIndex}
+                        style={{
+                          fontFamily: `"${style.fontFamily}"`,
+                          fontSize: `${style.fontSize * pageScale}px`,
+                          lineHeight: `${lineHeight}px`,
+                          fontWeight: style.bold ? 700 : 400,
+                          fontStyle: style.italic ? "italic" : "normal",
+                          textDecoration: [
+                            style.underline ? "underline" : "",
+                            style.strikethrough ? "line-through" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" "),
+                          color: colorToCss(style.color) ?? "black",
+                          direction: explicitDir,
+                          unicodeBidi: explicitDir ? "isolate" : "normal",
+                          whiteSpace: "pre",
+                        }}
+                      >
+                        {displaySpanText(span.text, style)}
+                      </span>
+                    );
+                  })}
+            </span>
+          );
+        })}
       </span>
     );
   }
 
+  const effectiveTextAlign = resolvedCssTextAlign(alignment, textAlign);
   return (
     <>
       {lines.map((line, lineIndex) => (
@@ -932,9 +961,9 @@ export function RichTextView({
             display: "block",
             minHeight: lineHeight,
             lineHeight: `${lineHeight}px`,
-            textAlign: textAlign === "justify" ? "justify" : "start",
+            textAlign: effectiveTextAlign,
             textAlignLast:
-              textAlign === "justify" && lineIndex < lines.length - 1 ? "justify" : "auto",
+              effectiveTextAlign === "justify" && lineIndex < lines.length - 1 ? "justify" : "auto",
             whiteSpace: wrap ? "pre-wrap" : "pre",
             unicodeBidi: "plaintext",
           }}
