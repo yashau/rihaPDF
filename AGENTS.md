@@ -146,6 +146,7 @@ Important modules:
 When adjusting UI, preserve:
 
 - Desktop and mobile layouts.
+- Floating controls, menus, popovers, and toolbars must stay within the viewport. Be especially careful with mobile bottom toolbars: default "open below trigger" placement can render content below the visible viewport, so measure/flip/clamp overlays instead of assuming a direction.
 - Touch hold behavior for mobile dragging.
 - Edge-band auto-scroll.
 - Drawer/sidebar behavior.
@@ -260,6 +261,7 @@ rihaPDF is a document-editing tool, not a marketing site. UI changes should feel
 - Keep controls discoverable and dense enough for repeated editing.
 - Maintain stable dimensions for toolbars, overlays, buttons, handles, and page chrome to avoid layout shift.
 - Ensure text fits in buttons and panels at mobile widths.
+- Keep popovers and other portal/fixed-position UI inside the viewport on both axes; test triggers near screen edges and near the mobile bottom toolbar.
 - Do not add decorative UI that competes with the document canvas.
 - Verify changes that affect layout in both desktop and mobile viewports.
 
