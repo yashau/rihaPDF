@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "@heroui/react";
 import { Globe, Mail } from "lucide-react";
 import { READABLE_STREAM_ASYNC_ITER_POLYFILLED } from "@/platform/browser/polyfills";
@@ -24,7 +24,16 @@ const BROWSER_LABEL: Record<BrowserId, string> = {
 
 function BrowserSupportSection() {
   const [shown, setShown] = useState(false);
+  const diagnosticsRef = useRef<HTMLDivElement | null>(null);
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+
+  useEffect(() => {
+    if (!shown) return;
+    const frame = requestAnimationFrame(() => {
+      diagnosticsRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [shown]);
   const browser = detectBrowser(ua);
   const label = BROWSER_LABEL[browser];
   // Min version per check for the detected browser. Sources: MDN compat
@@ -85,7 +94,7 @@ function BrowserSupportSection() {
         {shown ? "Hide browser diagnostics" : "Show browser diagnostics"}
       </button>
       {shown && (
-        <div className="mt-2">
+        <div ref={diagnosticsRef} className="mt-2">
           <ul className="space-y-0.5 text-zinc-700 dark:text-zinc-300 font-mono text-xs">
             {checks.map((c) => {
               const color =
@@ -153,8 +162,8 @@ export function AboutModal({
                     <span className="text-green-500">o</span>
                     <span className="text-blue-500">r</span>
                   </li>
-                  <li>Insert and move text, images, or saved visual signatures</li>
-                  <li>Draw or import signatures with local reuse and background cleanup</li>
+                  <li>Insert and move text boxes and images</li>
+                  <li>Draw or import reusable visual signatures with background cleanup</li>
                   <li>Highlight, comment, and ink annotations</li>
                   <li>Redact — no recoverable text under the rect</li>
                   <li>Fill AcroForm fields — Thaana, checkboxes, dropdowns</li>
@@ -170,7 +179,9 @@ export function AboutModal({
                   <li>React 19 + TypeScript + Vite</li>
                   <li>Tailwind CSS + HeroUI + lucide-react</li>
                   <li>pdf-lib (write) and pdfjs-dist (render)</li>
+                  <li>Lexical (rich-text editing)</li>
                   <li>harfbuzzjs (shaping) and bidi-js (bidi)</li>
+                  <li>Oxc (formatting and linting)</li>
                   <li>Runs entirely in the browser — no server, no upload</li>
                 </ul>
               </section>
