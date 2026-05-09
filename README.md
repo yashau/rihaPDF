@@ -25,6 +25,10 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 **Free forever. Apache-2.0 ([LICENSE](LICENSE)). No accounts, no tracking, no paywall.**
 
+**Current browser limits:** PDFs up to **150 MB** and **250 pages** at a time. Larger files are rejected up front to avoid exhausting browser memory while rihaPDF eagerly loads page previews and editable metadata.
+
+**No OCR:** rihaPDF edits existing PDF text objects; it does not perform OCR of any kind and is not meant for converting scanned/image-only documents into editable text. You can still use scanned PDFs for page organization, annotations, visual signatures, redaction boxes, and other visual edits.
+
 **Live demo:** <https://rihapdf.yashau.com>
 
 ## Features
