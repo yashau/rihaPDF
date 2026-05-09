@@ -146,7 +146,7 @@ Important modules:
 When adjusting UI, preserve:
 
 - Desktop and mobile layouts.
-- Floating controls, menus, popovers, and toolbars must stay within the viewport. Be especially careful with mobile bottom toolbars: default "open below trigger" placement can render content below the visible viewport, so measure/flip/clamp overlays instead of assuming a direction.
+- Floating controls, menus, popovers, and toolbars must stay within the viewport. Be especially careful with mobile bottom toolbars: default "open below trigger" placement can render content below the visible viewport, so measure/flip/clamp overlays instead of assuming a direction. The shared annotation/format color picker lives at `src/components/PdfPage/ColorPickerPopover.tsx`; viewport regression coverage lives in `test/e2e/color-picker-position.test.ts`.
 - Touch hold behavior for mobile dragging.
 - Edge-band auto-scroll.
 - Drawer/sidebar behavior.
