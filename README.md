@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-121%20e2e%20%2B%2069%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-123%20e2e%20%2B%2069%20unit-2ea44f?style=for-the-badge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)](https://react.dev/)
 [![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)](https://www.heroui.com/)
