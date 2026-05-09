@@ -61,8 +61,6 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Oxfmt + Oxlint** — formatting and lint/type-aware static checks.
 - **Wrangler 4 + Cloudflare Workers Static Assets** — production hosting with SPA fallback.
 
-`harfbuzzjs` does the Thaana shaping at save time — replacement runs are shaped via HarfBuzz and emitted as raw `Tj` operators against a `subset: false` Type 0 font, so GPOS mark anchoring is correct ([shapedDraw.ts](src/pdf/text/shapedDraw.ts)). `bidi-js` segments mixed-script runs by direction so each level-run shapes with its own font and direction ([shapedBidi.ts](src/pdf/text/shapedBidi.ts)).
-
 ## Quick start
 
 ```bash
