@@ -298,7 +298,9 @@ Before finishing, report:
 - Which verification commands ran and whether they passed.
 - Any verification that was skipped and why.
 - Any remaining risk, especially for save/redaction/form/text-shaping changes.
-- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or test coverage changes. Keep the feature list, root test badge, and linked test inventories accurate. Count tests with Vitest's collected list, not source regexes, so generated cases such as `test.each(...)` are counted correctly and helper calls such as `something.test(...)` are not. On PowerShell, use `(pnpm exec vitest list test/e2e | Measure-Object -Line).Lines` and `(pnpm exec vitest list test/unit | Measure-Object -Line).Lines`.
+- Before committing, update `README.md` when user-facing features, limitations, commands, architecture notes, or test coverage changes. Keep the feature list, root test badge, and linked test inventories accurate.
+- Treat test-count documentation as part of the same change, not follow-up cleanup. If adding, removing, renaming, or splitting tests, update the root test badge and the relevant test README before committing/pushing.
+- Count tests with Vitest's collected list, not source regexes, so generated cases such as `test.each(...)` are counted correctly and helper calls such as `something.test(...)` are not. On PowerShell, use `(pnpm exec vitest list test/e2e | Measure-Object -Line).Lines` and `(pnpm exec vitest list test/unit | Measure-Object -Line).Lines`.
 - When unit coverage changes, also update `test/unit/README.md` so its coverage table and test count stay in sync with the root README.
 - When E2E coverage changes, also update `test/e2e/README.md` so its coverage table and test count stay in sync with the root README.
 
