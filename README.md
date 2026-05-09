@@ -40,7 +40,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Page sidebar.** Reorder, delete, insert blank pages, or import pages from another PDF.
 - **230 bundled Thaana fonts.** Local-first `@font-face` loading and embedded saved output. Credits live in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, resizable comments, and freehand drawing saved as native PDF annotations.
-- **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area.
+- **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area. See [REDACTION_PIPELINE.md](REDACTION_PIPELINE.md).
 - **Fill AcroForm fields.** Fill common PDF form widgets, including text fields, checkboxes, radios, combo boxes, and list boxes, with Thaana input support.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
