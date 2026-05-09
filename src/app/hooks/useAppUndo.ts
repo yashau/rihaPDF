@@ -1,72 +1,45 @@
-import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
-import type { Annotation } from "@/domain/annotations";
-import type { FormValue } from "@/domain/formFields";
-import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { LoadedSource } from "@/pdf/source/loadSource";
-import type { Redaction } from "@/domain/redactions";
-import type { PageSlot } from "@/domain/slots";
+import { useCallback, useRef } from "react";
 import { useUndoRedo } from "@/platform/hooks/useUndoRedo";
 import { useLatestRef } from "@/platform/hooks/useLatestRef";
-import type { EditValue, ImageMoveValue } from "@/domain/editState";
+import type { AppContentState, AppDocumentState } from "@/app/hooks/useAppState";
 
 type UndoSnapshot = {
-  edits: Map<string, Map<string, EditValue>>;
-  imageMoves: Map<string, Map<string, ImageMoveValue>>;
-  insertedTexts: Map<string, TextInsertion[]>;
-  insertedImages: Map<string, ImageInsertion[]>;
-  shapeDeletes: Map<string, Set<string>>;
-  annotations: Map<string, Annotation[]>;
-  redactions: Map<string, Redaction[]>;
-  formValues: Map<string, Map<string, FormValue>>;
-  slots: PageSlot[];
-  sources: Map<string, LoadedSource>;
+  edits: AppContentState["edits"];
+  imageMoves: AppContentState["imageMoves"];
+  insertedTexts: AppContentState["insertedTexts"];
+  insertedImages: AppContentState["insertedImages"];
+  shapeDeletes: AppContentState["shapeDeletes"];
+  annotations: AppContentState["annotations"];
+  redactions: AppContentState["redactions"];
+  formValues: AppContentState["formValues"];
+  slots: AppDocumentState["slots"];
+  sources: AppDocumentState["sources"];
 };
 
 export function useAppUndo({
-  edits,
-  imageMoves,
-  insertedTexts,
-  insertedImages,
-  shapeDeletes,
-  annotations,
-  redactions,
-  formValues,
-  sources,
-  slotsRef,
-  setEdits,
-  setImageMoves,
-  setInsertedTexts,
-  setInsertedImages,
-  setShapeDeletes,
-  setAnnotations,
-  setRedactions,
-  setFormValues,
-  setSlots,
-  setSources,
+  documentState,
+  contentState,
 }: {
-  edits: Map<string, Map<string, EditValue>>;
-  imageMoves: Map<string, Map<string, ImageMoveValue>>;
-  insertedTexts: Map<string, TextInsertion[]>;
-  insertedImages: Map<string, ImageInsertion[]>;
-  shapeDeletes: Map<string, Set<string>>;
-  annotations: Map<string, Annotation[]>;
-  redactions: Map<string, Redaction[]>;
-  formValues: Map<string, Map<string, FormValue>>;
-  sources: Map<string, LoadedSource>;
-  slotsRef: RefObject<PageSlot[]>;
-  setEdits: Dispatch<SetStateAction<Map<string, Map<string, EditValue>>>>;
-  setImageMoves: Dispatch<SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
-  setInsertedTexts: Dispatch<SetStateAction<Map<string, TextInsertion[]>>>;
-  setInsertedImages: Dispatch<SetStateAction<Map<string, ImageInsertion[]>>>;
-  setShapeDeletes: Dispatch<SetStateAction<Map<string, Set<string>>>>;
-  setAnnotations: Dispatch<SetStateAction<Map<string, Annotation[]>>>;
-  setRedactions: Dispatch<SetStateAction<Map<string, Redaction[]>>>;
-  setFormValues: Dispatch<SetStateAction<Map<string, Map<string, FormValue>>>>;
-  setSlots: Dispatch<SetStateAction<PageSlot[]>>;
-  setSources: Dispatch<SetStateAction<Map<string, LoadedSource>>>;
+  documentState: AppDocumentState;
+  contentState: AppContentState;
 }) {
+  const { sources, slotsRef, setSlots, setSources } = documentState;
+  const {
+    edits,
+    imageMoves,
+    editingByPage,
+    insertedTexts,
+    insertedImages,
+    shapeDeletes,
+    annotations,
+    redactions,
+    formValues,
+    contentActions,
+  } = contentState;
+
   const editsRef = useLatestRef(edits);
   const imageMovesRef = useLatestRef(imageMoves);
+  const editingByPageRef = useLatestRef(editingByPage);
   const insertedTextsRef = useLatestRef(insertedTexts);
   const insertedImagesRef = useLatestRef(insertedImages);
   const shapeDeletesRef = useLatestRef(shapeDeletes);
@@ -105,30 +78,22 @@ export function useAppUndo({
 
   const restoreSnapshot = useCallback(
     (s: UndoSnapshot) => {
-      setEdits(s.edits);
-      setImageMoves(s.imageMoves);
-      setInsertedTexts(s.insertedTexts);
-      setInsertedImages(s.insertedImages);
-      setShapeDeletes(s.shapeDeletes);
-      setAnnotations(s.annotations);
-      setRedactions(s.redactions);
-      setFormValues(s.formValues);
+      contentActions.replaceAll({
+        edits: s.edits,
+        imageMoves: s.imageMoves,
+        editingByPage: editingByPageRef.current,
+        insertedTexts: s.insertedTexts,
+        insertedImages: s.insertedImages,
+        shapeDeletes: s.shapeDeletes,
+        annotations: s.annotations,
+        redactions: s.redactions,
+        formValues: s.formValues,
+      });
       setSlots(s.slots);
       setSources(s.sources);
       selectionSetterRef.current(null);
     },
-    [
-      setAnnotations,
-      setEdits,
-      setFormValues,
-      setImageMoves,
-      setInsertedImages,
-      setInsertedTexts,
-      setRedactions,
-      setShapeDeletes,
-      setSlots,
-      setSources,
-    ],
+    [contentActions, editingByPageRef, setSlots, setSources],
   );
 
   const undoState = useUndoRedo({

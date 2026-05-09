@@ -1,7 +1,6 @@
-import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, type Dispatch, type SetStateAction } from "react";
 import {
   type Annotation,
-  type AnnotationColor,
   COMMENT_DEFAULT_FONT_SIZE,
   COMMENT_DEFAULT_HEIGHT,
   COMMENT_DEFAULT_WIDTH,
@@ -16,110 +15,27 @@ import {
   newRedactionId,
   type Redaction,
 } from "@/domain/redactions";
-import type { PageSlot } from "@/domain/slots";
-import type { PendingImage, ToolMode } from "@/domain/toolMode";
 import type { Selection } from "@/domain/selection";
+import type { PageSlot } from "@/domain/slots";
 import type { EditValue, ImageMoveValue } from "@/domain/editState";
-
-type SlotBucketItem = {
-  id: string;
-  sourceKey: string;
-  pageIndex: number;
-};
-
-function resolveSlotBucketPatch<T extends SlotBucketItem>(
-  item: T,
-  sourceSlotId: string,
-  patch: Partial<T>,
-  slots: readonly PageSlot[],
-): { targetSlotId: string; updated: T } {
-  let targetSlotId = sourceSlotId;
-  if (patch.pageIndex !== undefined && patch.sourceKey !== undefined) {
-    const destSlot = slots[patch.pageIndex];
-    if (destSlot && destSlot.kind === "page" && destSlot.id !== sourceSlotId) {
-      targetSlotId = destSlot.id;
-      return {
-        targetSlotId,
-        updated: {
-          ...item,
-          ...patch,
-          sourceKey: destSlot.sourceKey,
-          pageIndex: destSlot.sourcePageIndex,
-        },
-      };
-    }
-    return {
-      targetSlotId,
-      updated: { ...item, ...patch, sourceKey: item.sourceKey, pageIndex: item.pageIndex },
-    };
-  }
-  return { targetSlotId, updated: { ...item, ...patch } };
-}
-
-function updateSlotBucket<T extends SlotBucketItem>(
-  prev: Map<string, T[]>,
-  sourceSlotId: string,
-  id: string,
-  slots: readonly PageSlot[],
-  patch: Partial<T>,
-): { next: Map<string, T[]>; targetSlotId: string; found: boolean } {
-  const next = new Map(prev);
-  const fromArr = next.get(sourceSlotId) ?? [];
-  const item = fromArr.find((t) => t.id === id);
-  if (!item) return { next: prev, targetSlotId: sourceSlotId, found: false };
-  const { targetSlotId, updated } = resolveSlotBucketPatch(item, sourceSlotId, patch, slots);
-  if (targetSlotId !== sourceSlotId) {
-    next.set(
-      sourceSlotId,
-      fromArr.filter((t) => t.id !== id),
-    );
-    next.set(targetSlotId, [...(next.get(targetSlotId) ?? []), updated]);
-  } else {
-    next.set(
-      sourceSlotId,
-      fromArr.map((t) => (t.id === id ? updated : t)),
-    );
-  }
-  return { next, targetSlotId, found: true };
-}
+import type { AppContentState, AppDocumentState, AppToolState } from "@/app/hooks/useAppState";
 
 export function useDocumentMutations({
-  slotsRef,
-  tool,
-  pendingImage,
-  commentColor,
+  documentState,
+  contentState,
+  toolState,
   recordHistory,
-  setTool,
-  setPendingImage,
-  setEditingByPage,
-  setEdits,
-  setImageMoves,
-  setInsertedTexts,
-  setInsertedImages,
-  setAnnotations,
-  setRedactions,
-  setFormValues,
-  setSlots,
   setSelection,
 }: {
-  slotsRef: RefObject<PageSlot[]>;
-  tool: ToolMode;
-  pendingImage: PendingImage | null;
-  commentColor: AnnotationColor;
+  documentState: AppDocumentState;
+  contentState: AppContentState;
+  toolState: AppToolState;
   recordHistory: (coalesceKey: string | null) => void;
-  setTool: Dispatch<SetStateAction<ToolMode>>;
-  setPendingImage: Dispatch<SetStateAction<PendingImage | null>>;
-  setEditingByPage: Dispatch<SetStateAction<Map<string, string>>>;
-  setEdits: Dispatch<SetStateAction<Map<string, Map<string, EditValue>>>>;
-  setImageMoves: Dispatch<SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
-  setInsertedTexts: Dispatch<SetStateAction<Map<string, TextInsertion[]>>>;
-  setInsertedImages: Dispatch<SetStateAction<Map<string, ImageInsertion[]>>>;
-  setAnnotations: Dispatch<SetStateAction<Map<string, Annotation[]>>>;
-  setRedactions: Dispatch<SetStateAction<Map<string, Redaction[]>>>;
-  setFormValues: Dispatch<SetStateAction<Map<string, Map<string, FormValue>>>>;
-  setSlots: Dispatch<SetStateAction<PageSlot[]>>;
   setSelection: Dispatch<SetStateAction<Selection>>;
 }) {
+  const { slotsRef, setSlots } = documentState;
+  const { contentActions } = contentState;
+  const { tool, pendingImage, commentColor, setTool, setPendingImage } = toolState;
   const onEdit = useCallback(
     (slotId: string, runId: string, value: EditValue) => {
       // Coalesce key: same (slot, run) within the undo coalesce window
@@ -145,15 +61,9 @@ export function useDocumentMutations({
       } else {
         stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
       }
-      setEdits((prev) => {
-        const next = new Map(prev);
-        const pageMap = new Map<string, EditValue>(next.get(slotId) ?? []);
-        pageMap.set(runId, stored);
-        next.set(slotId, pageMap);
-        return next;
-      });
+      contentActions.setEdit(slotId, runId, stored);
     },
-    [recordHistory, setEdits, slotsRef],
+    [contentActions, recordHistory, slotsRef],
   );
 
   const onImageMove = useCallback(
@@ -172,27 +82,16 @@ export function useDocumentMutations({
       } else {
         stored = { ...value, targetSlotId: undefined, targetSourceKey: undefined };
       }
-      setImageMoves((prev) => {
-        const next = new Map(prev);
-        const pageMap = new Map<string, ImageMoveValue>(next.get(slotId) ?? []);
-        pageMap.set(imageId, stored);
-        next.set(slotId, pageMap);
-        return next;
-      });
+      contentActions.setImageMove(slotId, imageId, stored);
     },
-    [recordHistory, setImageMoves, slotsRef],
+    [contentActions, recordHistory, slotsRef],
   );
 
   const onEditingChange = useCallback(
     (slotId: string, runId: string | null) => {
-      setEditingByPage((prev) => {
-        const next = new Map(prev);
-        if (runId) next.set(slotId, runId);
-        else next.delete(slotId);
-        return next;
-      });
+      contentActions.setEditingRun(slotId, runId);
     },
-    [setEditingByPage],
+    [contentActions],
   );
 
   const onCanvasClick = useCallback(
@@ -220,18 +119,9 @@ export function useDocumentMutations({
           fontSize: 12,
           text: "",
         };
-        setInsertedTexts((prev) => {
-          const next = new Map(prev);
-          const arr = [...(next.get(slotId) ?? []), ins];
-          next.set(slotId, arr);
-          return next;
-        });
+        contentActions.addTextInsert(slotId, ins);
         setTool("select");
-        setEditingByPage((prev) => {
-          const next = new Map(prev);
-          next.set(slotId, id);
-          return next;
-        });
+        contentActions.setEditingRun(slotId, id);
         return;
       }
       if (tool === "addImage" && pendingImage) {
@@ -252,12 +142,7 @@ export function useDocumentMutations({
           bytes: pendingImage.bytes,
           format: pendingImage.format,
         };
-        setInsertedImages((prev) => {
-          const next = new Map(prev);
-          const arr = [...(next.get(slotId) ?? []), ins];
-          next.set(slotId, arr);
-          return next;
-        });
+        contentActions.addImageInsert(slotId, ins);
         setSelection({ kind: "insertedImage", slotId, id });
         setPendingImage(null);
         setTool("select");
@@ -271,64 +156,44 @@ export function useDocumentMutations({
         // capture layer eating their clicks.
         const id = newAnnotationId("comment");
         recordHistory(null);
-        setAnnotations((prev) => {
-          const next = new Map(prev);
-          const arr = [
-            ...(next.get(slotId) ?? []),
-            {
-              kind: "comment",
-              id,
-              sourceKey: slotSourceKey,
-              pageIndex: slotPageIndex,
-              pdfX,
-              pdfY: pdfY - COMMENT_DEFAULT_HEIGHT,
-              pdfWidth: COMMENT_DEFAULT_WIDTH,
-              pdfHeight: COMMENT_DEFAULT_HEIGHT,
-              color: commentColor,
-              text: "",
-              fontSize: COMMENT_DEFAULT_FONT_SIZE,
-            } satisfies Annotation,
-          ];
-          next.set(slotId, arr);
-          return next;
-        });
+        contentActions.addAnnotation(slotId, {
+          kind: "comment",
+          id,
+          sourceKey: slotSourceKey,
+          pageIndex: slotPageIndex,
+          pdfX,
+          pdfY: pdfY - COMMENT_DEFAULT_HEIGHT,
+          pdfWidth: COMMENT_DEFAULT_WIDTH,
+          pdfHeight: COMMENT_DEFAULT_HEIGHT,
+          color: commentColor,
+          text: "",
+          fontSize: COMMENT_DEFAULT_FONT_SIZE,
+        } satisfies Annotation);
         setTool("select");
         return;
       }
       if (tool === "redact") {
         const id = newRedactionId();
         recordHistory(null);
-        setRedactions((prev) => {
-          const next = new Map(prev);
-          const arr = [
-            ...(next.get(slotId) ?? []),
-            {
-              id,
-              sourceKey: slotSourceKey,
-              pageIndex: slotPageIndex,
-              pdfX,
-              pdfY: pdfY - REDACTION_DEFAULT_HEIGHT,
-              pdfWidth: REDACTION_DEFAULT_WIDTH,
-              pdfHeight: REDACTION_DEFAULT_HEIGHT,
-            } satisfies Redaction,
-          ];
-          next.set(slotId, arr);
-          return next;
-        });
+        contentActions.addRedaction(slotId, {
+          id,
+          sourceKey: slotSourceKey,
+          pageIndex: slotPageIndex,
+          pdfX,
+          pdfY: pdfY - REDACTION_DEFAULT_HEIGHT,
+          pdfWidth: REDACTION_DEFAULT_WIDTH,
+          pdfHeight: REDACTION_DEFAULT_HEIGHT,
+        } satisfies Redaction);
         setSelection({ kind: "redaction", slotId, id });
         setTool("select");
       }
     },
     [
       commentColor,
+      contentActions,
       pendingImage,
       recordHistory,
-      setAnnotations,
-      setEditingByPage,
-      setInsertedImages,
-      setInsertedTexts,
       setPendingImage,
-      setRedactions,
       setSelection,
       setTool,
       slotsRef,
@@ -348,25 +213,17 @@ export function useDocumentMutations({
       // Same-(slot,id) coalesces — typing into the inserted text
       // box, or dragging it, is one undo step.
       recordHistory(`text-insert:${sourceSlotId}:${id}`);
-      setInsertedTexts((prev) => {
-        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
-        return next;
-      });
+      contentActions.patchTextInsert(sourceSlotId, id, slotsRef.current, patch);
     },
-    [recordHistory, setInsertedTexts, slotsRef],
+    [contentActions, recordHistory, slotsRef],
   );
 
   const onTextInsertDelete = useCallback(
     (slotId: string, id: string) => {
       recordHistory(null);
-      setInsertedTexts((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(slotId) ?? []).filter((t) => t.id !== id);
-        next.set(slotId, arr);
-        return next;
-      });
+      contentActions.deleteTextInsert(slotId, id);
     },
-    [recordHistory, setInsertedTexts],
+    [contentActions, recordHistory],
   );
 
   const onImageInsertChange = useCallback(
@@ -374,25 +231,17 @@ export function useDocumentMutations({
       // Same-(slot,id) coalesces — drag/resize of an inserted
       // image is one undo step.
       recordHistory(`image-insert:${sourceSlotId}:${id}`);
-      setInsertedImages((prev) => {
-        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
-        return next;
-      });
+      contentActions.patchImageInsert(sourceSlotId, id, slotsRef.current, patch);
     },
-    [recordHistory, setInsertedImages, slotsRef],
+    [contentActions, recordHistory, slotsRef],
   );
 
   const onImageInsertDelete = useCallback(
     (slotId: string, id: string) => {
       recordHistory(null);
-      setInsertedImages((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(slotId) ?? []).filter((m) => m.id !== id);
-        next.set(slotId, arr);
-        return next;
-      });
+      contentActions.deleteImageInsert(slotId, id);
     },
-    [recordHistory, setInsertedImages],
+    [contentActions, recordHistory],
   );
 
   /** Add a new annotation to a slot. One snapshot per add — discrete
@@ -401,14 +250,9 @@ export function useDocumentMutations({
   const onAnnotationAdd = useCallback(
     (slotId: string, annotation: Annotation) => {
       recordHistory(null);
-      setAnnotations((prev) => {
-        const next = new Map(prev);
-        const arr = [...(next.get(slotId) ?? []), annotation];
-        next.set(slotId, arr);
-        return next;
-      });
+      contentActions.addAnnotation(slotId, annotation);
     },
-    [recordHistory, setAnnotations],
+    [contentActions, recordHistory],
   );
 
   /** Patch an existing annotation by id (used by the note-comment
@@ -428,25 +272,17 @@ export function useDocumentMutations({
             : prev,
         );
       }
-      setAnnotations((prev) => {
-        const { next } = updateSlotBucket(prev, sourceSlotId, id, slotsRef.current, patch);
-        return next;
-      });
+      contentActions.patchAnnotation(sourceSlotId, id, slotsRef.current, patch);
     },
-    [recordHistory, setAnnotations, setSelection, slotsRef],
+    [contentActions, recordHistory, setSelection, slotsRef],
   );
 
   const onAnnotationDelete = useCallback(
     (slotId: string, id: string) => {
       recordHistory(null);
-      setAnnotations((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(slotId) ?? []).filter((a) => a.id !== id);
-        next.set(slotId, arr);
-        return next;
-      });
+      contentActions.deleteAnnotation(slotId, id);
     },
-    [recordHistory, setAnnotations],
+    [contentActions, recordHistory],
   );
 
   /** Set / clear an AcroForm field's user-entered value. Coalesce key
@@ -456,29 +292,18 @@ export function useDocumentMutations({
   const onFormFieldChange = useCallback(
     (sourceKey: string, fullName: string, value: FormValue) => {
       recordHistory(`form:${sourceKey}:${fullName}`);
-      setFormValues((prev) => {
-        const next = new Map(prev);
-        const perSource = new Map<string, FormValue>(next.get(sourceKey) ?? []);
-        perSource.set(fullName, value);
-        next.set(sourceKey, perSource);
-        return next;
-      });
+      contentActions.setFormValue(sourceKey, fullName, value);
     },
-    [recordHistory, setFormValues],
+    [contentActions, recordHistory],
   );
 
   const onRedactionAdd = useCallback(
     (slotId: string, redaction: Redaction) => {
       // Discrete user action — one snapshot per add.
       recordHistory(null);
-      setRedactions((prev) => {
-        const next = new Map(prev);
-        const arr = [...(next.get(slotId) ?? []), redaction];
-        next.set(slotId, arr);
-        return next;
-      });
+      contentActions.addRedaction(slotId, redaction);
     },
-    [recordHistory, setRedactions],
+    [contentActions, recordHistory],
   );
 
   /** Patch a redaction by id (used by drag/resize on RedactionOverlay).
@@ -487,17 +312,9 @@ export function useDocumentMutations({
   const onRedactionChange = useCallback(
     (slotId: string, id: string, patch: Partial<Redaction>) => {
       recordHistory(`redaction:${slotId}:${id}`);
-      setRedactions((prev) => {
-        const next = new Map(prev);
-        const arr = next.get(slotId) ?? [];
-        next.set(
-          slotId,
-          arr.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-        );
-        return next;
-      });
+      contentActions.patchRedaction(slotId, id, patch);
     },
-    [recordHistory, setRedactions],
+    [contentActions, recordHistory],
   );
 
   const onSlotsChange = useCallback(

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Annotation } from "@/domain/annotations";
-import type { ImageInsertion } from "@/domain/insertions";
-import type { Redaction } from "@/domain/redactions";
-import type { ImageMoveValue } from "@/domain/editState";
 import type { Selection } from "@/domain/selection";
+import type { AppContentActions } from "@/app/state/contentState";
 
 /** Currently-selected object — set by single-click on an image
  *  overlay; cleared by Escape, by clicking elsewhere, or by tool
@@ -13,18 +10,10 @@ import type { Selection } from "@/domain/selection";
  *  delete-the-selected-thing action. */
 export function useSelection({
   recordHistory,
-  setImageMoves,
-  setInsertedImages,
-  setShapeDeletes,
-  setRedactions,
-  setAnnotations,
+  contentActions,
 }: {
   recordHistory: (coalesceKey: string | null) => void;
-  setImageMoves: React.Dispatch<React.SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
-  setInsertedImages: React.Dispatch<React.SetStateAction<Map<string, ImageInsertion[]>>>;
-  setShapeDeletes: React.Dispatch<React.SetStateAction<Map<string, Set<string>>>>;
-  setRedactions: React.Dispatch<React.SetStateAction<Map<string, Redaction[]>>>;
-  setAnnotations: React.Dispatch<React.SetStateAction<Map<string, Annotation[]>>>;
+  contentActions: AppContentActions;
 }) {
   const [selection, setSelection] = useState<Selection>(null);
 
@@ -53,56 +42,20 @@ export function useSelection({
     // action, not continuous like typing or dragging.
     recordHistory(null);
     if (selection.kind === "image") {
-      setImageMoves((prev) => {
-        const next = new Map(prev);
-        const pageMap = new Map<string, ImageMoveValue>(next.get(selection.slotId) ?? []);
-        const existing = pageMap.get(selection.imageId) ?? {};
-        pageMap.set(selection.imageId, { ...existing, deleted: true });
-        next.set(selection.slotId, pageMap);
-        return next;
-      });
+      contentActions.markImageDeleted(selection.slotId, selection.imageId);
     } else if (selection.kind === "insertedImage") {
-      setInsertedImages((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(selection.slotId) ?? []).filter((m) => m.id !== selection.id);
-        next.set(selection.slotId, arr);
-        return next;
-      });
+      contentActions.deleteImageInsert(selection.slotId, selection.id);
     } else if (selection.kind === "shape") {
-      setShapeDeletes((prev) => {
-        const next = new Map(prev);
-        const set = new Set(next.get(selection.slotId) ?? []);
-        set.add(selection.shapeId);
-        next.set(selection.slotId, set);
-        return next;
-      });
+      contentActions.markShapeDeleted(selection.slotId, selection.shapeId);
     } else if (selection.kind === "redaction") {
-      setRedactions((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(selection.slotId) ?? []).filter((r) => r.id !== selection.id);
-        next.set(selection.slotId, arr);
-        return next;
-      });
+      contentActions.deleteRedaction(selection.slotId, selection.id);
     } else if (selection.kind === "highlight" || selection.kind === "ink") {
       // Highlights and ink live in the same per-slot annotations array
       // as comments — drop the matching id.
-      setAnnotations((prev) => {
-        const next = new Map(prev);
-        const arr = (next.get(selection.slotId) ?? []).filter((a) => a.id !== selection.id);
-        next.set(selection.slotId, arr);
-        return next;
-      });
+      contentActions.deleteAnnotation(selection.slotId, selection.id);
     }
     setSelection(null);
-  }, [
-    selection,
-    recordHistory,
-    setImageMoves,
-    setInsertedImages,
-    setShapeDeletes,
-    setRedactions,
-    setAnnotations,
-  ]);
+  }, [contentActions, selection, recordHistory]);
 
   useEffect(() => {
     if (!selection) return;

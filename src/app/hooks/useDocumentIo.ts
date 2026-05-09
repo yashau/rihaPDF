@@ -1,15 +1,12 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
-import type { Annotation } from "@/domain/annotations";
 import { buildSavePayload } from "@/app/buildSavePayload";
-import type { FormValue } from "@/domain/formFields";
-import { readImageFile, type ImageInsertion, type TextInsertion } from "@/domain/insertions";
+import { readImageFile } from "@/domain/insertions";
 import type { LoadedSource } from "@/pdf/source/loadSource";
-import type { Redaction } from "@/domain/redactions";
 import { nextExternalSourceKey, PRIMARY_SOURCE_KEY } from "@/domain/sourceKeys";
 import { pageSlot, slotsFromSource, type PageSlot } from "@/domain/slots";
-import type { PendingImage, ToolMode } from "@/domain/toolMode";
 import { MIN_DOCUMENT_ZOOM } from "@/app/hooks/useMobileDocumentZoom";
-import type { EditValue, ImageMoveValue } from "@/domain/editState";
+import type { Annotation } from "@/domain/annotations";
+import type { AppContentState, AppDocumentState, AppToolState } from "@/app/hooks/useAppState";
 
 function sourceAnnotationsForSlots(
   source: LoadedSource,
@@ -30,67 +27,45 @@ function sourceAnnotationsForSlots(
 
 export function useDocumentIo({
   renderScale,
-  sources,
-  slots,
-  primaryFilename,
-  edits,
-  imageMoves,
-  insertedTexts,
-  insertedImages,
-  shapeDeletes,
-  annotations,
-  redactions,
-  formValues,
-  setPrimaryFilename,
-  setLoadedFileKey,
+  documentState,
+  contentState,
+  toolState,
   setDocumentZoom,
-  setSources,
-  setSlots,
-  setEdits,
-  setImageMoves,
-  setInsertedTexts,
-  setInsertedImages,
-  setShapeDeletes,
-  setAnnotations,
-  setRedactions,
-  setFormValues,
-  setTool,
-  setPendingImage,
   setBusy,
   recordHistory,
   clearHistory,
 }: {
   renderScale: number;
-  sources: Map<string, LoadedSource>;
-  slots: PageSlot[];
-  primaryFilename: string | null;
-  edits: Map<string, Map<string, EditValue>>;
-  imageMoves: Map<string, Map<string, ImageMoveValue>>;
-  insertedTexts: Map<string, TextInsertion[]>;
-  insertedImages: Map<string, ImageInsertion[]>;
-  shapeDeletes: Map<string, Set<string>>;
-  annotations: Map<string, Annotation[]>;
-  redactions: Map<string, Redaction[]>;
-  formValues: Map<string, Map<string, FormValue>>;
-  setPrimaryFilename: Dispatch<SetStateAction<string | null>>;
-  setLoadedFileKey: Dispatch<SetStateAction<number>>;
+  documentState: AppDocumentState;
+  contentState: AppContentState;
+  toolState: AppToolState;
   setDocumentZoom: Dispatch<SetStateAction<number>>;
-  setSources: Dispatch<SetStateAction<Map<string, LoadedSource>>>;
-  setSlots: Dispatch<SetStateAction<PageSlot[]>>;
-  setEdits: Dispatch<SetStateAction<Map<string, Map<string, EditValue>>>>;
-  setImageMoves: Dispatch<SetStateAction<Map<string, Map<string, ImageMoveValue>>>>;
-  setInsertedTexts: Dispatch<SetStateAction<Map<string, TextInsertion[]>>>;
-  setInsertedImages: Dispatch<SetStateAction<Map<string, ImageInsertion[]>>>;
-  setShapeDeletes: Dispatch<SetStateAction<Map<string, Set<string>>>>;
-  setAnnotations: Dispatch<SetStateAction<Map<string, Annotation[]>>>;
-  setRedactions: Dispatch<SetStateAction<Map<string, Redaction[]>>>;
-  setFormValues: Dispatch<SetStateAction<Map<string, Map<string, FormValue>>>>;
-  setTool: Dispatch<SetStateAction<ToolMode>>;
-  setPendingImage: Dispatch<SetStateAction<PendingImage | null>>;
   setBusy: Dispatch<SetStateAction<boolean>>;
   recordHistory: (coalesceKey: string | null) => void;
   clearHistory: () => void;
 }) {
+  const {
+    sources,
+    slots,
+    primaryFilename,
+    setPrimaryFilename,
+    setLoadedFileKey,
+    setSources,
+    setSlots,
+  } = documentState;
+  const {
+    edits,
+    imageMoves,
+    insertedTexts,
+    insertedImages,
+    shapeDeletes,
+    annotations,
+    redactions,
+    formValues,
+    contentActions,
+  } = contentState;
+  const { setTool, setPendingImage } = toolState;
+
   const handleFile = useCallback(
     async (file: File) => {
       setBusy(true);
@@ -110,14 +85,17 @@ export function useDocumentIo({
         ).__runOpIndices = new Map(
           source.pages.flatMap((p) => p.textRuns.map((r) => [r.id, r.contentStreamOpIndices])),
         );
-        setEdits(new Map());
-        setImageMoves(new Map());
-        setShapeDeletes(new Map());
-        setAnnotations(sourceAnnotationsForSlots(source, nextSlots));
-        setRedactions(new Map());
-        setFormValues(new Map());
-        setInsertedTexts(new Map());
-        setInsertedImages(new Map());
+        contentActions.replaceAll({
+          edits: new Map(),
+          imageMoves: new Map(),
+          editingByPage: new Map(),
+          insertedTexts: new Map(),
+          insertedImages: new Map(),
+          shapeDeletes: new Map(),
+          annotations: sourceAnnotationsForSlots(source, nextSlots),
+          redactions: new Map(),
+          formValues: new Map(),
+        });
         setTool("select");
         setPendingImage(null);
         setLoadedFileKey((n) => n + 1);
@@ -128,19 +106,12 @@ export function useDocumentIo({
     [
       clearHistory,
       renderScale,
-      setAnnotations,
+      contentActions,
       setBusy,
       setDocumentZoom,
-      setEdits,
-      setFormValues,
-      setImageMoves,
-      setInsertedImages,
-      setInsertedTexts,
       setLoadedFileKey,
       setPendingImage,
       setPrimaryFilename,
-      setRedactions,
-      setShapeDeletes,
       setSlots,
       setSources,
       setTool,
@@ -172,20 +143,18 @@ export function useDocumentIo({
             insertAt === undefined ? prev.length : Math.max(0, Math.min(insertAt, prev.length));
           return [...prev.slice(0, at), ...newSlots, ...prev.slice(at)];
         });
-        setAnnotations((prev) => {
-          const next = new Map(prev);
-          for (const { source, sourceSlots } of loaded) {
-            for (const [slotId, annots] of sourceAnnotationsForSlots(source, sourceSlots)) {
-              next.set(slotId, annots);
-            }
+        const annotationsToMerge = new Map<string, Annotation[]>();
+        for (const { source, sourceSlots } of loaded) {
+          for (const [slotId, annots] of sourceAnnotationsForSlots(source, sourceSlots)) {
+            annotationsToMerge.set(slotId, annots);
           }
-          return next;
-        });
+        }
+        contentActions.mergeAnnotations(annotationsToMerge);
       } finally {
         setBusy(false);
       }
     },
-    [recordHistory, renderScale, setAnnotations, setBusy, setSlots, setSources],
+    [contentActions, recordHistory, renderScale, setBusy, setSlots, setSources],
   );
 
   const onPickImageFile = useCallback(

@@ -1,16 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { RenderedPage } from "@/pdf/render/pdf";
-import type { FormField, FormValue } from "@/domain/formFields";
-import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { Annotation, AnnotationColor } from "@/domain/annotations";
-import type { Redaction } from "@/domain/redactions";
-import type { ToolMode } from "@/domain/toolMode";
-import type {
-  CrossPageArrival,
-  CrossPageImageArrival,
-  EditValue,
-  ImageMoveValue,
-} from "@/domain/editState";
+import type { PageController, PageReadModel } from "../pageViewModels";
 import {
   ImageOverlay,
   InsertedImageOverlay,
@@ -32,170 +21,57 @@ import { useRunMarkupActions } from "./useRunMarkupActions";
 import { useRunDrag } from "./useRunDrag";
 import { useImageDrag } from "./useImageDrag";
 import type { InitialCaretPoint } from "./types";
-type Props = {
-  page: RenderedPage;
-  pageIndex: number;
-  /** Source identity for the rendered page. Emitted as `data-source-key`
-   *  on the page container so the cross-page hit-test can carry it
-   *  through to save-time addressing. */
-  sourceKey: string;
-  edits: Map<string, EditValue>;
-  imageMoves: Map<string, ImageMoveValue>;
-  insertedTexts: TextInsertion[];
-  insertedImages: ImageInsertion[];
-  annotations: Annotation[];
-  redactions: Redaction[];
-  /** Live-preview canvas — when present, paint this in place of
-   *  page.canvas. The preview has currently edited text and moved
-   *  images stripped from its content stream so HTML overlays don't
-   *  need a white cover to hide the originals. */
-  previewCanvas: HTMLCanvasElement | null;
-  /** Active tool mode — when "addText" / "addImage", clicking on
-   *  empty canvas creates a new insertion via onCanvasClick. */
-  tool: ToolMode;
-  /** Active ink color + thickness from App. The InkLayer stamps these
-   *  onto each new stroke at commit time — they're props rather than
-   *  module state so toggling via the InkToolbar takes effect on the
-   *  next stroke without reloading. */
-  inkColor: AnnotationColor;
-  inkThickness: number;
-  /** Active highlight color from App. `addHighlightForRun` stamps this
-   *  onto each new highlight; the HighlightToolbar writes to it. */
-  highlightColor: AnnotationColor;
-  /** Currently-open editor id on this page (lifted to App so a fresh
-   *  insertion can immediately open its editor without a round-trip
-   *  through PdfPage's own state). null = nothing is being edited. */
-  editingId: string | null;
-  onEdit: (runId: string, value: EditValue) => void;
-  onImageMove: (imageId: string, value: ImageMoveValue) => void;
-  onEditingChange: (runId: string | null) => void;
-  /** Click on the page canvas with `tool` set to a placement mode. */
-  onCanvasClick: (pdfX: number, pdfY: number) => void;
-  onTextInsertChange: (id: string, patch: Partial<TextInsertion>) => void;
-  onTextInsertDelete: (id: string) => void;
-  onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
-  onImageInsertDelete: (id: string) => void;
-  /** ID of the source image currently selected on this page (null
-   *  means nothing on this page is selected). Drives the selected
-   *  outline state on `ImageOverlay`. */
-  selectedImageId: string | null;
-  /** ID of the inserted image currently selected on this page. */
-  selectedInsertedImageId: string | null;
-  /** ID of the source vector shape currently selected on this page. */
-  selectedShapeId: string | null;
-  /** ID of the redaction currently selected on this page. */
-  selectedRedactionId: string | null;
-  /** ID of the highlight currently selected on this page. */
-  selectedHighlightId: string | null;
-  /** ID of the ink annotation currently selected on this page. */
-  selectedInkId: string | null;
-  /** Set of shape ids on this page already flagged for delete — their
-   *  overlays are hidden so the user can't re-grab them. */
-  deletedShapeIds: Set<string>;
-  /** Single-click on an image overlay → app marks it selected so
-   *  Delete/Backspace targets it. */
-  onSelectImage: (imageId: string) => void;
-  onSelectInsertedImage: (id: string) => void;
-  onSelectShape: (shapeId: string) => void;
-  onAnnotationAdd: (annotation: Annotation) => void;
-  onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
-  onAnnotationDelete: (id: string) => void;
-  onRedactionAdd: (redaction: Redaction) => void;
-  onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
-  onSelectRedaction: (id: string) => void;
-  onSelectHighlight: (id: string) => void;
-  onSelectInk: (id: string) => void;
-  onDeleteSelection: () => void;
-  /** Source-page text runs that have been moved cross-page and now
-   *  visually live on THIS slot. Built by PageList from the source-
-   *  side `edits` map. Rendered as non-interactive styled spans at
-   *  `targetPdfX/Y` — without this layer the runs disappear from the
-   *  source canvas (preview-strip) but never reappear on the target,
-   *  so the user can't see what they moved until save. */
-  crossPageArrivals: CrossPageArrival[];
-  /** Same idea for source IMAGES that have been moved cross-page —
-   *  the source canvas strip removes them, so the target slot needs
-   *  to paint them back at the dropped location. */
-  crossPageImageArrivals: CrossPageImageArrival[];
-  /** Re-drag handlers for arrivals. The arrival overlay calls these
-   *  when the user grabs a moved item on the target page and drops
-   *  it elsewhere — they write back to the SOURCE slot's edits /
-   *  imageMoves entry (where the cross-page move actually lives), so
-   *  any subsequent move stays anchored to its origin. The signatures
-   *  match App.tsx's `onEdit` / `onImageMove` directly: the arrival
-   *  carries the source slot id; the App handler handles
-   *  `targetPageIndex → targetSlotId` resolution. */
-  onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
-  onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
-  /** AcroForm fields for THIS page's source. The FormFieldLayer
-   *  filters to widgets whose `pageIndex` matches the current
-   *  `pageIndex`, so a field with widgets on multiple pages renders
-   *  on each. Empty when the source has no AcroForm. */
-  formFields: FormField[];
-  /** Per-source map of fullName → user-set value. Falls back to the
-   *  FormField's pre-parsed initial value when a name has no entry. */
-  formValues: Map<string, FormValue>;
-  /** Mobile app-owned zoom multiplier. 1 means fit-to-width, values
-   *  above 1 enlarge the document surface inside the scroll container
-   *  without using browser viewport zoom. */
-  documentZoom: number;
-  /** Commit a form-field fill. The FormFieldLayer hands the field's
-   *  fullName + a typed FormValue; App buckets it by source. */
-  onFormFieldChange: (fullName: string, value: FormValue) => void;
-};
+type Props = { model: PageReadModel; controller: PageController };
 
-export function PdfPage({
-  page,
-  pageIndex,
-  sourceKey,
-  edits,
-  imageMoves,
-  insertedTexts,
-  insertedImages,
-  annotations,
-  redactions,
-  previewCanvas,
-  tool,
-  inkColor,
-  inkThickness,
-  highlightColor,
-  editingId,
-  selectedImageId,
-  selectedInsertedImageId,
-  selectedShapeId,
-  selectedRedactionId,
-  selectedHighlightId,
-  selectedInkId,
-  deletedShapeIds,
-  onEdit,
-  onImageMove,
-  onEditingChange,
-  onCanvasClick,
-  onTextInsertChange,
-  onTextInsertDelete,
-  onImageInsertChange,
-  onImageInsertDelete,
-  onSelectImage,
-  onSelectInsertedImage,
-  onSelectShape,
-  onAnnotationAdd,
-  onAnnotationChange,
-  onAnnotationDelete,
-  onRedactionAdd,
-  onRedactionChange,
-  onSelectRedaction,
-  onSelectHighlight,
-  onSelectInk,
-  onDeleteSelection,
-  crossPageArrivals,
-  crossPageImageArrivals,
-  onSourceEdit,
-  onSourceImageMove,
-  formFields,
-  formValues,
-  documentZoom,
-  onFormFieldChange,
-}: Props) {
+export function PdfPage({ model, controller }: Props) {
+  const { view, content, toolState, selection } = model;
+  const { page, pageIndex, sourceKey, previewCanvas, documentZoom, formFields, formValues } = view;
+  const {
+    edits,
+    imageMoves,
+    insertedTexts,
+    insertedImages,
+    annotations,
+    redactions,
+    editingId,
+    deletedShapeIds,
+    crossPageArrivals,
+    crossPageImageArrivals,
+  } = content;
+  const { tool, inkColor, inkThickness, highlightColor } = toolState;
+  const {
+    selectedImageId,
+    selectedInsertedImageId,
+    selectedShapeId,
+    selectedRedactionId,
+    selectedHighlightId,
+    selectedInkId,
+  } = selection;
+  const {
+    onEdit,
+    onImageMove,
+    onEditingChange,
+    onCanvasClick,
+    onTextInsertChange,
+    onTextInsertDelete,
+    onImageInsertChange,
+    onImageInsertDelete,
+    onSelectImage,
+    onSelectInsertedImage,
+    onSelectShape,
+    onAnnotationAdd,
+    onAnnotationChange,
+    onAnnotationDelete,
+    onRedactionAdd,
+    onRedactionChange,
+    onSelectRedaction,
+    onSelectHighlight,
+    onSelectInk,
+    onDeleteSelection,
+    onSourceEdit,
+    onSourceImageMove,
+    onFormFieldChange,
+  } = controller;
   const { fitRef, fitScale } = usePageFitScale(page.viewWidth);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const displayScale = fitScale * documentZoom;

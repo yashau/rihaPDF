@@ -1,123 +1,14 @@
 import { PdfPage } from "./PdfPage";
-import type {
-  CrossPageArrival,
-  CrossPageImageArrival,
-  EditValue,
-  ImageMoveValue,
-} from "@/domain/editState";
-import type { FormValue } from "@/domain/formFields";
-import type { Annotation, AnnotationColor } from "@/domain/annotations";
-import type { FormField } from "@/domain/formFields";
-import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { RenderedPage } from "@/pdf/render/pdf";
-import type { Redaction } from "@/domain/redactions";
-import type { ToolMode } from "@/domain/toolMode";
+import type { PageController, PageReadModel } from "./pageViewModels";
 
 export function PageWithToolbar({
-  slotId,
-  page,
-  pageIndex,
-  sourceKey,
-  edits,
-  imageMoves,
-  insertedTexts,
-  insertedImages,
-  annotations,
-  redactions,
-  previewCanvas,
-  tool,
-  inkColor,
-  inkThickness,
-  highlightColor,
-  editingId,
-  selectedImageId,
-  selectedInsertedImageId,
-  selectedShapeId,
-  selectedRedactionId,
-  selectedHighlightId,
-  selectedInkId,
-  deletedShapeIds,
-  documentZoom,
-  onEdit,
-  onImageMove,
-  onEditingChange,
-  onCanvasClick,
-  onTextInsertChange,
-  onTextInsertDelete,
-  onImageInsertChange,
-  onImageInsertDelete,
-  onSelectImage,
-  onSelectInsertedImage,
-  onSelectShape,
-  onAnnotationAdd,
-  onAnnotationChange,
-  onAnnotationDelete,
-  onRedactionAdd,
-  onRedactionChange,
-  onSelectRedaction,
-  onSelectHighlight,
-  onSelectInk,
-  onDeleteSelection,
-  crossPageArrivals,
-  crossPageImageArrivals,
-  onSourceEdit,
-  onSourceImageMove,
-  formFields,
-  formValues,
-  onFormFieldChange,
+  model,
+  controller,
 }: {
-  slotId: string;
-  page: RenderedPage;
-  pageIndex: number;
-  sourceKey: string;
-  edits: Map<string, EditValue>;
-  imageMoves: Map<string, ImageMoveValue>;
-  insertedTexts: TextInsertion[];
-  insertedImages: ImageInsertion[];
-  annotations: Annotation[];
-  redactions: Redaction[];
-  previewCanvas: HTMLCanvasElement | null;
-  tool: ToolMode;
-  inkColor: AnnotationColor;
-  inkThickness: number;
-  highlightColor: AnnotationColor;
-  editingId: string | null;
-  selectedImageId: string | null;
-  selectedInsertedImageId: string | null;
-  selectedShapeId: string | null;
-  selectedRedactionId: string | null;
-  selectedHighlightId: string | null;
-  selectedInkId: string | null;
-  deletedShapeIds: Set<string>;
-  documentZoom: number;
-  onEdit: (runId: string, value: EditValue) => void;
-  onImageMove: (imageId: string, value: ImageMoveValue) => void;
-  onEditingChange: (runId: string | null) => void;
-  onCanvasClick: (pdfX: number, pdfY: number) => void;
-  onTextInsertChange: (id: string, patch: Partial<TextInsertion>) => void;
-  onTextInsertDelete: (id: string) => void;
-  onImageInsertChange: (id: string, patch: Partial<ImageInsertion>) => void;
-  onImageInsertDelete: (id: string) => void;
-  onSelectImage: (imageId: string) => void;
-  onSelectInsertedImage: (id: string) => void;
-  onSelectShape: (shapeId: string) => void;
-  onAnnotationAdd: (annotation: Annotation) => void;
-  onAnnotationChange: (id: string, patch: Partial<Annotation>) => void;
-  onAnnotationDelete: (id: string) => void;
-  onRedactionAdd: (redaction: Redaction) => void;
-  onRedactionChange: (id: string, patch: Partial<Redaction>) => void;
-  onSelectRedaction: (id: string) => void;
-  onSelectHighlight: (id: string) => void;
-  onSelectInk: (id: string) => void;
-  onDeleteSelection: () => void;
-  crossPageArrivals: CrossPageArrival[];
-  crossPageImageArrivals: CrossPageImageArrival[];
-  onSourceEdit: (sourceSlotId: string, runId: string, value: EditValue) => void;
-  onSourceImageMove: (sourceSlotId: string, imageId: string, value: ImageMoveValue) => void;
-  formFields: FormField[];
-  formValues: Map<string, FormValue>;
-  onFormFieldChange: (fullName: string, value: FormValue) => void;
+  model: PageReadModel;
+  controller: PageController;
 }) {
+  const { slotId, pageIndex, documentZoom } = model.view;
   return (
     <div
       id={`page-slot-${slotId}`}
@@ -128,58 +19,7 @@ export function PageWithToolbar({
       <div className="flex gap-2 items-center text-sm">
         <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>
-      <PdfPage
-        page={page}
-        pageIndex={pageIndex}
-        sourceKey={sourceKey}
-        edits={edits}
-        imageMoves={imageMoves}
-        insertedTexts={insertedTexts}
-        insertedImages={insertedImages}
-        annotations={annotations}
-        redactions={redactions}
-        previewCanvas={previewCanvas}
-        tool={tool}
-        inkColor={inkColor}
-        inkThickness={inkThickness}
-        highlightColor={highlightColor}
-        editingId={editingId}
-        selectedImageId={selectedImageId}
-        selectedInsertedImageId={selectedInsertedImageId}
-        selectedShapeId={selectedShapeId}
-        selectedRedactionId={selectedRedactionId}
-        selectedHighlightId={selectedHighlightId}
-        selectedInkId={selectedInkId}
-        deletedShapeIds={deletedShapeIds}
-        onEdit={onEdit}
-        onImageMove={onImageMove}
-        onEditingChange={onEditingChange}
-        onCanvasClick={onCanvasClick}
-        onTextInsertChange={onTextInsertChange}
-        onTextInsertDelete={onTextInsertDelete}
-        onImageInsertChange={onImageInsertChange}
-        onImageInsertDelete={onImageInsertDelete}
-        onSelectImage={onSelectImage}
-        onSelectInsertedImage={onSelectInsertedImage}
-        onSelectShape={onSelectShape}
-        onAnnotationAdd={onAnnotationAdd}
-        onAnnotationChange={onAnnotationChange}
-        onAnnotationDelete={onAnnotationDelete}
-        onRedactionAdd={onRedactionAdd}
-        onRedactionChange={onRedactionChange}
-        onSelectRedaction={onSelectRedaction}
-        onSelectHighlight={onSelectHighlight}
-        onSelectInk={onSelectInk}
-        onDeleteSelection={onDeleteSelection}
-        crossPageArrivals={crossPageArrivals}
-        crossPageImageArrivals={crossPageImageArrivals}
-        onSourceEdit={onSourceEdit}
-        onSourceImageMove={onSourceImageMove}
-        formFields={formFields}
-        formValues={formValues}
-        documentZoom={documentZoom}
-        onFormFieldChange={onFormFieldChange}
-      />
+      <PdfPage model={model} controller={controller} />
     </div>
   );
 }

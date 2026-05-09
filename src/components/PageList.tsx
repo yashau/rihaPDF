@@ -6,107 +6,67 @@ import type {
   ImageMoveValue,
 } from "@/domain/editState";
 import type { FormValue } from "@/domain/formFields";
-import type { Selection } from "@/domain/selection";
-import type { Annotation, AnnotationColor } from "@/domain/annotations";
 import { blankSourceKey } from "@/domain/blankSource";
 import { blankRenderedPage } from "@/pdf/render/blankPage";
-import type { ImageInsertion, TextInsertion } from "@/domain/insertions";
-import type { LoadedSource } from "@/pdf/source/loadSource";
 import type { RenderedPage } from "@/pdf/render/pdf";
-import type { Redaction } from "@/domain/redactions";
-import type { PageSlot } from "@/domain/slots";
-import type { ToolMode } from "@/domain/toolMode";
+import type {
+  PageListContentReadModel,
+  PageListController,
+  PageListDocumentReadModel,
+  PageListSelectionReadModel,
+  PageListToolReadModel,
+  PageViewReadModel,
+} from "./pageViewModels";
 
 export function PageList({
-  slots,
-  sources,
-  edits,
-  imageMoves,
-  insertedTexts,
-  insertedImages,
-  annotations,
-  redactions,
-  shapeDeletes,
-  previewCanvases,
-  editingByPage,
-  tool,
-  inkColor,
-  inkThickness,
-  highlightColor,
-  selection,
-  renderScale,
-  documentZoom,
-  formValues,
-  onEdit,
-  onImageMove,
-  onEditingChange,
-  onCanvasClick,
-  onTextInsertChange,
-  onTextInsertDelete,
-  onImageInsertChange,
-  onImageInsertDelete,
-  onSelectImage,
-  onSelectInsertedImage,
-  onSelectShape,
-  onAnnotationAdd,
-  onAnnotationChange,
-  onAnnotationDelete,
-  onRedactionAdd,
-  onRedactionChange,
-  onSelectRedaction,
-  onSelectHighlight,
-  onSelectInk,
-  onDeleteSelection,
-  onFormFieldChange,
+  document,
+  content,
+  toolState,
+  selectionModel,
+  controller,
 }: {
-  slots: PageSlot[];
-  sources: Map<string, LoadedSource>;
-  edits: Map<string, Map<string, EditValue>>;
-  imageMoves: Map<string, Map<string, ImageMoveValue>>;
-  insertedTexts: Map<string, TextInsertion[]>;
-  insertedImages: Map<string, ImageInsertion[]>;
-  annotations: Map<string, Annotation[]>;
-  redactions: Map<string, Redaction[]>;
-  shapeDeletes: Map<string, Set<string>>;
-  previewCanvases: Map<string, HTMLCanvasElement>;
-  editingByPage: Map<string, string>;
-  tool: ToolMode;
-  /** Active ink stroke color + thickness, lifted to App so the
-   *  setting persists across page focus and edits. The InkLayer
-   *  stamps these onto each new stroke at commit time. */
-  inkColor: AnnotationColor;
-  inkThickness: number;
-  /** Active highlight color — same lift-to-App rationale; PdfPage's
-   *  `addHighlightForRun` reads this when the user click-marks a run. */
-  highlightColor: AnnotationColor;
-  selection: Selection;
-  renderScale: number;
-  documentZoom: number;
-  /** Per-source map of fullName → user-set fill, keyed by sourceKey.
-   *  Lookup at render time so a slot reorder doesn't restate fills. */
-  formValues: Map<string, Map<string, FormValue>>;
-  onEdit: (slotId: string, runId: string, value: EditValue) => void;
-  onImageMove: (slotId: string, imageId: string, value: ImageMoveValue) => void;
-  onEditingChange: (slotId: string, runId: string | null) => void;
-  onCanvasClick: (slotId: string, pageIndex: number, pdfX: number, pdfY: number) => void;
-  onTextInsertChange: (slotId: string, id: string, patch: Partial<TextInsertion>) => void;
-  onTextInsertDelete: (slotId: string, id: string) => void;
-  onImageInsertChange: (slotId: string, id: string, patch: Partial<ImageInsertion>) => void;
-  onImageInsertDelete: (slotId: string, id: string) => void;
-  onSelectImage: (slotId: string, imageId: string) => void;
-  onSelectInsertedImage: (slotId: string, id: string) => void;
-  onSelectShape: (slotId: string, shapeId: string) => void;
-  onAnnotationAdd: (slotId: string, annotation: Annotation) => void;
-  onAnnotationChange: (slotId: string, id: string, patch: Partial<Annotation>) => void;
-  onAnnotationDelete: (slotId: string, id: string) => void;
-  onRedactionAdd: (slotId: string, redaction: Redaction) => void;
-  onRedactionChange: (slotId: string, id: string, patch: Partial<Redaction>) => void;
-  onSelectRedaction: (slotId: string, id: string) => void;
-  onSelectHighlight: (slotId: string, id: string) => void;
-  onSelectInk: (slotId: string, id: string) => void;
-  onDeleteSelection: () => void;
-  onFormFieldChange: (sourceKey: string, fullName: string, value: FormValue) => void;
+  document: PageListDocumentReadModel;
+  content: PageListContentReadModel;
+  toolState: PageListToolReadModel;
+  selectionModel: PageListSelectionReadModel;
+  controller: PageListController;
 }) {
+  const { slots, sources, previewCanvases, renderScale, documentZoom } = document;
+  const {
+    edits,
+    imageMoves,
+    insertedTexts,
+    insertedImages,
+    annotations,
+    redactions,
+    shapeDeletes,
+    editingByPage,
+    formValues,
+  } = content;
+  const { selection } = selectionModel;
+  const {
+    onEdit,
+    onImageMove,
+    onEditingChange,
+    onCanvasClick,
+    onTextInsertChange,
+    onTextInsertDelete,
+    onImageInsertChange,
+    onImageInsertDelete,
+    onSelectImage,
+    onSelectInsertedImage,
+    onSelectShape,
+    onAnnotationAdd,
+    onAnnotationChange,
+    onAnnotationDelete,
+    onRedactionAdd,
+    onRedactionChange,
+    onSelectRedaction,
+    onSelectHighlight,
+    onSelectInk,
+    onDeleteSelection,
+    onFormFieldChange,
+  } = controller;
   // Group cross-page-targeted edits by their target slot so each
   // slot's PdfPage can render the runs that have ARRIVED on it
   // from elsewhere. Without this, the source-side preview-strip
@@ -220,7 +180,7 @@ export function PageList({
         let page: RenderedPage;
         let pageSourceKey: string;
         let previewKey: string | null = null;
-        let pageFormFields: LoadedSource["formFields"] = [];
+        let pageFormFields: PageViewReadModel["formFields"] = [];
         if (slot.kind === "blank") {
           page = blankRenderedPage(slot, renderScale);
           pageSourceKey = blankSourceKey(slot.id);
@@ -316,59 +276,65 @@ export function PageList({
         return (
           <PageWithToolbar
             key={slot.id}
-            slotId={slot.id}
-            page={page}
-            pageIndex={idx}
-            sourceKey={pageSourceKey}
-            edits={editsForSlot}
-            imageMoves={imageMovesForSlot}
-            insertedTexts={insertedTexts.get(slot.id) ?? []}
-            insertedImages={insertedImages.get(slot.id) ?? []}
-            annotations={annotations.get(slot.id) ?? []}
-            redactions={redactions.get(slot.id) ?? []}
-            previewCanvas={previewKey ? (previewCanvases.get(previewKey) ?? null) : null}
-            tool={tool}
-            inkColor={inkColor}
-            inkThickness={inkThickness}
-            highlightColor={highlightColor}
-            editingId={editingByPage.get(slot.id) ?? null}
-            selectedImageId={selectedImageId}
-            selectedInsertedImageId={selectedInsertedImageId}
-            selectedShapeId={selectedShapeId}
-            selectedRedactionId={selectedRedactionId}
-            selectedHighlightId={selectedHighlightId}
-            selectedInkId={selectedInkId}
-            deletedShapeIds={deletedShapeIds}
-            documentZoom={documentZoom}
-            onEdit={(runId, value) => onEdit(slot.id, runId, value)}
-            onImageMove={(imageId, value) => onImageMove(slot.id, imageId, value)}
-            onEditingChange={(runId) => onEditingChange(slot.id, runId)}
-            onCanvasClick={(pdfX, pdfY) => onCanvasClick(slot.id, idx, pdfX, pdfY)}
-            onTextInsertChange={(id, patch) => onTextInsertChange(slot.id, id, patch)}
-            onTextInsertDelete={(id) => onTextInsertDelete(slot.id, id)}
-            onImageInsertChange={(id, patch) => onImageInsertChange(slot.id, id, patch)}
-            onImageInsertDelete={(id) => onImageInsertDelete(slot.id, id)}
-            onSelectImage={(imageId) => onSelectImage(slot.id, imageId)}
-            onSelectInsertedImage={(id) => onSelectInsertedImage(slot.id, id)}
-            onSelectShape={(shapeId) => onSelectShape(slot.id, shapeId)}
-            onAnnotationAdd={(a) => onAnnotationAdd(slot.id, a)}
-            onAnnotationChange={(id, patch) => onAnnotationChange(slot.id, id, patch)}
-            onAnnotationDelete={(id) => onAnnotationDelete(slot.id, id)}
-            onRedactionAdd={(r) => onRedactionAdd(slot.id, r)}
-            onRedactionChange={(id, patch) => onRedactionChange(slot.id, id, patch)}
-            onSelectRedaction={(id) => onSelectRedaction(slot.id, id)}
-            onSelectHighlight={(id) => onSelectHighlight(slot.id, id)}
-            onSelectInk={(id) => onSelectInk(slot.id, id)}
-            onDeleteSelection={onDeleteSelection}
-            crossPageArrivals={arrivalsBySlot.get(slot.id) ?? []}
-            crossPageImageArrivals={imageArrivalsBySlot.get(slot.id) ?? []}
-            onSourceEdit={onEdit}
-            onSourceImageMove={onImageMove}
-            formFields={pageFormFields}
-            formValues={slotFormValues}
-            onFormFieldChange={(fullName, value) =>
-              onFormFieldChange(pageSourceKey, fullName, value)
-            }
+            model={{
+              view: {
+                slotId: slot.id,
+                page,
+                pageIndex: idx,
+                sourceKey: pageSourceKey,
+                previewCanvas: previewKey ? (previewCanvases.get(previewKey) ?? null) : null,
+                documentZoom,
+                formFields: pageFormFields,
+                formValues: slotFormValues,
+              },
+              content: {
+                edits: editsForSlot,
+                imageMoves: imageMovesForSlot,
+                insertedTexts: insertedTexts.get(slot.id) ?? [],
+                insertedImages: insertedImages.get(slot.id) ?? [],
+                annotations: annotations.get(slot.id) ?? [],
+                redactions: redactions.get(slot.id) ?? [],
+                editingId: editingByPage.get(slot.id) ?? null,
+                deletedShapeIds,
+                crossPageArrivals: arrivalsBySlot.get(slot.id) ?? [],
+                crossPageImageArrivals: imageArrivalsBySlot.get(slot.id) ?? [],
+              },
+              toolState,
+              selection: {
+                selectedImageId,
+                selectedInsertedImageId,
+                selectedShapeId,
+                selectedRedactionId,
+                selectedHighlightId,
+                selectedInkId,
+              },
+            }}
+            controller={{
+              onEdit: (runId, value) => onEdit(slot.id, runId, value),
+              onImageMove: (imageId, value) => onImageMove(slot.id, imageId, value),
+              onEditingChange: (runId) => onEditingChange(slot.id, runId),
+              onCanvasClick: (pdfX, pdfY) => onCanvasClick(slot.id, idx, pdfX, pdfY),
+              onTextInsertChange: (id, patch) => onTextInsertChange(slot.id, id, patch),
+              onTextInsertDelete: (id) => onTextInsertDelete(slot.id, id),
+              onImageInsertChange: (id, patch) => onImageInsertChange(slot.id, id, patch),
+              onImageInsertDelete: (id) => onImageInsertDelete(slot.id, id),
+              onSelectImage: (imageId) => onSelectImage(slot.id, imageId),
+              onSelectInsertedImage: (id) => onSelectInsertedImage(slot.id, id),
+              onSelectShape: (shapeId) => onSelectShape(slot.id, shapeId),
+              onAnnotationAdd: (a) => onAnnotationAdd(slot.id, a),
+              onAnnotationChange: (id, patch) => onAnnotationChange(slot.id, id, patch),
+              onAnnotationDelete: (id) => onAnnotationDelete(slot.id, id),
+              onRedactionAdd: (r) => onRedactionAdd(slot.id, r),
+              onRedactionChange: (id, patch) => onRedactionChange(slot.id, id, patch),
+              onSelectRedaction: (id) => onSelectRedaction(slot.id, id),
+              onSelectHighlight: (id) => onSelectHighlight(slot.id, id),
+              onSelectInk: (id) => onSelectInk(slot.id, id),
+              onDeleteSelection,
+              onSourceEdit: onEdit,
+              onSourceImageMove: onImageMove,
+              onFormFieldChange: (fullName, value) =>
+                onFormFieldChange(pageSourceKey, fullName, value),
+            }}
           />
         );
       })}
