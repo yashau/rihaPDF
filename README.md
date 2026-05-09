@@ -27,29 +27,26 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 **Current browser limits:** PDFs up to **150 MB** and **250 pages** at a time. Larger files are rejected up front to avoid exhausting browser memory while rihaPDF eagerly loads page previews and editable metadata.
 
-**No OCR:** rihaPDF edits existing PDF text objects; it does not perform OCR of any kind and is not meant for converting scanned/image-only documents into editable text. You can still use scanned PDFs for page organization, annotations, visual signatures, redaction boxes, and other visual edits.
-
 **Live demo:** <https://rihapdf.yashau.com>
 
 ## Features
 
-- **Edit text runs.** Click → source-glyph-positioned caret input + floating toolbar (font, size, B/I/U/S, alignment, RTL/LTR). Source edit boxes can be resized without changing font size, and style overrides survive close/reopen.
-- **Drag to move.** Any run, image, inserted item, or comment — within a page or across pages. Cross-page arrivals are re-draggable.
-- **Insert text and images.** Click-to-place tools that share the edit toolbar; inserted text boxes can be resized without changing font size and support explicit left, center, right, or justified alignment.
-- **Visual signatures.** Draw a signature with signing colour presets or import one from an image. Imported signatures are trimmed and background-cleaned, and saved signatures stay local in the browser for reuse. These are visual PDF image inserts only, not cryptographic PDF signatures.
-- **Resize images.** 4 corner handles on source and inserted images, anchored opposite corner.
-- **Delete anything.** `Del`/`Backspace` on selected images; trash button on the text toolbar.
-- **Undo / redo.** Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y. Coalesces typing and drags into single steps.
-- **Page sidebar.** Thumbnail per page; reorder, delete, insert blank, or insert pages from another PDF by picker or PDF drag-and-drop. External pages are first-class — every editing affordance works on them.
-- **230 bundled Thaana fonts.** Shipped via `@font-face` with `local()` first; saved PDFs embed the chosen family with `subset: false`. Sources, attributions, and per-file credits in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
-- **Annotations.** Highlight, resizable comment (FreeText), and freehand draw — saved as native `/Annot` objects so other tools recognise them.
-- **Redact.** Click a text run to drop an opaque black rectangle; drag corners to resize. On save the rect paints into the content stream AND the underlying content is destroyed: glyphs are stripped per-bbox, supported raster image XObjects are rewritten with covered pixels blacked out, fully covered / unsupported image or Form XObject draws are removed, vector paint ops under the rect are stripped, native annotations are clipped or removed on overlap, and overlapped AcroForm widgets are removed with their field values and appearances. The saved file has no recoverable text, page-level image/vector draw data, annotation content, or form-widget value data under the rect for supported layers.
-- **Fill AcroForm fields.** Open a form PDF — Maldivian gov applications, etc. — and the existing widgets become interactive overlays: text inputs (single-line, multiline, password), checkboxes, radio groups, combo / list boxes. Type Thaana via the same DV/EN phonetic keyboard the rest of the editor uses; saved PDFs write `/V` (UTF-16BE for Thaana, ASCII otherwise) and rebuild `/Root /AcroForm /Fields` after copyPages so the output stays interactive in Acrobat / Preview / Chrome / pdf.js. Reopening in rihaPDF re-extracts the same values. XFA, JS actions, `/AA`, and digital-signature creation are out of scope.
-- **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle on the edit toolbar maps Latin keystrokes to Thaana via the Mahaa keymap.
+- **Edit text runs.** Click existing PDF text and edit it in place with font, size, style, alignment, and direction controls.
+- **Drag to move.** Move text, images, inserted items, and comments within a page or across pages.
+- **Insert text and images.** Click-to-place text boxes and images, with resize handles and shared text formatting controls.
+- **Visual signatures.** Draw or import reusable visual signatures. These are image inserts, not cryptographic PDF signatures.
+- **Resize and delete objects.** Resize source/inserted images and remove selected text, images, comments, and inserted items.
+- **Undo / redo.** Keyboard undo/redo with typing and drag coalescing.
+- **Page sidebar.** Reorder, delete, insert blank pages, or import pages from another PDF.
+- **230 bundled Thaana fonts.** Local-first `@font-face` loading and embedded saved output. Credits live in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
+- **Annotations.** Highlight, resizable comments, and freehand drawing saved as native PDF annotations.
+- **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area.
+- **Fill AcroForm fields.** Fill common PDF form widgets, including text fields, checkboxes, radios, combo boxes, and list boxes, with Thaana input support.
+- **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
-- **Installable app.** Chrome / Edge can install rihaPDF as a standalone PWA when served from HTTPS; supporting browsers expose the native install affordance in the browser UI.
-- **Mobile layout.** Fit-to-width pages, app-owned two-finger document zoom, 400ms touch hold before drag, edge-band auto-scroll, drawer sidebar, visual-viewport-anchored chrome for keyboard-aware controls.
-- **Multi-page docs** with per-page preview canvases that strip-and-re-render on every edit.
+- **Installable app.** Chrome / Edge can install rihaPDF as a standalone PWA when served from HTTPS.
+- **Mobile layout.** Fit-to-width pages, touch gestures, drawer sidebar, and keyboard-aware toolbar positioning.
+- **Multi-page docs.** Per-page preview canvases update as edits change.
 
 ## Stack
 
@@ -101,9 +98,11 @@ Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/pdf
 
 Caret placement for source text uses the same PDF-side text-show data as the edit/save pipeline: [sourceFonts.ts](src/pdf/source/sourceFonts.ts) walks `Tj`/`TJ` operators, font widths, text spacing, and horizontal scaling to derive per-glyph source edges; [pdf.ts](src/pdf/render/pdf.ts) maps those edges back to logical text offsets for LTR/RTL run hit-testing before the browser input mounts.
 
-The page renderer is split per concern under [src/components/PdfPage/](src/components/PdfPage/): `index.tsx` (page chrome + gesture wiring), `EditField.tsx`, `EditTextToolbar.tsx`, `overlays/`, `helpers.ts`, `types.ts`.
+The page renderer is split per concern under [src/components/PdfPage/](src/components/PdfPage/): `index.tsx` owns page chrome and gesture wiring; `EditField.tsx`, `EditTextToolbar.tsx`, `RichTextEditor.tsx`, `RichTextEditorPlugins.tsx`, `RichTextView.tsx`, `richTextEditorModel.ts`, and `richTextThaanaInput.ts` cover source/inserted text editing; `SourceRunOverlay.tsx`, `AnnotationLayer.tsx`, `DragPreviews.tsx`, and the drag/geometry hooks cover overlays and object interaction.
 
-`App.tsx` is a composition root at [src/app/App.tsx](src/app/App.tsx) over [AppHeader](src/components/AppHeader/), [PageList](src/components/PageList.tsx), [PageWithToolbar](src/components/PageWithToolbar.tsx), and [AboutModal](src/components/AboutModal.tsx). App-specific state hooks live in [src/app/hooks/](src/app/hooks/), including [usePreviewCanvases](src/app/hooks/usePreviewCanvases.ts), [useSelection](src/app/hooks/useSelection.ts), and [useMobileChrome](src/app/hooks/useMobileChrome.ts); shared platform hooks such as [useUndoRedo](src/platform/hooks/useUndoRedo.ts) and [useDragGesture](src/platform/hooks/useDragGesture.ts) live in [src/platform/hooks/](src/platform/hooks/). [buildSavePayload.ts](src/app/buildSavePayload.ts) is the pure translator from slot list → `SourceSavePayload[]`.
+`App.tsx` is a composition root at [src/app/App.tsx](src/app/App.tsx) over [AppHeader](src/components/AppHeader/), [PageList](src/components/PageList.tsx), [PageWithToolbar](src/components/PageWithToolbar.tsx), and [AboutModal](src/components/AboutModal.tsx). App-specific state hooks live in [src/app/hooks/](src/app/hooks/), including [useAppState](src/app/hooks/useAppState.ts), [useDocumentIo](src/app/hooks/useDocumentIo.ts), [useDocumentMutations](src/app/hooks/useDocumentMutations.ts), [usePreviewCanvases](src/app/hooks/usePreviewCanvases.ts), [useSelection](src/app/hooks/useSelection.ts), and [useMobileChrome](src/app/hooks/useMobileChrome.ts). Shared platform hooks such as [useUndoRedo](src/platform/hooks/useUndoRedo.ts) and [useDragGesture](src/platform/hooks/useDragGesture.ts) live in [src/platform/hooks/](src/platform/hooks/).
+
+Derived app state lives in [src/app/state/](src/app/state/): [contentState.ts](src/app/state/contentState.ts) groups document/content/tool state, [pageListSelectors.ts](src/app/state/pageListSelectors.ts) derives renderable PageList selection/arrival state, and [saveStatusSelectors.ts](src/app/state/saveStatusSelectors.ts) keeps save-status logic pure. [pageControllerBinding.ts](src/components/pageControllerBinding.ts) binds per-page controller callbacks, and [buildSavePayload.ts](src/app/buildSavePayload.ts) translates the slot list into `SourceSavePayload[]` for the save pipeline.
 
 ## Adding a new Dhivehi font
 
@@ -120,6 +119,7 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 
 ## Known limitations
 
+- **No OCR.** rihaPDF edits existing PDF text objects; it does not perform OCR of any kind and is not meant for converting scanned/image-only documents into editable text. You can still use scanned PDFs for page organization, annotations, visual signatures, redaction boxes, and other visual edits.
 - **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
 - **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q…Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
 - **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
