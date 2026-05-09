@@ -10,6 +10,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import { loadPdf, renderPage, type RenderedPage } from "@/pdf/render/pdf";
+import { assertPdfFileWithinLimits, assertPdfPageCountWithinLimits } from "@/pdf/render/guardrails";
 import { extractPageFontShows, type FontShow } from "@/pdf/source/sourceFonts";
 import { extractPageGlyphMaps } from "@/pdf/source/glyphMap";
 import { extractPageImages } from "@/pdf/source/sourceImages";
@@ -62,22 +63,22 @@ export async function loadSource(
   scale: number,
   sourceKey: string,
 ): Promise<LoadedSource> {
+  assertPdfFileWithinLimits(file);
   const buf = await file.arrayBuffer();
   const forPdfJs = buf.slice(0);
   const forSave = buf.slice(0);
-  const forFonts = buf.slice(0);
-  const forGlyphMaps = buf.slice(0);
-  const forImages = buf.slice(0);
-  const forShapes = buf.slice(0);
-  const [doc, fontShowsByPage, glyphsDoc, imagesByPage, shapesByPage] = await Promise.all([
-    loadPdf(forPdfJs),
-    extractPageFontShows(forFonts),
-    PDFDocument.load(forGlyphMaps, { ignoreEncryption: true }),
-    extractPageImages(forImages),
-    extractPageShapes(forShapes),
-  ]);
-  const pages: RenderedPage[] = [];
+  const doc = await loadPdf(forPdfJs);
   try {
+    assertPdfPageCountWithinLimits(doc.numPages, file.name);
+
+    // Keep heavy PDF parsers serialized. Running pdf.js, pdf-lib font walks,
+    // image walks, and shape walks all at once duplicated large buffers and
+    // could spike memory on multi-hundred-page PDFs before any page rendered.
+    const fontShowsByPage = await extractPageFontShows(buf.slice(0));
+    const glyphsDoc = await PDFDocument.load(buf.slice(0), { ignoreEncryption: true });
+    const imagesByPage = await extractPageImages(buf.slice(0));
+    const shapesByPage = await extractPageShapes(buf.slice(0));
+    const pages: RenderedPage[] = [];
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const glyphMaps = extractPageGlyphMaps(glyphsDoc, i - 1);
@@ -97,21 +98,21 @@ export async function loadSource(
       pairDecorationsWithRuns(rendered);
       pages.push(rendered);
     }
+    const formFields = extractFormFields(glyphsDoc, sourceKey);
+    const annotationsByPage = extractSourceAnnotations(glyphsDoc, sourceKey);
+    return {
+      sourceKey,
+      filename: file.name,
+      bytes: forSave,
+      glyphsDoc,
+      fontShowsByPage,
+      imagesByPage,
+      shapesByPage,
+      pages,
+      formFields,
+      annotationsByPage,
+    };
   } finally {
     void doc.destroy();
   }
-  const formFields = extractFormFields(glyphsDoc, sourceKey);
-  const annotationsByPage = extractSourceAnnotations(glyphsDoc, sourceKey);
-  return {
-    sourceKey,
-    filename: file.name,
-    bytes: forSave,
-    glyphsDoc,
-    fontShowsByPage,
-    imagesByPage,
-    shapesByPage,
-    pages,
-    formFields,
-    annotationsByPage,
-  };
 }

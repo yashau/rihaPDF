@@ -40,12 +40,10 @@ type Props = {
   onSlotActivate?: () => void;
 };
 
-// Target CSS width of the displayed thumbnail. Sized for the widest
-// mount — the mobile drawer (`max-w-sm` 384 − `px-3` 24 = 360). The
-// desktop rail (`w-56`) downscales further at draw time, which the
-// browser handles cleanly. Bitmap is rendered at this × DPR so device
-// pixels land 1:1 instead of being upscaled.
-const THUMB_TARGET_CSS_WIDTH = 360;
+// Target CSS width for the cached thumbnail bitmap. It is intentionally
+// below the widest mount: browser scaling a 240px thumb is cheaper than
+// keeping one larger encoded image per page in memory for long PDFs.
+const THUMB_TARGET_CSS_WIDTH = 240;
 const PDF_DROP_AUTOSCROLL_EDGE_PX = 56;
 const PDF_DROP_AUTOSCROLL_MAX_STEP = 18;
 
@@ -56,6 +54,18 @@ function isPdfFile(file: File): boolean {
 function hasFileTransfer(dt: DataTransfer): boolean {
   if (dt.items.length > 0) return Array.from(dt.items).some((item) => item.kind === "file");
   return dt.files.length > 0 || Array.from(dt.types).includes("Files");
+}
+
+function revokeThumbUrl(url: string): void {
+  if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+}
+
+async function canvasToThumbUrl(canvas: HTMLCanvasElement): Promise<string> {
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/webp", 0.82);
+  });
+  if (blob) return URL.createObjectURL(blob);
+  return canvas.toDataURL("image/png");
 }
 
 function dragMayContainPdf(dt: DataTransfer): boolean {
@@ -80,9 +90,12 @@ export function PageSidebar({
   const sidebarRef = useRef<HTMLElement | null>(null);
   const fileDragClientYRef = useRef<number | null>(null);
   const fileDragScrollFrameRef = useRef<number | null>(null);
-  /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are PNG
-   *  data URLs so multiple <img> tags can share one entry. */
+  /** Thumb cache. Keys: `${sourceKey}:${pageIndex}` — values are blob
+   *  URLs (or a PNG data URL fallback) so strings don't pin huge PNGs in
+   *  JS heap for long PDFs. */
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const thumbsRef = useRef(thumbs);
+  const thumbCleanupTimerRef = useRef<number | null>(null);
   const [pdfDropIndex, setPdfDropIndex] = useState<number | null>(null);
   // Tracks the LoadedSource object identity per sourceKey. We compare by
   // identity (not just key presence) because opening a new primary PDF
@@ -91,13 +104,14 @@ export function PageSidebar({
   // keep showing under their old (sourceKey, pageIndex) cache entries.
   const knownSourcesRef = useRef<Map<string, LoadedSource>>(new Map());
 
+  useEffect(() => {
+    thumbsRef.current = thumbs;
+  }, [thumbs]);
+
   // Single effect that handles both stale-source eviction and thumb
-  // generation. Merging is required: if eviction lived in its own effect
-  // it would call setThumbs, but the regen effect's closure would still
-  // see the old (stale) thumbs map and skip regeneration — and `thumbs`
-  // can't be added to its deps without an infinite loop. Doing both in
-  // one effect with one functional setThumbs makes cleanup + regen a
-  // single atomic update.
+  // generation. It avoids depending on `thumbs` directly by consulting
+  // `thumbsRef`, otherwise each generated thumb would retrigger the
+  // effect and loop.
   useEffect(() => {
     const prevKnown = knownSourcesRef.current;
     const stale = new Set<string>();
@@ -106,62 +120,80 @@ export function PageSidebar({
     }
     knownSourcesRef.current = new Map(sources);
 
-    // Downscale the already-rendered source canvas via 2D drawImage.
-    // Cheaper than re-running pdf.js because we already have the source
-    // canvas in memory after eager extraction. pdf.js renders source
-    // canvases at scale × DPR (capped 2), so src.width is already in
-    // device pixels; target = CSS width × DPR (same cap) gives a 1:1
-    // device-pixel display on the widest mount. Clamp factor to 1 so a
-    // tiny source PDF doesn't get upscaled.
-    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-    const targetW = THUMB_TARGET_CSS_WIDTH * dpr;
-    const additions = new Map<string, string>();
-    for (const slot of slots) {
-      if (slot.kind !== "page") continue;
-      const source = sources.get(slot.sourceKey);
-      const rp = source?.pages[slot.sourcePageIndex];
-      if (!rp) continue;
-      const key = `${slot.sourceKey}:${slot.sourcePageIndex}`;
-      // Regenerate if either uncached or evicted by stale-source
-      // detection above. Skip otherwise to avoid pointless re-encoding.
-      if (thumbs.has(key) && !stale.has(slot.sourceKey)) continue;
-      const src = rp.canvas;
-      const factor = Math.min(1, targetW / src.width);
-      const w = Math.max(1, Math.round(src.width * factor));
-      const h = Math.max(1, Math.round(src.height * factor));
-      const c = document.createElement("canvas");
-      c.width = w;
-      c.height = h;
-      const ctx = c.getContext("2d");
-      if (!ctx) continue;
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(src, 0, 0, w, h);
-      additions.set(key, c.toDataURL("image/png"));
-    }
-
-    if (stale.size === 0 && additions.size === 0) return;
-    // oxlint-disable-next-line react-hooks/set-state-in-effect
-    setThumbs((prev) => {
-      const next = new Map<string, string>();
-      for (const [k, v] of prev) {
-        const sourceKey = k.split(":")[0];
-        if (!stale.has(sourceKey)) next.set(k, v);
+    let cancelled = false;
+    const generated = new Map<string, string>();
+    void (async () => {
+      // Downscale the already-rendered source canvas via 2D drawImage.
+      // Cheaper than re-running pdf.js because we already have the source
+      // canvas in memory after eager extraction. Clamp factor to 1 so a
+      // tiny source PDF doesn't get upscaled.
+      const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+      const targetW = THUMB_TARGET_CSS_WIDTH * dpr;
+      for (const slot of slots) {
+        if (cancelled || slot.kind !== "page") continue;
+        const source = sources.get(slot.sourceKey);
+        const rp = source?.pages[slot.sourcePageIndex];
+        if (!rp) continue;
+        const key = `${slot.sourceKey}:${slot.sourcePageIndex}`;
+        // Regenerate if either uncached or evicted by stale-source
+        // detection above. Skip otherwise to avoid pointless re-encoding.
+        if (thumbsRef.current.has(key) && !stale.has(slot.sourceKey)) continue;
+        const src = rp.canvas;
+        const factor = Math.min(1, targetW / src.width);
+        const w = Math.max(1, Math.round(src.width * factor));
+        const h = Math.max(1, Math.round(src.height * factor));
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        if (!ctx) continue;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(src, 0, 0, w, h);
+        generated.set(key, await canvasToThumbUrl(c));
       }
-      for (const [k, v] of additions) next.set(k, v);
-      return next;
-    });
-    // oxlint-disable-next-line react/exhaustive-deps
+
+      if (cancelled) {
+        for (const url of generated.values()) revokeThumbUrl(url);
+        return;
+      }
+      if (stale.size === 0 && generated.size === 0) return;
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
+      setThumbs((prev) => {
+        const next = new Map<string, string>();
+        for (const [k, v] of prev) {
+          const sourceKey = k.split(":")[0];
+          if (stale.has(sourceKey) || generated.has(k)) {
+            revokeThumbUrl(v);
+          } else {
+            next.set(k, v);
+          }
+        }
+        for (const [k, v] of generated) next.set(k, v);
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [slots, sources]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    if (thumbCleanupTimerRef.current !== null) {
+      window.clearTimeout(thumbCleanupTimerRef.current);
+      thumbCleanupTimerRef.current = null;
+    }
+    return () => {
       if (fileDragScrollFrameRef.current !== null) {
         window.cancelAnimationFrame(fileDragScrollFrameRef.current);
       }
-    },
-    [],
-  );
+      const urls = [...thumbsRef.current.values()];
+      thumbCleanupTimerRef.current = window.setTimeout(() => {
+        for (const url of urls) revokeThumbUrl(url);
+        thumbCleanupTimerRef.current = null;
+      }, 0);
+    };
+  }, []);
 
   const insertBlankAt = (i: number) => {
     // Match the size of the nearest neighbour so a blank inserted into

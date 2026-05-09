@@ -17,6 +17,7 @@ import {
   rgb,
 } from "pdf-lib";
 import { applyEditsAndSave } from "../../src/pdf/save";
+import { getPageContentBytes, setPageContentBytes } from "../../src/pdf/content/pageContent";
 import type { LoadedSource } from "../../src/pdf/source/loadSource";
 import { extractPageImages } from "../../src/pdf/source/sourceImages";
 import { extractPageShapes } from "../../src/pdf/source/sourceShapes";
@@ -181,6 +182,21 @@ function readName(value: unknown): string | null {
   return value instanceof PDFName ? value.decodeText() : null;
 }
 
+async function allImageXObjectStreamCount(pdfBytes: Uint8Array): Promise<number> {
+  const doc = await PDFDocument.load(pdfBytes);
+  let count = 0;
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue;
+    if (readName(obj.dict.lookup(PDFName.of("Subtype"))) === "Image") count++;
+  }
+  return count;
+}
+
+async function decodedPageContent(pdfBytes: Uint8Array): Promise<string> {
+  const doc = await PDFDocument.load(pdfBytes);
+  return new TextDecoder("latin1").decode(getPageContentBytes(doc.context, doc.getPages()[0].node));
+}
+
 async function decodedImageStreams(pdfBytes: Uint8Array): Promise<
   Array<{
     name: string;
@@ -292,6 +308,20 @@ function getRgbPixel(
   return [image.bytes[off], image.bytes[off + 1], image.bytes[off + 2]];
 }
 
+async function makeInlineImageSource(): Promise<LoadedSource> {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([400, 200]);
+  setPageContentBytes(
+    doc.context,
+    page.node,
+    new TextEncoder().encode(
+      "q 20 0 0 20 100 100 cm BI /W 1 /H 1 /CS /RGB /BPC 8 ID INLINE_IMAGE_SECRET_42 EI Q\n",
+    ),
+  );
+  const bytes = uint8ToArrayBuffer(await doc.save());
+  return makeSourceFromBytes(bytes, "inline-image.pdf");
+}
+
 async function makeGradientImageSource(): Promise<LoadedSource> {
   const width = 4;
   const height = 1;
@@ -385,6 +415,10 @@ describe("save redactions for non-text content", () => {
 
     const streams = await decodedImageStreams(saved);
     expect(streams, "saved page should retain one sanitized image resource").toHaveLength(1);
+    expect(
+      await allImageXObjectStreamCount(saved),
+      "original image stream should not remain unreferenced",
+    ).toBe(1);
     const sanitized = streams[0];
     expect(sanitized.width).toBe(4);
     expect(sanitized.height).toBe(1);
@@ -424,6 +458,70 @@ describe("save redactions for non-text content", () => {
     const images = await extractPageImages(uint8ToArrayBuffer(saved));
     expect(images[0]).toHaveLength(source.pages[0].images.length - 1);
     expect(await pageXObjectNames(saved)).toHaveLength(source.pages[0].images.length - 1);
+  });
+
+  test("a fully redacted sole image is not recoverable as an unreferenced stream", async () => {
+    const source = await makeGradientImageSource();
+    const target = source.pages[0].images[0];
+    expect(await allImageXObjectStreamCount(new Uint8Array(source.bytes))).toBe(1);
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: "redact-sole-image",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: target.pdfX,
+          pdfY: target.pdfY,
+          pdfWidth: target.pdfWidth,
+          pdfHeight: target.pdfHeight,
+        },
+      ],
+    );
+
+    expect(await pageXObjectNames(saved)).toHaveLength(0);
+    expect(await allImageXObjectStreamCount(saved)).toBe(0);
+  });
+
+  test("a redaction removes opaque inline images from the saved content stream", async () => {
+    const source = await makeInlineImageSource();
+    expect(await decodedPageContent(new Uint8Array(source.bytes))).toContain(
+      "INLINE_IMAGE_SECRET_42",
+    );
+
+    const saved = await applyEditsAndSave(
+      new Map([[PRIMARY_SOURCE_KEY, source]]),
+      [FIRST_PAGE_SLOT],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+        {
+          id: "redact-inline-image",
+          sourceKey: PRIMARY_SOURCE_KEY,
+          pageIndex: 0,
+          pdfX: 100,
+          pdfY: 100,
+          pdfWidth: 20,
+          pdfHeight: 20,
+        },
+      ],
+    );
+
+    const content = await decodedPageContent(saved);
+    expect(content).not.toContain("BI");
+    expect(content).not.toContain("INLINE_IMAGE_SECRET_42");
   });
 
   test("a redaction over a vector shape strips the underlying vector operators", async () => {

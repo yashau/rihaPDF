@@ -5,6 +5,27 @@ import type { PageSlot } from "@/domain/slots";
 import type { EditValue, ImageMoveValue } from "@/domain/editState";
 import { buildSourceTextBlocks } from "@/pdf/text/textBlocks";
 
+const PREVIEW_CACHE_MAX_ENTRIES = 4;
+
+type PreviewCacheEntry = Map<string, HTMLCanvasElement>;
+
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+function specsSignature(specs: PageStripSpec[]): string {
+  return specs
+    .map((spec) => {
+      const runs = [...spec.runIds].sort().join(",");
+      const images = [...spec.imageIds].sort().join(",");
+      const shapes = [...spec.shapeIds].sort().join(",");
+      return `${spec.pageIndex}:r=${runs}:i=${images}:s=${shapes}`;
+    })
+    .sort()
+    .join("|");
+}
+
 /** Rebuild the per-page preview canvases whenever the set of edited
  *  runs or moved images changes. Per-source — every affected source's
  *  doc gets its own buildPreviewBytes pass. The returned `previewCanvases`
@@ -33,6 +54,9 @@ export function usePreviewCanvases({
   /** Monotonic generation counter used to discard stale preview-rebuild
    *  results when the user keeps editing during the rebuild. */
   const previewGenRef = useRef(0);
+  const previewCacheRef = useRef<Map<string, PreviewCacheEntry>>(new Map());
+  const sourceIdsRef = useRef<WeakMap<LoadedSource, number>>(new WeakMap());
+  const nextSourceIdRef = useRef(1);
 
   useLayoutEffect(() => {
     if (sources.size === 0) return;
@@ -149,6 +173,26 @@ export function usePreviewCanvases({
       setPreviewCanvases((prev) => (prev.size === 0 ? prev : new Map<string, HTMLCanvasElement>()));
       return;
     }
+    const cacheKey = `${tasks
+      .map(({ sourceKey, specs }) => {
+        const source = sources.get(sourceKey);
+        let sourceId = source ? sourceIdsRef.current.get(source) : undefined;
+        if (source && sourceId === undefined) {
+          sourceId = nextSourceIdRef.current++;
+          sourceIdsRef.current.set(source, sourceId);
+        }
+        return `${sourceKey}@${sourceId ?? "missing"}:${specsSignature(specs)}`;
+      })
+      .sort()
+      .join("||")}:scale=${renderScale}`;
+    const cached = previewCacheRef.current.get(cacheKey);
+    if (cached) {
+      previewCacheRef.current.delete(cacheKey);
+      previewCacheRef.current.set(cacheKey, cached);
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
+      setPreviewCanvases(new Map(cached));
+      return;
+    }
     if (editingByPage.size > 0) {
       const pendingKeys = new Set(
         tasks.flatMap((task) => task.specs.map((spec) => `${task.sourceKey}:${spec.pageIndex}`)),
@@ -183,6 +227,14 @@ export function usePreviewCanvases({
           }
         }
         if (cancelled || previewGenRef.current !== gen) return;
+        previewCacheRef.current.set(cacheKey, new Map(next));
+        while (previewCacheRef.current.size > PREVIEW_CACHE_MAX_ENTRIES) {
+          const firstKey = previewCacheRef.current.keys().next().value;
+          if (firstKey === undefined) break;
+          const evicted = previewCacheRef.current.get(firstKey);
+          previewCacheRef.current.delete(firstKey);
+          for (const canvas of evicted?.values() ?? []) releaseCanvas(canvas);
+        }
         setPreviewCanvases(next);
       } catch (err) {
         console.warn("preview rebuild failed", err);
@@ -193,6 +245,16 @@ export function usePreviewCanvases({
       window.clearTimeout(handle);
     };
   }, [sources, slotById, edits, imageMoves, shapeDeletes, editingByPage, isMobile, renderScale]);
+
+  useLayoutEffect(
+    () => () => {
+      for (const entry of previewCacheRef.current.values()) {
+        for (const canvas of entry.values()) releaseCanvas(canvas);
+      }
+      previewCacheRef.current.clear();
+    },
+    [],
+  );
 
   return { previewCanvases };
 }

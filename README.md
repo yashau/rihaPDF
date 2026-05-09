@@ -124,15 +124,19 @@ The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `l
 ## Scripts
 
 ```bash
-pnpm dev            # vite dev server (localhost:5173)
-pnpm build          # tsc + vite build → dist/
-pnpm check          # tsc -b && oxfmt --check && oxlint
-pnpm check:ci       # CI variant with oxfmt/oxlint forced to one thread
-pnpm lint           # oxlint over src/test/config entry points
-pnpm format         # oxfmt
-pnpm test           # vitest unit + E2E suite (E2E needs dev server up)
-pnpm test:coverage  # vitest with V8 coverage output in coverage/
-pnpm test:fixtures  # rebuild test/fixtures/with-images*.pdf
+pnpm dev               # strict Vite dev server on 127.0.0.1:5173
+pnpm build             # tsc + vite build → dist/
+pnpm check             # tsc -b && oxfmt --check && oxlint
+pnpm check:ci          # CI variant with oxfmt/oxlint forced to one thread
+pnpm lint              # oxlint over src/test/config entry points
+pnpm format            # oxfmt
+pnpm test              # unit tests only; self-contained, no dev server
+pnpm test:unit         # explicit unit test alias
+pnpm test:e2e          # starts strict Vite server, then runs Playwright E2E
+pnpm test:all          # unit tests, then managed E2E tests
+pnpm test:coverage     # unit coverage with V8 output in coverage/
+pnpm test:e2e:coverage # managed E2E run with V8 coverage enabled
+pnpm test:fixtures     # rebuild test/fixtures/with-images*.pdf
 pnpm cf:config      # generate wrangler.jsonc from env vars
 pnpm cf:dev         # wrangler dev — local Workers preview of dist/
 pnpm cf:deploy      # build + wrangler deploy → Cloudflare Workers
@@ -168,23 +172,21 @@ The About modal (`?` in the header) has a **Show browser diagnostics** toggle th
 
 ## Tests
 
-Vitest runs focused unit tests under [test/unit/](test/unit/) and the E2E suite under [test/e2e/](test/e2e/). E2E tests drive the dev server through Playwright:
+Vitest runs focused unit tests under [test/unit/](test/unit/) and the E2E suite under [test/e2e/](test/e2e/). `pnpm test` is intentionally unit-only so it is self-contained. Browser E2E tests use Playwright against a managed strict-port Vite server:
 
 ```bash
-pnpm dev          # one terminal
-pnpm test         # another
+pnpm test          # unit suite only
+pnpm test:e2e      # starts Vite on APP_URL or http://127.0.0.1:5173/, then runs E2E
+pnpm test:all      # unit + managed E2E
 ```
 
-Coverage uses Vitest's V8 provider. Run the full suite with coverage while the dev server is up:
+Set `APP_URL` to run the E2E harness against a different local port, for example `APP_URL=http://127.0.0.1:5174/ pnpm test:e2e`. When running Vitest directly instead of `pnpm test:e2e`, start the server first with `pnpm dev`; Vite is configured with `strictPort` so port conflicts fail loudly instead of silently moving to another port.
+
+Coverage uses Vitest's V8 provider:
 
 ```bash
-pnpm test:coverage
-```
-
-For focused unit coverage that does not need the dev server:
-
-```bash
-pnpm test:coverage test/unit
+pnpm test:coverage      # unit coverage
+pnpm test:e2e:coverage  # E2E coverage with managed Vite server
 ```
 
 The detailed coverage inventories and current test counts live in [test/unit/README.md](test/unit/README.md) and [test/e2e/README.md](test/e2e/README.md). Unit coverage locks down low-level rectangle overlap, PDF `/Rect` normalization, content-stream parsing/serialization, text-show state tracking, text-run ordering and source-font ownership, source paragraph grouping including table-row non-merging, RTL source-edit display normalization, plus redaction glyph planning, raster image sanitization, vector strip marking, XObject pruning, annotation clipping/removal, and AcroForm widget cleanup. E2E coverage includes strict source-paragraph visual WYSIWYG checks across active edit, committed render, and saved/reopened PDF output, plus resized source/inserted text boxes that must reflow, preserve indentation, and save with browser-matching geometry.

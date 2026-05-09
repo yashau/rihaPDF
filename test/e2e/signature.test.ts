@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
 import {
+  APP_URL,
   FIXTURE,
   SCREENSHOTS,
   captureImageCount,
@@ -78,7 +79,7 @@ describe("signature insertion", () => {
   }, 60_000);
 
   test("import processing removes a light background and trims transparent pixels", async () => {
-    await h.page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
+    await h.page.goto(APP_URL, { waitUntil: "networkidle" });
     const result = await h.page.evaluate(async () => {
       // oxlint-disable-next-line typescript/no-implied-eval
       const importer = new Function("p", "return import(p)") as (p: string) => Promise<unknown>;

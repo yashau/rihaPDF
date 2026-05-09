@@ -34,6 +34,7 @@ import {
   type SameSourceDrawPlan,
   type SameSourceImageDrawPlan,
 } from "./streamSurgery";
+import { gcUnreachablePdfObjects } from "./gc";
 import { idOf } from "./xobjects";
 
 function bucketRedactionsByPage(redactions: Redaction[]): Map<number, Redaction[]> {
@@ -398,6 +399,10 @@ export async function applyEditsAndSave(
     }
   }
 
+  // Drop any indirect objects made unreachable by stream/annotation/form
+  // surgery before copyPages can carry source documents into the output.
+  for (const ctx of ctxBySource.values()) gcUnreachablePdfObjects(ctx.doc);
+
   // Build the output by walking `slots[]` in order. Edits are baked
   // into each source's `doc` from the loops above; copyPages preserves
   // embedded fonts / images / XObjects. Blanks with inserts / draws /
@@ -465,5 +470,6 @@ export async function applyEditsAndSave(
   // would have the field tree populated but unreachable. The helper is
   // a no-op when the output has no widget annotations.
   rebuildOutputAcroForm(output);
+  gcUnreachablePdfObjects(output);
   return output.save();
 }

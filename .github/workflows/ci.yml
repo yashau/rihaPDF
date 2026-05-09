@@ -45,22 +45,14 @@ jobs:
       - name: Assert fixture determinism
         run: git diff --exit-code -- test/fixtures
 
+      - name: Run unit tests
+        run: pnpm run test:unit
+
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run e2e tests
-        run: |
-          pnpm dev -- --host 127.0.0.1 > vite.log 2>&1 &
-
-          for i in {1..60}; do
-            if curl -fs http://localhost:5173/ > /dev/null; then
-              break
-            fi
-            sleep 1
-          done
-
-          curl -fsS http://localhost:5173/ > /dev/null
-          pnpm run test
+        run: pnpm run test:e2e
 
       - name: Generate Wrangler config
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

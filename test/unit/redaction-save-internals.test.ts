@@ -3,6 +3,7 @@ import { PDFDict, PDFName, PDFRawStream, PDFDocument } from "pdf-lib";
 import { parseContentStream } from "@/pdf/content/contentStream";
 import type { Redaction } from "@/domain/redactions";
 import { makeRedactedImageXObject, rectContains } from "@/pdf/save/redactions/images";
+import { gcUnreachablePdfObjects } from "@/pdf/save/gc";
 import {
   markVectorPaintOpsForRedaction,
   pruneUnusedPageXObjects,
@@ -131,5 +132,28 @@ describe("redaction vector handling", () => {
     expect((xobjects as PDFDict).get(PDFName.of("Im1"))).toBeUndefined();
     expect((xobjects as PDFDict).get(PDFName.of("Im2"))).toBe(im2);
     expect((resources as PDFDict).lookup(PDFName.of("Font"))).toBeInstanceOf(PDFDict);
+  });
+
+  it("garbage-collects pruned XObject refs so their streams are not saved", async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([100, 100]);
+    const im1 = doc.context.register(
+      PDFRawStream.of(
+        doc.context.obj({ Type: PDFName.of("XObject"), Subtype: PDFName.of("Image") }),
+        new Uint8Array(Buffer.from("RECOVERABLE_IMAGE_SECRET")),
+      ),
+    );
+    const im2 = doc.context.register(doc.context.obj({ Type: PDFName.of("XObject") }));
+    page.node.set(PDFName.of("Resources"), doc.context.obj({ XObject: { Im1: im1, Im2: im2 } }));
+
+    pruneUnusedPageXObjects(page.node, new Set(["Im2"]));
+    expect(doc.context.lookup(im1)).toBeInstanceOf(PDFRawStream);
+
+    gcUnreachablePdfObjects(doc);
+
+    expect(doc.context.lookup(im1)).toBeUndefined();
+    expect(doc.context.lookup(im2)).toBeDefined();
+    const saved = new TextDecoder("latin1").decode(await doc.save());
+    expect(saved).not.toContain("RECOVERABLE_IMAGE_SECRET");
   });
 });

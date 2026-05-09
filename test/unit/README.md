@@ -5,14 +5,17 @@ Vitest tests under this directory exercise focused parser, geometry, text-run, a
 ## Running
 
 ```bash
-pnpm test test/unit
+pnpm test
+# or
+pnpm test:unit
 ```
 
-Targeted runs can pass a file path or name fragment through the existing script:
+Targeted runs can pass a file path, name fragment, or Vitest flags after `--`:
 
 ```bash
-pnpm test test/unit/content-stream.test.ts
-pnpm test test/unit run redaction
+pnpm test -- test/unit/content-stream.test.ts
+pnpm test -- redaction
+pnpm test -- -t "normalizes RTL display"
 ```
 
 ## Coverage

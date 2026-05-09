@@ -7,6 +7,7 @@ import type { PdfPage, RenderedPage, TextItem } from "@/pdf/render/pdfTypes";
 import type { FontShow } from "@/pdf/source/sourceFonts";
 import type { ImageInstance } from "@/pdf/source/sourceImages";
 import type { ShapeInstance } from "@/pdf/source/sourceShapes";
+import { browserDevicePixelRatio, chooseCanvasRenderBudget } from "@/pdf/render/guardrails";
 
 export { loadPdf, itemBoundsInViewport };
 export type { PdfDoc, PdfPage, RenderedPage, TextItem, TextRun } from "@/pdf/render/pdfTypes";
@@ -41,11 +42,15 @@ export async function renderPage(
   // at scale 1.5 × DPR 3 would allocate ~37 MP per page. Cap of 2
   // keeps the worst case at ~8 MP/page — visually indistinguishable
   // from 3× on the affected devices.
-  const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-  const renderViewport = page.getViewport({ scale: scale * dpr });
+  const budget = chooseCanvasRenderBudget(
+    viewport.width,
+    viewport.height,
+    browserDevicePixelRatio(),
+  );
+  const renderViewport = page.getViewport({ scale: scale * budget.pixelScale });
   const canvas = document.createElement("canvas");
-  canvas.width = Math.floor(renderViewport.width);
-  canvas.height = Math.floor(renderViewport.height);
+  canvas.width = budget.width;
+  canvas.height = budget.height;
   const ctx = canvas.getContext("2d")!;
   await page.render({ canvasContext: ctx, viewport: renderViewport, canvas }).promise;
 

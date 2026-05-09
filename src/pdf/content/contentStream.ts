@@ -35,6 +35,10 @@ export type ContentOp = {
   op: string;
   /** Operand tokens, in order. */
   operands: ContentToken[];
+  /** Original bytes for opaque operators that must not be tokenized, such
+   *  as inline images (`BI ... ID ... EI`). When present, serialization
+   *  emits these bytes verbatim. */
+  raw?: Uint8Array;
 };
 
 const WS = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
@@ -91,6 +95,51 @@ class Tokenizer {
       this.pos++;
     }
     return new TextDecoder("ascii").decode(this.bytes.slice(start, this.pos));
+  }
+
+  /** Read a PDF inline image object that starts at `start` (the `B` in
+   *  `BI`). Inline image data is arbitrary bytes, so normal tokenization
+   *  would corrupt it. We preserve the whole `BI ... ID ... EI` sequence as
+   *  an opaque operation and use the standard whitespace-delimited `EI`
+   *  terminator heuristic recommended for content stream processors. */
+  readInlineImageRaw(start: number): Uint8Array {
+    let scan = this.pos;
+    const isInlineDelimiter = (idx: number, len: number): boolean => {
+      const before = idx <= 0 ? 0x20 : this.bytes[idx - 1];
+      const afterIdx = idx + len;
+      const after = afterIdx >= this.bytes.length ? 0x20 : this.bytes[afterIdx];
+      return isWS(before) && isWS(after);
+    };
+
+    while (scan < this.bytes.length - 1) {
+      if (
+        this.bytes[scan] === 0x49 &&
+        this.bytes[scan + 1] === 0x44 &&
+        isInlineDelimiter(scan, 2)
+      ) {
+        scan += 2;
+        // The single whitespace byte after ID is part of the inline image
+        // syntax, not image data.
+        if (scan < this.bytes.length && isWS(this.bytes[scan])) scan++;
+        break;
+      }
+      scan++;
+    }
+
+    while (scan < this.bytes.length - 1) {
+      if (
+        this.bytes[scan] === 0x45 &&
+        this.bytes[scan + 1] === 0x49 &&
+        isInlineDelimiter(scan, 2)
+      ) {
+        this.pos = scan + 2;
+        return this.bytes.slice(start, this.pos);
+      }
+      scan++;
+    }
+
+    this.pos = this.bytes.length;
+    return this.bytes.slice(start);
   }
 
   /** Read a literal string starting at the (. */
@@ -284,8 +333,15 @@ export function parseContentStream(bytes: Uint8Array): ContentOp[] {
       operands.push(tk.readToken());
       continue;
     }
-    // Bareword — could be an operator or a keyword like true/false/null.
+    // Bareword — could be an operator, a keyword like true/false/null,
+    // or the start of an inline image object.
+    const wordStart = tk.pos;
     const word = tk.readBareword();
+    if (word === "BI") {
+      ops.push({ op: "BI", operands: [], raw: tk.readInlineImageRaw(wordStart) });
+      operands = [];
+      continue;
+    }
     if (word === "true" || word === "false") {
       operands.push({ kind: "number", value: word === "true" ? 1 : 0, raw: word });
       continue;
@@ -361,6 +417,11 @@ export function serializeContentStream(ops: ContentOp[]): Uint8Array {
   const space = new Uint8Array([0x20]);
   const newline = new Uint8Array([0x0a]);
   for (const op of ops) {
+    if (op.raw) {
+      chunks.push(op.raw);
+      chunks.push(newline);
+      continue;
+    }
     for (let i = 0; i < op.operands.length; i++) {
       chunks.push(serializeToken(op.operands[i]));
       chunks.push(space);

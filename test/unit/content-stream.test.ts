@@ -44,6 +44,15 @@ describe("content stream parser", () => {
 
     expect(text(serialized)).toBe("(\\(\\)\\\\\\012) Tj\n");
   });
+
+  it("preserves inline images as opaque BI/ID/EI operations", () => {
+    const rawInline = "BI /W 1 /H 1 /CS /RGB /BPC 8 ID abc EI";
+    const ops = parseContentStream(bytes(`q ${rawInline} Q`));
+
+    expect(ops.map((op) => op.op)).toEqual(["q", "BI", "Q"]);
+    expect(text(ops[1].raw ?? new Uint8Array())).toBe(rawInline);
+    expect(text(serializeContentStream(ops))).toBe(`q\n${rawInline}\nQ\n`);
+  });
 });
 
 describe("content stream text-show finder", () => {

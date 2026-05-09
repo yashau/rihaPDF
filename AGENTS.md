@@ -70,19 +70,22 @@ Start the app:
 pnpm dev
 ```
 
-The dev server is expected at `http://localhost:5173` for tests.
+The default dev server URL is `http://127.0.0.1:5173/`. Vite uses `strictPort`, so port conflicts fail instead of silently moving the app while tests still target the old port. Set `APP_URL` for E2E runs that need a different local URL.
 
 ## Core Commands
 
 ```bash
-pnpm dev            # Vite dev server
+pnpm dev            # Strict Vite dev server on 127.0.0.1:5173
 pnpm build          # TypeScript build + Vite production build
 pnpm check          # TypeScript + Oxfmt check + Oxlint
 pnpm check:ci       # CI check variant; forces Oxfmt/Oxlint to one thread
 pnpm lint           # Oxlint over src/test/config entry points
 pnpm format         # Oxfmt write
 pnpm format:check   # Oxfmt check only
-pnpm test           # Vitest unit + E2E suite; E2E requires pnpm dev already running
+pnpm test           # Unit tests only; self-contained, no dev server
+pnpm test:unit      # Explicit unit test alias
+pnpm test:e2e       # Starts strict Vite server, then runs Playwright E2E
+pnpm test:all       # Unit tests, then managed E2E tests
 pnpm test:fixtures  # Rebuild generated fixture PDFs
 pnpm preview        # Preview production build
 pnpm cf:dev         # Cloudflare Workers local preview
@@ -96,14 +99,9 @@ pnpm check
 pnpm build
 ```
 
-Run `pnpm test test/unit` for focused pure-internal coverage. Run `pnpm test` when behavior is covered by E2E tests or when touching PDF interaction/save paths. Remember that E2E tests require a running dev server:
+Run `pnpm test` or `pnpm test -- <file-or-name-fragment>` for focused pure-internal coverage. Run `pnpm test:e2e` when behavior is covered by E2E tests or when touching PDF interaction/save paths. `pnpm test:e2e` starts and stops the strict-port Vite server for you; set `APP_URL` to use a different local URL.
 
-```bash
-pnpm dev
-pnpm test
-```
-
-CI starts Vite in the background, waits for `http://localhost:5173/`, then runs `pnpm test`.
+CI runs unit tests first, then `pnpm test:e2e` for the managed Playwright browser suite.
 
 ## Architecture Notes
 
@@ -219,18 +217,19 @@ Relevant tests include:
 The unit suite under `test/unit/` covers pure parser, geometry, text-run, and redaction internals with synthetic inputs. It does not need the Vite dev server:
 
 ```bash
-pnpm test test/unit
+pnpm test
+pnpm test -- test/unit/content-stream.test.ts
 ```
 
-The E2E suite is the main user-workflow regression net. It launches browsers through Playwright but does not spawn the dev server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup. Current coverage includes source/inserted text-box resize, paragraph reflow, indentation preservation, and saved-PDF parity for browser-visible text geometry.
+The E2E suite is the main user-workflow regression net. It launches browsers through Playwright via `pnpm test:e2e`, which starts a strict-port Vite dev server, waits for readiness, runs Vitest, then stops the server. `vitest.config.ts` disables file parallelism because tests share the same dev-server port and browser-driving setup. Current coverage includes source/inserted text-box resize, paragraph reflow, indentation preservation, and saved-PDF parity for browser-visible text geometry.
 
-Common targeted test runs use `pnpm test run <name-fragment>`. The repo's `test` script already runs `vitest run`; the extra `run` and name fragment are passed through as Vitest filters.
+Common targeted E2E runs pass a file/name fragment or Vitest flags after `--`:
 
 ```bash
-pnpm test run move-edit
-pnpm test run form-fill
-pnpm test run save-redactions
-pnpm test run signature
+pnpm test:e2e -- move-edit
+pnpm test:e2e -- form-fill
+pnpm test:e2e -- save-redactions
+pnpm test:e2e -- signature
 ```
 
 If a synthetic PDF fixture changes, regenerate it with:

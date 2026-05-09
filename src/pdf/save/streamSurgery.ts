@@ -410,6 +410,16 @@ export async function applyStreamSurgeryForSource(
 
     const pageRedactions = redactionsByPage.get(pageIndex) ?? [];
     if (pageRedactions.length > 0) {
+      // Inline images (`BI ... ID ... EI`) carry pixels directly inside the
+      // content stream rather than via a named XObject/resource, so we don't
+      // have a stable resource name or load-time placement to sanitize. When
+      // redacting a page, remove them wholesale: over-stripping image pixels is
+      // the safe failure mode; leaving opaque bytes could leak under the black
+      // box.
+      for (let i = 0; i < ops.length; i++) {
+        if (ops[i].op === "BI") indicesToRemove.add(i);
+      }
+
       for (const img of rendered.images) {
         const imageRect = {
           pdfX: img.pdfX,

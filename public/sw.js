@@ -1,6 +1,7 @@
 const CACHE_NAME = "rihapdf-v1";
 const DOWNLOAD_CACHE_NAME = "rihapdf-downloads-v1";
 const DOWNLOAD_PATH_PREFIX = "/__rihapdf_downloads__/";
+const DOWNLOAD_EXPIRES_HEADER = "X-RihaPDF-Download-Expires";
 const CORE_ASSETS = [
   "/",
   "/site.webmanifest",
@@ -32,6 +33,7 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key)),
         ),
       )
+      .then(() => purgeExpiredDownloads())
       .then(() => self.clients.claim()),
   );
 });
@@ -62,12 +64,41 @@ async function serveDownload(request, event) {
   const cache = await caches.open(DOWNLOAD_CACHE_NAME);
   const cached = await cache.match(request);
   if (cached) {
+    event.waitUntil(purgeExpiredDownloads(cache));
+    if (isExpiredDownload(cached)) {
+      event.waitUntil(cache.delete(request));
+      return expiredDownloadResponse();
+    }
+
     event.waitUntil(cache.delete(request));
     return cached;
   }
+  event.waitUntil(purgeExpiredDownloads(cache));
+  return expiredDownloadResponse();
+}
+
+async function purgeExpiredDownloads(cache = undefined) {
+  const downloadCache = cache || (await caches.open(DOWNLOAD_CACHE_NAME));
+  const requests = await downloadCache.keys();
+  await Promise.all(
+    requests.map(async (request) => {
+      const response = await downloadCache.match(request);
+      if (!response || isExpiredDownload(response)) {
+        await downloadCache.delete(request);
+      }
+    }),
+  );
+}
+
+function isExpiredDownload(response) {
+  const expiresAt = Number(response.headers.get(DOWNLOAD_EXPIRES_HEADER));
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+}
+
+function expiredDownloadResponse() {
   return new Response("Download expired.", {
     status: 410,
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "text/plain;charset=utf-8", "Cache-Control": "no-store" },
   });
 }
 

@@ -1,22 +1,30 @@
 # E2E Test Suite
 
-Vitest tests under this directory drive the running Vite app through Playwright. The suite does not spawn or kill the dev server; start it separately at `http://localhost:5173`.
+Vitest tests under this directory drive the Vite app through Playwright. Use the managed script for normal local and CI runs; it starts Vite on a strict port, waits for readiness, runs Vitest, then stops the server.
 
 ## Running
 
 ```bash
-pnpm dev          # one terminal
-pnpm test         # another
+pnpm test:e2e
 ```
 
-Targeted runs can pass a Vitest name fragment through the existing script:
+By default the harness uses `http://127.0.0.1:5173/`. Set `APP_URL` for another local URL, for example:
 
 ```bash
-pnpm test run move-edit
-pnpm test run form-fill
-pnpm test run save-redactions
-pnpm test run signature
+APP_URL=http://127.0.0.1:5174/ pnpm test:e2e
 ```
+
+Targeted runs pass a Vitest file/name fragment or flags after `--`:
+
+```bash
+pnpm test:e2e -- move-edit
+pnpm test:e2e -- form-fill
+pnpm test:e2e -- save-redactions
+pnpm test:e2e -- signature
+pnpm test:e2e -- -t "theme follows system"
+```
+
+If you bypass the managed script and run Vitest directly, start the app first with `pnpm dev`. Vite is configured with `strictPort`, so a busy port fails loudly instead of moving to a port the tests are not using.
 
 The shared browser harness lives in [browser.ts](../helpers/browser.ts). It launches Chromium, loads the app, captures page errors / console warnings, and exposes fixture paths through `FIXTURE`.
 

@@ -23,6 +23,7 @@ import {
   findTextShows,
 } from "@/pdf/content/contentStream";
 import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
+import { browserDevicePixelRatio, chooseCanvasRenderBudget } from "@/pdf/render/guardrails";
 
 export type PageStripSpec = {
   /** Page index within the source's doc. */
@@ -156,11 +157,16 @@ export async function renderPagePreviewCanvas(
     // pixel level. The CSS size (canvas.style.width) is set by
     // PdfPage to page.viewWidth in CSS pixels — this only affects
     // the bitmap pixel count, not the layout box.
-    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-    const viewport = page.getViewport({ scale: scale * dpr });
+    const layoutViewport = page.getViewport({ scale });
+    const budget = chooseCanvasRenderBudget(
+      layoutViewport.width,
+      layoutViewport.height,
+      browserDevicePixelRatio(),
+    );
+    const viewport = page.getViewport({ scale: scale * budget.pixelScale });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
+    canvas.width = budget.width;
+    canvas.height = budget.height;
     const ctx = canvas.getContext("2d")!;
     await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     return canvas;

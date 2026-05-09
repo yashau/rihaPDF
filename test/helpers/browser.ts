@@ -1,11 +1,10 @@
 // Shared Playwright lifecycle for the E2E suite.
 //
 // Each test file calls `setupBrowser()` in a beforeAll and `tearDown`
-// in afterAll. The helper deliberately does NOT spawn a Vite server —
-// the suite assumes `pnpm dev` is already running on localhost:5173
-// (same as the old verify*.mjs scripts). We document that in
-// test/e2e/README.md and fail loudly with a clear message when the
-// dev server isn't reachable.
+// in afterAll. The helper deliberately does NOT spawn a Vite server;
+// `pnpm test:e2e` owns the managed dev-server lifecycle. When tests are
+// run directly through Vitest, the caller must provide a reachable
+// APP_URL or start `pnpm dev` first.
 
 import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
@@ -17,14 +16,21 @@ export const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..
 export const FIXTURES = path.join(ROOT, "test", "fixtures");
 export const SCREENSHOTS = path.join(ROOT, "test", "e2e", "screenshots");
 
+function normalizeAppUrl(raw: string): string {
+  const withProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`;
+  const url = new URL(withProtocol);
+  if (!url.pathname.endsWith("/")) url.pathname = `${url.pathname}/`;
+  return url.toString();
+}
+
 export const FIXTURE = {
-  /** Real Maldivian government doc with broken-aabaafili ToUnicode —
+  /** Real Maldivian government doc with broken-aabaafili ToUnicode -
    *  the canonical Thaana-extraction + edit/move test bed. */
   maldivian: path.join(FIXTURES, "maldivian.pdf"),
-  /** Second real Maldivian government doc — NOT office-generated.
+  /** Second real Maldivian government doc - NOT office-generated.
    *  14 pages, mixed Thaana/English content, 3 source images on
    *  pages 0/11/12. Its Faruma `/ToUnicode` maps the sukun CID
-   *  (last entry of the fili block) to U+0020 — boundary-shape of
+   *  (last entry of the fili block) to U+0020 - boundary-shape of
    *  the fili-gap bug that `glyphMap.patchBrokenFiliMappings`
    *  recovers. Tests against this fixture skip assertions that
    *  depend on source-detected bold metadata, since the producer
@@ -54,7 +60,7 @@ export const FIXTURE = {
   mnuJobApplication: path.join(FIXTURES, "mnu-job-application.pdf"),
 };
 
-export const APP_URL = "http://localhost:5173/";
+export const APP_URL = normalizeAppUrl(process.env.APP_URL ?? "http://127.0.0.1:5173/");
 export const RENDER_SCALE = 1.5;
 
 export type Harness = {
@@ -70,7 +76,7 @@ export type Harness = {
 
 export async function setupBrowser(opts?: {
   viewport?: { width: number; height: number };
-  /** Enable touch input on the context — required for `page.touchscreen.tap()`
+  /** Enable touch input on the context - required for `page.touchscreen.tap()`
    *  and for the app to detect a touch-capable browser at first paint.
    *  Mobile-layout tests pass `true`; desktop tests omit it (default false). */
   hasTouch?: boolean;
@@ -107,7 +113,7 @@ export async function setupBrowser(opts?: {
   } catch (err) {
     await browser.close();
     throw new Error(
-      `Couldn't reach the dev server at ${APP_URL} — start it with \`pnpm dev\` before running the E2E suite. (${(err as Error).message})`,
+      `Couldn't reach the dev server at ${APP_URL} - run \`pnpm test:e2e\` to start a managed server, or start one with \`pnpm dev\` before running Vitest directly. (${(err as Error).message})`,
       { cause: err },
     );
   }
@@ -120,11 +126,11 @@ export async function tearDown(h: Harness): Promise<void> {
 
 /** Load a fixture PDF into the file picker and wait for ALL pages to
  *  render. Multi-page docs render iteratively, so a fixed 2.5s sleep
- *  isn't enough — the post-load extraction loop in App.tsx can take
+ *  isn't enough - the post-load extraction loop in App.tsx can take
  *  longer for the Maldivian PDF, and tests that scroll to page 2 then
  *  flake out. We poll page count to stability instead.
  *
- *  Pass `expectedPages` when the test is known to need ≥ N pages —
+ *  Pass `expectedPages` when the test is known to need ≥ N pages -
  *  the poll will keep waiting (up to the deadline) until that many
  *  `[data-page-index]` elements are present, even if the count
  *  appears to stabilise at a lower number first. Prevents the
@@ -185,7 +191,7 @@ export async function loadFixture(
   }
   // Poll the page count: it should grow as renderPage finishes for
   // each page, then plateau. Treat 1.5s of unchanged count as "done"
-  // — but never declare done while count < expectedPages.
+  // - but never declare done while count < expectedPages.
   const STABLE_MS = 1_500;
   const POLL_MS = 200;
   const DEADLINE = Date.now() + LOAD_DEADLINE_MS;
@@ -193,7 +199,7 @@ export async function loadFixture(
   let stableSince = Date.now();
   while (Date.now() < DEADLINE) {
     // Count the page divs AND the canvases inside them. We only treat
-    // a page as "rendered" once its canvas child is committed — the
+    // a page as "rendered" once its canvas child is committed - the
     // [data-page-index] div appears in the React tree as soon as
     // `setPages` commits, but the canvas is mounted by an effect a
     // microtask later. Without the canvas check, image / run overlays
@@ -329,7 +335,7 @@ export async function captureImageCount(page: Page, pdfPath: string): Promise<nu
  *  a raw `Page` instead of a `Harness`) or empty. */
 function formatPageLog(pageLog: string[] | null): string {
   if (!pageLog || pageLog.length === 0) return "";
-  // Tail the buffer — earlier entries are usually setup noise.
+  // Tail the buffer - earlier entries are usually setup noise.
   const tail = pageLog.slice(-20);
   return `\n  --- recent page log (${pageLog.length} total, last ${tail.length}) ---\n  ${tail.join("\n  ")}`;
 }
@@ -337,7 +343,7 @@ function formatPageLog(pageLog: string[] | null): string {
 /** Dynamically import a Vite-served module from inside `page.evaluate`,
  *  bypassing vitest's SSR `__vite_ssr_dynamic_import__` rewrite. The
  *  rewrite breaks raw `await import("/src/...")` calls because the
- *  helper isn't defined in the browser's runtime — wrapping with
+ *  helper isn't defined in the browser's runtime - wrapping with
  *  `new Function(...)` defers parsing to the browser.
  *
  *  Usage:

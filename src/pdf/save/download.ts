@@ -1,5 +1,7 @@
 const DOWNLOAD_CACHE_NAME = "rihapdf-downloads-v1";
 const DOWNLOAD_PATH_PREFIX = "/__rihapdf_downloads__/";
+const DOWNLOAD_CACHE_TTL_MS = 60_000;
+const DOWNLOAD_EXPIRES_HEADER = "X-RihaPDF-Download-Expires";
 
 export async function downloadBlob(bytes: Uint8Array, filename: string): Promise<void> {
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
@@ -21,6 +23,7 @@ async function downloadViaServiceWorker(blob: Blob, filename: string): Promise<b
       window.location.origin,
     );
     const cache = await caches.open(DOWNLOAD_CACHE_NAME);
+    const expiresAt = Date.now() + DOWNLOAD_CACHE_TTL_MS;
     await cache.put(
       url.toString(),
       new Response(blob, {
@@ -28,6 +31,7 @@ async function downloadViaServiceWorker(blob: Blob, filename: string): Promise<b
           "Cache-Control": "no-store",
           "Content-Disposition": contentDisposition(filename),
           "Content-Type": "application/pdf",
+          [DOWNLOAD_EXPIRES_HEADER]: String(expiresAt),
         },
       }),
     );
@@ -35,7 +39,7 @@ async function downloadViaServiceWorker(blob: Blob, filename: string): Promise<b
     triggerAnchorDownload(url.toString(), filename, false);
     setTimeout(() => {
       void cache.delete(url.toString());
-    }, 60_000);
+    }, DOWNLOAD_CACHE_TTL_MS);
     return true;
   } catch (err) {
     console.warn("Service-worker PDF download failed; falling back to blob URL.", err);
