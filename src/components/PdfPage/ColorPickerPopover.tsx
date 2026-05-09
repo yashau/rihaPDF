@@ -1,5 +1,5 @@
 import { Button } from "@heroui/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   TEXT_COLOR_PRESETS,
@@ -88,6 +88,17 @@ export function ColorPickerPopover({
     bottom?: number;
     width: number;
   } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const triggerEl = triggerRef.current;
+    const popoverEl = popoverRef.current;
+    if (!triggerEl || !popoverEl) return;
+
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const popoverRect = popoverEl.getBoundingClientRect();
+    setAnchor(fitAnchor(triggerRect, popoverRect, isMobile, placement));
+  }, [open, isMobile, placement]);
 
   const swatchCss = colorToCss(value) ?? "#000";
   const labelId = useId();
@@ -235,6 +246,40 @@ function makeAnchor(
     top: triggerRect.bottom + gap,
     width,
   };
+}
+
+function fitAnchor(
+  triggerRect: DOMRect,
+  popoverRect: DOMRect,
+  isMobile: boolean,
+  placement: "top" | "bottom",
+): { left: number; top?: number; bottom?: number; width: number } {
+  const width = isMobile ? 220 : 180;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const margin = 8;
+  const gap = 6;
+  const height = popoverRect.height;
+  const belowTop = triggerRect.bottom + gap;
+  const aboveBottom = viewportHeight - triggerRect.top + gap;
+  const fitsBelow = belowTop + height <= viewportHeight - margin;
+  const fitsAbove = triggerRect.top - gap - height >= margin;
+
+  const horizontal = makeAnchor(triggerRect, isMobile, placement);
+  if (placement === "bottom") {
+    if (fitsBelow || !fitsAbove) {
+      return {
+        left: horizontal.left,
+        top: Math.max(margin, Math.min(belowTop, viewportHeight - height - margin)),
+        width,
+      };
+    }
+    return { left: horizontal.left, bottom: Math.max(margin, aboveBottom), width };
+  }
+
+  if (fitsAbove || !fitsBelow) {
+    return { left: horizontal.left, bottom: Math.max(margin, aboveBottom), width };
+  }
+  return { left: horizontal.left, top: belowTop, width };
 }
 
 function SwatchGrid({
