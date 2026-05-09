@@ -4,12 +4,10 @@ import {
   $getRoot,
   $isParagraphNode,
   COMMAND_PRIORITY_HIGH,
-  CONTROLLED_TEXT_INSERTION_COMMAND,
   SELECTION_CHANGE_COMMAND,
 } from "lexical";
 import type { EditStyle } from "@/domain/editStyle";
 import type { TextAlignment } from "@/domain/textAlignment";
-import { thaanaForLatin } from "@/domain/thaanaKeyboard";
 import type { SourceTextLineLayout } from "@/pdf/text/textBlocks";
 import {
   activeStyleFromSelection,
@@ -18,6 +16,7 @@ import {
   trimSourceLineLayoutLeadingWhitespace,
   type RichTextEditorDefaultStyle,
 } from "./richTextEditorModel";
+import { registerThaanaInputCommands } from "./richTextThaanaInput";
 
 export function SelectionStylePlugin({
   defaults,
@@ -53,21 +52,7 @@ export function SelectionStylePlugin({
 
 export function ThaanaInputPlugin({ enabled }: { enabled: boolean }) {
   const [editor] = useLexicalComposerContext();
-  useEffect(
-    () =>
-      editor.registerCommand(
-        CONTROLLED_TEXT_INSERTION_COMMAND,
-        (payload) => {
-          if (!enabled || typeof payload !== "string" || payload.length !== 1) return false;
-          const mapped = thaanaForLatin(payload);
-          if (mapped === payload) return false;
-          editor.dispatchCommand(CONTROLLED_TEXT_INSERTION_COMMAND, mapped);
-          return true;
-        },
-        COMMAND_PRIORITY_HIGH,
-      ),
-    [editor, enabled],
-  );
+  useEffect(() => registerThaanaInputCommands(editor, enabled), [editor, enabled]);
   return null;
 }
 

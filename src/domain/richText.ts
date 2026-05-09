@@ -80,7 +80,9 @@ export function richTextOrPlain(
 }
 
 export function uniformSpanStyle(block: RichTextBlock): EditStyle | undefined {
-  const nonEmpty = block.spans.filter((span) => span.text.length > 0);
-  if (nonEmpty.length !== 1) return undefined;
-  return nonEmpty[0].style;
+  const visibleTextSpans = block.spans.filter((span) => span.text.replace(/\n/g, "").length > 0);
+  if (visibleTextSpans.length === 0) return undefined;
+  const first = visibleTextSpans[0].style;
+  if (!visibleTextSpans.every((span) => stylesEqual(span.style, first))) return undefined;
+  return copyStyle(first);
 }

@@ -7,7 +7,13 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import { $getSelection, FORMAT_TEXT_COMMAND, type LexicalEditor } from "lexical";
+import {
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  FORMAT_TEXT_COMMAND,
+  type LexicalEditor,
+} from "lexical";
 import { colorToCss } from "@/domain/color";
 import type { EditStyle } from "@/domain/editStyle";
 import type { RichTextBlock } from "@/domain/richText";
@@ -46,6 +52,57 @@ function isEditorChromeTarget(target: EventTarget | null): boolean {
 
 function isTextBoxResizeActive(): boolean {
   return document.body.dataset.textBoxResizeActive === "true";
+}
+
+type GlobalFontPatch = Partial<Pick<EditStyle, "fontFamily" | "fontSize">>;
+
+function cssWithGlobalFontPatch(
+  currentStyle: string,
+  patch: GlobalFontPatch,
+  pageScale: number,
+): string {
+  const el = document.createElement("span");
+  el.setAttribute("style", currentStyle);
+  if (patch.fontFamily !== undefined) el.style.fontFamily = `"${patch.fontFamily}"`;
+  if (patch.fontSize !== undefined) el.style.fontSize = `${patch.fontSize * pageScale}px`;
+  return el.getAttribute("style") ?? "";
+}
+
+function applyEditorWideFontPatch(
+  editor: LexicalEditor,
+  pageScale: number,
+  patch: GlobalFontPatch,
+): void {
+  if (patch.fontFamily === undefined && patch.fontSize === undefined) return;
+  editor.update(() => {
+    for (const node of $getRoot().getAllTextNodes()) {
+      node.setStyle(cssWithGlobalFontPatch(node.getStyle(), patch, pageScale));
+    }
+  });
+}
+
+function fontPatchToCssPatch(patch: GlobalFontPatch, pageScale: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (patch.fontFamily !== undefined) out["font-family"] = `"${patch.fontFamily}"`;
+  if (patch.fontSize !== undefined) out["font-size"] = `${patch.fontSize * pageScale}px`;
+  return out;
+}
+
+function applyFontPatchToSelection(
+  editor: LexicalEditor,
+  pageScale: number,
+  patch: GlobalFontPatch,
+): boolean {
+  const stylePatch = fontPatchToCssPatch(patch, pageScale);
+  if (Object.keys(stylePatch).length === 0) return false;
+  let applied = false;
+  editor.update(() => {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+    $patchStyleText(selection, stylePatch);
+    applied = true;
+  });
+  return applied;
 }
 
 export function RichTextEditor({
@@ -107,6 +164,9 @@ export function RichTextEditor({
   const hasLineLayouts = !!lineLayouts && lineLayouts.length > 0;
   const [thaanaInput, setThaanaInput] = useState(true);
   const [activeStyle, setActiveStyle] = useState<EditStyle>(defaultStyle);
+  const [baseFontStyle, setBaseFontStyle] = useState<
+    Required<Pick<EditStyle, "fontFamily" | "fontSize">>
+  >(() => ({ fontFamily: defaultStyle.fontFamily, fontSize: defaultStyle.fontSize }));
   const [activeTextAlign, setActiveTextAlign] = useState<TextAlignment | undefined>(alignment);
   useVisualViewportFollow(toolbarRef, "bottom", isMobile);
 
@@ -140,8 +200,13 @@ export function RichTextEditor({
   );
 
   const commit = useCallback(() => {
-    onCommit(latestBlockRef.current, activeTextAlign);
-  }, [activeTextAlign, onCommit]);
+    const editor = editorRef.current;
+    const block = editor
+      ? editorStateToRichText(editor.getEditorState(), pageScale)
+      : latestBlockRef.current;
+    latestBlockRef.current = block;
+    onCommit(block, activeTextAlign);
+  }, [activeTextAlign, onCommit, pageScale]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -165,9 +230,18 @@ export function RichTextEditor({
     if (patch.underline !== undefined) editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline");
     if (patch.strikethrough !== undefined)
       editor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough");
+    const globalFontPatch: GlobalFontPatch = {};
+    if (patch.fontFamily !== undefined) globalFontPatch.fontFamily = patch.fontFamily;
+    if (patch.fontSize !== undefined) globalFontPatch.fontSize = patch.fontSize;
+    if (globalFontPatch.fontFamily !== undefined || globalFontPatch.fontSize !== undefined) {
+      setActiveStyle((prev) => ({ ...prev, ...globalFontPatch }));
+      const appliedToSelection = applyFontPatchToSelection(editor, pageScale, globalFontPatch);
+      if (!appliedToSelection) {
+        setBaseFontStyle((prev) => ({ ...prev, ...globalFontPatch }));
+        applyEditorWideFontPatch(editor, pageScale, globalFontPatch);
+      }
+    }
     const stylePatch: Record<string, string | null> = {};
-    if (patch.fontFamily !== undefined) stylePatch["font-family"] = `"${patch.fontFamily}"`;
-    if (patch.fontSize !== undefined) stylePatch["font-size"] = `${patch.fontSize * pageScale}px`;
     if (patch.color !== undefined) stylePatch.color = colorToCss(patch.color);
     if (Object.keys(stylePatch).length > 0) {
       editor.update(() => {
@@ -186,6 +260,8 @@ export function RichTextEditor({
 
   const fontFamily = activeStyle.fontFamily ?? defaultStyle.fontFamily;
   const fontSize = activeStyle.fontSize ?? defaultStyle.fontSize;
+  const editorFontFamily = baseFontStyle.fontFamily;
+  const editorFontSize = baseFontStyle.fontSize;
   const editorDir =
     activeStyle.dir ?? defaultStyle.dir ?? (hasRtlText(initial.text) ? "rtl" : "auto");
   const editorNode = (
@@ -236,8 +312,8 @@ export function RichTextEditor({
               color: textVisible ? (colorToCss(activeStyle.color) ?? "black") : "transparent",
               caretColor: "black",
               colorScheme: "light",
-              fontFamily: `"${fontFamily}"`,
-              fontSize: `${fontSize * pageScale}px`,
+              fontFamily: `"${editorFontFamily}"`,
+              fontSize: `${editorFontSize * pageScale}px`,
               lineHeight: `${lineHeight}px`,
               textAlign: resolvedCssTextAlign(activeTextAlign, autoTextAlign),
               textAlignLast: "auto",

@@ -334,28 +334,6 @@ export function EditTextToolbar({
       {!isMobile ? (
         <DirectionButton dir={dir} onChange={(next) => onChange({ dir: next })} />
       ) : null}
-      {/* Mobile-only DV / EN input-mode toggle. DV = phonetic Latin →
-          Thaana transliteration on every keystroke (so a user with the
-          OS English keyboard can still type Thaana into a Faruma run);
-          EN = raw passthrough for typing Latin or for users with a
-          real Dhivehi system keyboard. Hidden on desktop and when the
-          parent doesn't pass the prop. */}
-      {isMobile ? null : thaanaInput !== undefined && onThaanaInputChange ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          onPress={() => onThaanaInputChange(!thaanaInput)}
-          onMouseDown={(e) => e.preventDefault()}
-          aria-label={
-            thaanaInput
-              ? "Thaana phonetic input (click to type Latin)"
-              : "Latin input (click to type Thaana)"
-          }
-          style={{ minWidth: 44, fontWeight: 600, fontSize: 12 }}
-        >
-          {thaanaInput ? "DV" : "EN"}
-        </Button>
-      ) : null}
       {!isMobile && onDelete ? (
         <Button
           isIconOnly

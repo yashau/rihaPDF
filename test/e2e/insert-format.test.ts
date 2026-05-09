@@ -46,8 +46,13 @@ describe("inserted-text formatting toolbar", () => {
     await insertInput.press("Control+A");
     await h.page.waitForTimeout(150);
 
-    // Toolbar: Times New Roman / 28pt / bold.
+    // Toolbar: Times New Roman / 28pt / bold. The DV/EN input-mode
+    // toggle is mobile-only, so the desktop inserted-text toolbar
+    // must not render it.
     const toolbar = h.page.locator("[data-edit-toolbar]");
+    expect(
+      await h.page.getByRole("button", { name: /Thaana phonetic input|Latin input/ }).count(),
+    ).toBe(0);
     await insertInput.press("Control+A");
     await toolbar.locator("select").selectOption("Times New Roman");
     await h.page.waitForTimeout(120);

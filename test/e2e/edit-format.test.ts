@@ -102,6 +102,122 @@ describe("edit-existing-run formatting", () => {
     }
   });
 
+  test("font picker applies to the whole source edit and persists after commit", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator('[data-page-index="0"]').scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    const desiredFont = "A Faseyha";
+    const target = await h.page.evaluate((desired) => {
+      const host = document.querySelector('[data-page-index="0"]');
+      if (!host) return null;
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const text = (el.textContent || "").trim();
+        const r = el.getBoundingClientRect();
+        const font = el.getAttribute("data-font-family") ?? "";
+        if (text && font !== desired && r.width > 30 && r.height > 8) {
+          return { id: el.getAttribute("data-run-id")!, text, font };
+        }
+      }
+      return null;
+    }, desiredFont);
+    expect(target, "expected a source run with a different font").not.toBeNull();
+
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await editor.waitFor({ state: "visible" });
+    expect(
+      await h.page.getByRole("button", { name: /Thaana phonetic input|Latin input/ }).count(),
+    ).toBe(0);
+    await h.page.locator('select[aria-label="Font"]').selectOption(desiredFont);
+    await h.page.waitForTimeout(150);
+
+    expect(await editor.evaluate((el) => getComputedStyle(el).fontFamily)).toContain(desiredFont);
+
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
+    await editor.waitFor({ state: "detached" });
+    await h.page.waitForTimeout(300);
+
+    expect(
+      await h.page.locator(`[data-run-id="${target!.id}"]`).getAttribute("data-font-family"),
+    ).toBe(desiredFont);
+
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    await h.page
+      .locator('[data-editor][contenteditable="true"]')
+      .first()
+      .waitFor({ state: "visible" });
+    expect(await h.page.locator('select[aria-label="Font"]').inputValue()).toBe(desiredFont);
+  });
+
+  test("font picker applies only selected source text when a range is active", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator('[data-page-index="0"]').scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+
+    const target = await h.page.evaluate(() => {
+      const host = document.querySelector('[data-page-index="0"]');
+      if (!host) return null;
+      for (const el of host.querySelectorAll("[data-run-id]")) {
+        const text = (el.textContent || "").trim();
+        const r = el.getBoundingClientRect();
+        const font = el.getAttribute("data-font-family") ?? "";
+        if (text.length >= 8 && font !== "A Faseyha" && r.width > 30 && r.height > 8) {
+          return { id: el.getAttribute("data-run-id")!, text, font };
+        }
+      }
+      return null;
+    });
+    expect(target, "expected a source run with enough text and a different font").not.toBeNull();
+
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    const editor = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await editor.waitFor({ state: "visible" });
+    await editor.evaluate(selectTextRange, { start: 0, end: 3 });
+
+    const desiredFont = "A Faseyha";
+    await h.page.locator('select[aria-label="Font"]').selectOption(desiredFont);
+    await h.page.waitForTimeout(200);
+
+    const liveFonts = await editor.evaluate(textFontsAtOffsets, [1, 5]);
+    expect(liveFonts[0], "selected prefix should use the picked font while editing").toContain(
+      desiredFont,
+    );
+    expect(
+      liveFonts[1],
+      "unselected suffix should keep the original font while editing",
+    ).not.toContain(desiredFont);
+
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.mouse.click(pageBox!.x + 5, pageBox!.y + 5);
+    await editor.waitFor({ state: "detached" });
+    await h.page.waitForTimeout(300);
+
+    const committedFonts = await h.page
+      .locator(`[data-run-id="${target!.id}"]`)
+      .evaluate(textFontsAtOffsets, [1, 5]);
+    expect(committedFonts[0], "selected prefix font should persist after commit").toContain(
+      desiredFont,
+    );
+    expect(
+      committedFonts[1],
+      "unselected suffix font should remain unchanged after commit",
+    ).not.toContain(desiredFont);
+
+    await h.page.locator(`[data-run-id="${target!.id}"]`).click();
+    const reopened = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await reopened.waitFor({ state: "visible" });
+    const reopenedFonts = await reopened.evaluate(textFontsAtOffsets, [1, 5]);
+    expect(reopenedFonts[0], "selected prefix font should survive reopen").toContain(desiredFont);
+    expect(
+      reopenedFonts[1],
+      "unselected suffix should still use the original font on reopen",
+    ).not.toContain(desiredFont);
+  });
+
   test("partial bold on source text persists after commit and reopen", async () => {
     await loadFixture(h.page, FIXTURE.maldivian2, { expectedPages: 14 });
     await h.page.locator('[data-page-index="1"]').scrollIntoViewIfNeeded();
@@ -371,6 +487,48 @@ describe("edit-existing-run formatting", () => {
     expect(reopenedWeight, "bold OFF override should still apply after reopen").toBeLessThan(600);
   });
 });
+
+function selectTextRange(root: Element, rangeOffsets: { start: number; end: number }): void {
+  const range = document.createRange();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  let pos = 0;
+  while (node) {
+    const textNode = node as Text;
+    const next = pos + textNode.data.length;
+    if (rangeOffsets.start >= pos && rangeOffsets.start <= next) {
+      range.setStart(textNode, rangeOffsets.start - pos);
+    }
+    if (rangeOffsets.end >= pos && rangeOffsets.end <= next) {
+      range.setEnd(textNode, rangeOffsets.end - pos);
+      break;
+    }
+    pos = next;
+    node = walker.nextNode();
+  }
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  document.dispatchEvent(new Event("selectionchange"));
+}
+
+function textFontsAtOffsets(root: Element, offsets: number[]): string[] {
+  return offsets.map((offset) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    let remaining = offset;
+    while (node) {
+      const textNode = node as Text;
+      if (remaining <= textNode.data.length) {
+        const parent = textNode.parentElement ?? (root as HTMLElement);
+        return getComputedStyle(parent).fontFamily;
+      }
+      remaining -= textNode.data.length;
+      node = walker.nextNode();
+    }
+    return getComputedStyle(root).fontFamily;
+  });
+}
 
 function textWeightAtOffset(root: Element, offset: number): number {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
