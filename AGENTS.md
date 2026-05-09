@@ -16,18 +16,20 @@ Primary source areas:
 - `src/domain/`: shared editor domain models for annotations, forms, geometry, insertions, redactions, selection, signatures, slots, and tool state.
 - `src/pdf/`: PDF parsing, rendering, source extraction, content-stream rewriting, save pipeline, forms, fonts, shaping, and redaction internals.
 - `src/platform/`: browser utilities, theme handling, polyfills, and reusable platform hooks.
+- `src/dev/`: local diagnostic helpers for decoding, glyph, ToUnicode, and XObject investigations.
+- `src/types/`: ambient TypeScript declarations for dependencies without bundled project-specific types.
 - `test/unit/`: focused Vitest tests for pure parser, geometry, text-run, and redaction internals.
 - `test/e2e/`: Vitest tests that drive the app through Playwright.
+- `test/helpers/`: shared browser/test helpers used by E2E tests.
 - `test/fixtures/`: pinned and generated PDFs used by tests.
 - `scripts/`: one-off diagnostics and probes. These are useful for investigation but are not the main CI test suite.
 
 Reference docs already in the repo:
 
 - `README.md`: product behavior, architecture, commands, limitations, and test inventory.
+- `docs/`: architecture notes for annotations/visual objects, browser privacy/security, compatibility, coordinate systems, forms, redaction, save, source-text editing, testing, and Thaana text.
 - `test/unit/README.md`: focused unit coverage inventory and current unit test count.
 - `test/e2e/README.md`: Playwright E2E coverage inventory and current E2E test count.
-- `docs/forms-pipeline.md`: AcroForm extraction, editing, save, and appearance notes.
-- `docs/thaana-text-pipeline.md`: shaping, bidi segmentation, font embedding, and Thaana text notes.
 - `pnpm-workspace.yaml`: pnpm build-script approval policy.
 - `public/fonts/dhivehi/README.md`: bundled font attributions and policy.
 
@@ -146,7 +148,7 @@ Important modules:
 When adjusting UI, preserve:
 
 - Desktop and mobile layouts.
-- Floating controls, menus, popovers, and toolbars must stay within the viewport. Be especially careful with mobile bottom toolbars: default "open below trigger" placement can render content below the visible viewport, so measure/flip/clamp overlays instead of assuming a direction. The shared annotation/format color picker lives at `src/components/PdfPage/ColorPickerPopover.tsx`; viewport regression coverage lives in `test/e2e/color-picker-position.test.ts`.
+- Floating controls, menus, popovers, and toolbars must stay within the viewport. Be especially careful with mobile bottom toolbars: default "open below trigger" placement can render content below the visible viewport, so measure/flip/clamp overlays instead of assuming a direction.
 - Touch hold behavior for mobile dragging.
 - Edge-band auto-scroll.
 - Drawer/sidebar behavior.
