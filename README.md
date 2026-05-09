@@ -19,7 +19,7 @@
 [![Oxfmt](https://img.shields.io/badge/Oxfmt-0.48-cc5a2f?style=for-the-badge)](https://oxc.rs/docs/guide/usage/formatter)
 [![pnpm](https://img.shields.io/badge/pnpm-11-f69220?style=for-the-badge&logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edit in place, save. Saved PDFs contain **real, selectable, searchable** text — original glyphs are removed from the content stream, not whited out.
+Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edit in place, save. Saved PDFs contain **real, selectable, searchable** text - original glyphs are removed from the content stream, not whited out.
 
 **100% client-side.** Your PDF is parsed, edited, and saved entirely in your browser. Nothing is uploaded; no server ever sees your file.
 
@@ -40,7 +40,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Page sidebar.** Reorder, delete, insert blank pages, or import pages from another PDF.
 - **230 bundled Thaana fonts.** Local-first `@font-face` loading and embedded saved output. Credits live in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, resizable comments, and freehand drawing saved as native PDF annotations.
-- **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area. See [REDACTION_PIPELINE.md](REDACTION_PIPELINE.md).
+- **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area. See [docs/redaction-pipeline.md](docs/redaction-pipeline.md).
 - **Fill AcroForm fields.** Fill common PDF form widgets, including text fields, checkboxes, radios, combo boxes, and list boxes, with Thaana input support.
 - **Phonetic Latin → Thaana keyboard.** `DV`/`EN` toggle maps Latin keystrokes to Thaana via the Mahaa keymap.
 - **Dark theme.** System / light / dark toggle that tracks `prefers-color-scheme` and persists.
@@ -50,16 +50,16 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 
 ## Stack
 
-- **Vite 8 + React 19 + TypeScript 6** — browser app shell and strict UI code.
-- **HeroUI 3 + Tailwind CSS 4 + lucide-react** — components, styling, theme chrome, and icons.
-- **Lexical 0.44** — bounded rich-text editing surface for page text fields.
-- **pdf.js 5** — page rendering, workers, and source text extraction.
-- **pdf-lib + @pdf-lib/fontkit** — page copying, object writes, font embedding, and save output.
-- **harfbuzzjs + bidi-js** — Thaana shaping and mixed-direction text segmentation.
-- **@dnd-kit + framer-motion** — sortable page thumbnails, drag sensors, and motion primitives.
-- **Vitest 4 + Playwright + V8 coverage** — unit and browser-driven E2E regression tests.
-- **Oxfmt + Oxlint** — formatting and lint/type-aware static checks.
-- **Wrangler 4 + Cloudflare Workers Static Assets** — production hosting with SPA fallback.
+- **Vite 8 + React 19 + TypeScript 6** - browser app shell and strict UI code.
+- **HeroUI 3 + Tailwind CSS 4 + lucide-react** - components, styling, theme chrome, and icons.
+- **Lexical 0.44** - bounded rich-text editing surface for page text fields.
+- **pdf.js 5** - page rendering, workers, and source text extraction.
+- **pdf-lib + @pdf-lib/fontkit** - page copying, object writes, font embedding, and save output.
+- **harfbuzzjs + bidi-js** - Thaana shaping and mixed-direction text segmentation.
+- **@dnd-kit + framer-motion** - sortable page thumbnails, drag sensors, and motion primitives.
+- **Vitest 4 + Playwright + V8 coverage** - unit and browser-driven E2E regression tests.
+- **Oxfmt + Oxlint** - formatting and lint/type-aware static checks.
+- **Wrangler 4 + Cloudflare Workers Static Assets** - production hosting with SPA fallback.
 
 ## Quick start
 
@@ -72,9 +72,9 @@ Open the URL Vite prints, click **Open PDF**, click a text fragment, hit **Save*
 
 Test fixtures in [test/fixtures/](test/fixtures/):
 
-- `maldivian.pdf` — real Maldivian doc with broken-aabaafili ToUnicode (canonical Thaana-recovery test bed).
-- `with-images.pdf` / `with-images-multipage.pdf` — synthetic image fixtures (`node test/fixtures/build.mjs`).
-- `external-source.pdf` — two-page fixture used by the `+ From PDF` tests.
+- `maldivian.pdf` - real Maldivian doc with broken-aabaafili ToUnicode (canonical Thaana-recovery test bed).
+- `with-images.pdf` / `with-images-multipage.pdf` - synthetic image fixtures (`node test/fixtures/build.mjs`).
+- `external-source.pdf` - two-page fixture used by the `+ From PDF` tests.
 
 ## Architecture
 
@@ -90,9 +90,11 @@ save → for each edited run:
           bidi-js segmentation first (shapedBidi.ts)
 ```
 
+See [docs/thaana-text-pipeline.md](docs/thaana-text-pipeline.md) for the detailed shaped text save path, including font embedding, HarfBuzz operator emission, mixed-script bidi segmentation, annotations, and AcroForm fallbacks.
+
 Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/pdf/text/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
 
-Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/pdf/content/contentStream.ts) — pdf-lib doesn't expose its parser publicly, so [pageContent.ts](src/pdf/content/pageContent.ts) reads raw bytes and rewrites them.
+Content-stream surgery is a small custom tokenizer in [contentStream.ts](src/pdf/content/contentStream.ts) - pdf-lib doesn't expose its parser publicly, so [pageContent.ts](src/pdf/content/pageContent.ts) reads raw bytes and rewrites them.
 
 Caret placement for source text uses the same PDF-side text-show data as the edit/save pipeline: [sourceFonts.ts](src/pdf/source/sourceFonts.ts) walks `Tj`/`TJ` operators, font widths, text spacing, and horizontal scaling to derive per-glyph source edges; [pdf.ts](src/pdf/render/pdf.ts) maps those edges back to logical text offsets for LTR/RTL run hit-testing before the browser input mounts.
 
@@ -101,6 +103,22 @@ The page renderer is split per concern under [src/components/PdfPage/](src/compo
 `App.tsx` is a composition root at [src/app/App.tsx](src/app/App.tsx) over [AppHeader](src/components/AppHeader/), [PageList](src/components/PageList.tsx), [PageWithToolbar](src/components/PageWithToolbar.tsx), and [AboutModal](src/components/AboutModal.tsx). App-specific state hooks live in [src/app/hooks/](src/app/hooks/), including [useAppState](src/app/hooks/useAppState.ts), [useDocumentIo](src/app/hooks/useDocumentIo.ts), [useDocumentMutations](src/app/hooks/useDocumentMutations.ts), [usePreviewCanvases](src/app/hooks/usePreviewCanvases.ts), [useSelection](src/app/hooks/useSelection.ts), and [useMobileChrome](src/app/hooks/useMobileChrome.ts). Shared platform hooks such as [useUndoRedo](src/platform/hooks/useUndoRedo.ts) and [useDragGesture](src/platform/hooks/useDragGesture.ts) live in [src/platform/hooks/](src/platform/hooks/).
 
 Derived app state lives in [src/app/state/](src/app/state/): [contentState.ts](src/app/state/contentState.ts) groups document/content/tool state, [pageListSelectors.ts](src/app/state/pageListSelectors.ts) derives renderable PageList selection/arrival state, and [saveStatusSelectors.ts](src/app/state/saveStatusSelectors.ts) keeps save-status logic pure. [pageControllerBinding.ts](src/components/pageControllerBinding.ts) binds per-page controller callbacks, and [buildSavePayload.ts](src/app/buildSavePayload.ts) translates the slot list into `SourceSavePayload[]` for the save pipeline.
+
+## Internal docs
+
+Architecture and maintenance notes live in [docs/](docs/):
+
+- [docs/index.md](docs/index.md) - map of the internals documentation.
+- [docs/thaana-text-pipeline.md](docs/thaana-text-pipeline.md) - HarfBuzz shaping, `RihaShaped` resources, and mixed-script text.
+- [docs/save-pipeline.md](docs/save-pipeline.md) - how edits, inserts, forms, annotations, redactions, and page ops become the saved PDF.
+- [docs/source-text-editing.md](docs/source-text-editing.md) - source run extraction, RTL display fixes, caret mapping, and stream surgery.
+- [docs/coordinate-systems.md](docs/coordinate-systems.md) - PDF/user-space/browser coordinate conversions.
+- [docs/forms-pipeline.md](docs/forms-pipeline.md) - AcroForm extraction, value saving, appearances, and redaction behavior.
+- [docs/annotations-and-visual-objects.md](docs/annotations-and-visual-objects.md) - native annotations vs page-content objects.
+- [docs/redaction-pipeline.md](docs/redaction-pipeline.md) - irreversible redaction internals.
+- [docs/browser-privacy-security.md](docs/browser-privacy-security.md) - client-only privacy model, limits, caches, and security posture.
+- [docs/testing-strategy.md](docs/testing-strategy.md) - regression-test guidance for bug-fix mode.
+- [docs/compatibility-notes.md](docs/compatibility-notes.md) - intentional hacks for dates, punctuation, bidi, mobile input, and PDF quirks.
 
 ## Adding a new Dhivehi font
 
@@ -113,14 +131,14 @@ Derived app state lives in [src/app/state/](src/app/state/): [contentState.ts](s
 
 The `@font-face` rule, picker, and save pipeline all read from this list.
 
-The bundled MV-prefix fonts are included as a fallback — `@font-face` lists `local()` first, so an OS-installed copy always wins. Font origins, attributions, and a contact path for rights-holder removal requests are documented in [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
+The bundled MV-prefix fonts are included as a fallback - `@font-face` lists `local()` first, so an OS-installed copy always wins. Font origins, attributions, and a contact path for rights-holder removal requests are documented in [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 
 ## Known limitations
 
 - **No OCR.** rihaPDF edits existing PDF text objects; it does not perform OCR of any kind and is not meant for converting scanned/image-only documents into editable text. You can still use scanned PDFs for page organization, annotations, visual signatures, redaction boxes, and other visual edits.
-- **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually — Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 — but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
-- **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q…Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
-- **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs — the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
+- **Mixed-script text extraction is order-imperfect in some viewers.** When a single run mixes Thaana with Latin (e.g. `Hello ދިވެހި 42` typed into a `+ Text` insert), the saved PDF renders correctly visually - Latin segments via Helvetica, Thaana segments via HarfBuzz-shaped Faruma, segment ordering via `bidi-js` UAX #9 - but pdf.js's `getTextContent` and similar extractors that group adjacent Tj operators into compound items can swap base+mark order within RTL clusters when Latin items are in the same line. The visual output is correct; copy-paste / search may recover the same Unicode codepoints in slightly reordered positions. Pure-RTL or pure-LTR runs are unaffected. Fix path documented in [docs/thaana-text-pipeline.md](docs/thaana-text-pipeline.md) and [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts) (one-Tj-per-cluster TJ-array emission, or post-extraction cluster repair).
+- **Redaction non-text fallbacks are conservative.** Partial raster redaction is pixel-accurate for decoded 8-bit `/DeviceGray`, `/DeviceRGB`, and `/DeviceCMYK` image XObjects without masks: the saved PDF points at a new sanitized image stream and prunes the original XObject when it is no longer used. For masked images, unsupported image encodings / colour spaces, and Form XObjects, rihaPDF removes the whole draw if it overlaps the redaction. Vector paths are stripped at paint-op / detected q...Q block granularity, so a redaction over part of a complex path can remove more vector content than the visible rectangle covers. This is intentional: over-stripping is the safe failure mode.
+- **Redaction fallback for unsupported fonts.** Non-Identity-H `/Type0` (vertical writing or custom CMap), `/Type3`, and Standard 14 fonts without an embedded `/Widths` table fall back to _whole-op stripping_ rather than per-glyph. The redaction stays correct (over-stripping is the safe failure mode) but a tightened rect over such an op may remove neighbouring glyphs that were outside the visual rect. In practice this only matters on very old / unusual PDFs - the maldivian2 fixture, Office output, and every browser-generated PDF we've tested take the per-glyph fast path.
 - **Annotation and form redaction is geometry-first.** Text markup quads and ink strokes are clipped/split so portions outside the redaction survive. Text-bearing, unsupported annotation types, and overlapped AcroForm widgets are removed on overlap because their dictionaries can carry recoverable `/Contents`, `/V`, `/DV`, or appearance data. Partial form-field value redaction is not attempted; overlapping a widget removes the whole field.
 
 ## Scripts
@@ -140,7 +158,7 @@ pnpm test:coverage     # unit coverage with V8 output in coverage/
 pnpm test:e2e:coverage # managed E2E run with V8 coverage enabled
 pnpm test:fixtures     # rebuild test/fixtures/with-images*.pdf
 pnpm cf:config      # generate wrangler.jsonc from env vars
-pnpm cf:dev         # wrangler dev — local Workers preview of dist/
+pnpm cf:dev         # wrangler dev - local Workers preview of dist/
 pnpm cf:deploy      # build + wrangler deploy → Cloudflare Workers
 ```
 
@@ -203,21 +221,21 @@ One-off diagnostic scripts (not part of CI) live in [scripts/](scripts/).
 
 ### Save pipeline
 
-- [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/pdf/text/shapedDraw.ts) / [shapedBidi.ts](src/pdf/text/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line — visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
+- [ ] **Logical-order text extraction for mixed-script saves.** HarfBuzz-shaped output ships in [shapedDraw.ts](src/pdf/text/shapedDraw.ts) / [shapedBidi.ts](src/pdf/text/shapedBidi.ts), but pdf.js's getTextContent reorders base+mark within RTL clusters when adjacent Latin items share the line - visual is correct, extraction is not. Either emit one Tj per cluster (TJ-array form for inter-glyph adjustments) so each cluster lands as a single TextItem, or repair after extraction by re-clustering on the recovered codepoints. See [test/e2e/mixed-script.test.ts](test/e2e/mixed-script.test.ts).
 - [ ] **Partial form-widget redaction.** Redaction removes an overlapped AcroForm field as the safe default. A future version could split visual widget appearances or preserve non-overlapped widgets from the same field when that can be done without leaving `/V`/`/DV` recoverable.
 
 ### Overlay / interaction
 
-- [ ] **Overlay-rect vs rendered-text-rect drift.** Web-font Faruma lays out wider than the embedded subset — `probeOverlayCoverage.mjs` flags 37 runs.
+- [ ] **Overlay-rect vs rendered-text-rect drift.** Web-font Faruma lays out wider than the embedded subset - `probeOverlayCoverage.mjs` flags 37 runs.
 - [ ] **Image / non-text glyph clusters in the coverage probe.** Replace the height heuristic with an actual `<image>` op inspector.
 
 ### Document-level
 
-- [ ] **Annotation extras** — `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
+- [ ] **Annotation extras** - `/Square` / `/Circle`, multi-line highlight quads, `/FreeTextCallout`, colour pickers.
 
 ### Source-PDF support
 
-- [ ] **PDFs without `/ToUnicode`.** Need a glyph-name → codepoint table for Adobe Thaana glyph names. Survey of ~140 gazette.gov.mv PDFs (via [sweepGazette.mjs](scripts/sweepGazette.mjs)) found no real cases in the wild — deprioritised until a fixture shows up.
+- [ ] **PDFs without `/ToUnicode`.** Need a glyph-name → codepoint table for Adobe Thaana glyph names. Survey of ~140 gazette.gov.mv PDFs (via [sweepGazette.mjs](scripts/sweepGazette.mjs)) found no real cases in the wild - deprioritised until a fixture shows up.
 - [ ] **Smarter source-font matching.** Tighter weight + width matching when picking a bundled family for replacement text.
 - [ ] **Drop A_Bismillah-style display fonts from the editor picker.** Pure ligature fonts with no Unicode coverage.
 - [ ] **Encrypted PDFs.** `pdf-lib` accepts `ignoreEncryption: true` but loses encryption on save.
