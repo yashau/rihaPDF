@@ -26,8 +26,8 @@ Reference docs already in the repo:
 - `README.md`: product behavior, architecture, commands, limitations, and test inventory.
 - `test/unit/README.md`: focused unit coverage inventory and current unit test count.
 - `test/e2e/README.md`: Playwright E2E coverage inventory and current E2E test count.
-- `form-filling-plan.md`: form field design notes.
-- `harfbuzz-plan.md`: shaping notes.
+- `docs/forms-pipeline.md`: AcroForm extraction, editing, save, and appearance notes.
+- `docs/thaana-text-pipeline.md`: shaping, bidi segmentation, font embedding, and Thaana text notes.
 - `pnpm-workspace.yaml`: pnpm build-script approval policy.
 - `public/fonts/dhivehi/README.md`: bundled font attributions and policy.
 
