@@ -54,12 +54,26 @@ function midpoint(a: TouchPoint, b: TouchPoint): TouchPoint {
 
 function isDocumentOverlayTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return !!target.closest("[data-run-id], [data-text-insert-id]");
+  return !!target.closest("[data-run-id], [data-text-insert-id], [data-form-field]");
+}
+
+function isActiveEditableTarget(target: HTMLElement): boolean {
+  const editable = target.closest<HTMLElement>('input, textarea, select, [contenteditable="true"]');
+  if (!editable) return false;
+  const active = document.activeElement;
+  return active instanceof HTMLElement && editable.contains(active);
 }
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.closest('input, textarea, select, [contenteditable="true"], [data-edit-toolbar]')) {
+  if (target.closest("[data-edit-toolbar]")) return true;
+  // Form fields are real controls, but an inactive field should not
+  // block the document's two-finger zoom. We only reserve the gesture
+  // for the control itself once it is active/focused; single taps still
+  // flow through because pointerdown is not prevented until a second
+  // touch joins the gesture.
+  if (target.closest("[data-form-field]") && !isActiveEditableTarget(target)) return false;
+  if (target.closest('input, textarea, select, [contenteditable="true"]')) {
     return true;
   }
   // Source/inserted text overlays are intentionally button-like for

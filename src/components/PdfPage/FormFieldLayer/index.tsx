@@ -138,6 +138,7 @@ export function FormFieldLayer({
               <div
                 key={widget.id}
                 className="absolute flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-400"
+                data-form-field={field.fullName}
                 style={{
                   left,
                   top,
@@ -147,6 +148,7 @@ export function FormFieldLayer({
                   background: "rgba(240, 240, 240, 0.4)",
                   pointerEvents: "auto",
                   cursor: "not-allowed",
+                  touchAction: "pan-x pan-y pinch-zoom",
                 }}
                 aria-label="Signature field (read-only)"
               >

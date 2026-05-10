@@ -94,6 +94,7 @@ export function TextFieldOverlay({
     boxSizing: "border-box",
     outline: "none",
     resize: "none",
+    touchAction: isFocused ? "auto" : "pan-x pan-y pinch-zoom",
   };
 
   const commonProps = {
@@ -168,6 +169,7 @@ export function CheckboxOverlay({
   return (
     <div
       className="absolute"
+      data-form-field={field.fullName}
       style={{
         left,
         top,
@@ -180,6 +182,7 @@ export function CheckboxOverlay({
         background: "rgba(225, 240, 255, 0.35)",
         border: "1px solid rgba(80, 130, 220, 0.45)",
         boxSizing: "border-box",
+        touchAction: "pan-x pan-y pinch-zoom",
       }}
     >
       <input
@@ -189,7 +192,12 @@ export function CheckboxOverlay({
         checked={checked}
         onChange={(e) => onChange(field.fullName, { kind: "checkbox", checked: e.target.checked })}
         onClick={(e) => e.stopPropagation()}
-        style={{ width: size, height: size, cursor: field.readOnly ? "not-allowed" : "pointer" }}
+        style={{
+          width: size,
+          height: size,
+          cursor: field.readOnly ? "not-allowed" : "pointer",
+          touchAction: "pan-x pan-y pinch-zoom",
+        }}
       />
     </div>
   );
@@ -231,6 +239,7 @@ export function RadioField({
           <div
             key={widget.id}
             className="absolute"
+            data-form-field={field.fullName}
             style={{
               left,
               top,
@@ -243,6 +252,7 @@ export function RadioField({
               background: "rgba(225, 240, 255, 0.35)",
               border: "1px solid rgba(80, 130, 220, 0.45)",
               boxSizing: "border-box",
+              touchAction: "pan-x pan-y pinch-zoom",
             }}
           >
             <input
@@ -261,6 +271,7 @@ export function RadioField({
                 width: size,
                 height: size,
                 cursor: field.readOnly ? "not-allowed" : "pointer",
+                touchAction: "pan-x pan-y pinch-zoom",
               }}
             />
           </div>
@@ -332,6 +343,7 @@ export function ChoiceOverlay({
         colorScheme: "light",
         pointerEvents: "auto",
         boxSizing: "border-box",
+        touchAction: "pan-x pan-y pinch-zoom",
       }}
     >
       {/* Combo: empty option lets the user clear the selection. List

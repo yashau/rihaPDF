@@ -221,6 +221,70 @@ describe("mobile layout (390×844)", () => {
       .toBeGreaterThan(beforeRect!.width * 1.5);
   });
 
+  test("two-finger pinch zooms when the gesture starts on a form field", async () => {
+    await loadFixture(h.page, FIXTURE.mnuJobApplication);
+    const field = h.page.locator('[data-form-field="fill_1"]').first();
+    await field.waitFor({ state: "visible", timeout: 5_000 });
+    await field.scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(100);
+
+    const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();
+    expect(beforeRect, "page slot 0 should be in DOM").not.toBeNull();
+
+    await field.evaluate((el) => {
+      const fieldRect = el.getBoundingClientRect();
+      const y = fieldRect.top + fieldRect.height / 2;
+      const centerX = fieldRect.left + fieldRect.width / 2;
+      const fire = (type: string, pointerId: number, clientX: number) => {
+        el.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId,
+            pointerType: "touch",
+            isPrimary: pointerId === 1,
+            clientX,
+            clientY: y,
+          }),
+        );
+      };
+      fire("pointerdown", 1, centerX - 12);
+      fire("pointerdown", 2, centerX + 12);
+      fire("pointermove", 1, centerX - 70);
+      fire("pointermove", 2, centerX + 70);
+      fire("pointerup", 1, centerX - 70);
+      fire("pointerup", 2, centerX + 70);
+    });
+
+    await expect
+      .poll(async () => {
+        const rect = await h.page.locator("[data-page-index='0']").boundingBox();
+        return rect?.width ?? 0;
+      })
+      .toBeGreaterThan(beforeRect!.width * 1.5);
+
+    await field.tap();
+    await field.fill("Mobile form tap still works");
+    expect(await field.inputValue()).toBe("Mobile form tap still works");
+  });
+
+  test("form field overlays allow native horizontal and vertical touch panning", async () => {
+    await loadFixture(h.page, FIXTURE.mnuJobApplication);
+    const field = h.page.locator('[data-form-field="fill_1"]').first();
+    await field.waitFor({ state: "visible", timeout: 5_000 });
+    await field.evaluate((el) => (el as HTMLElement).blur());
+    await expect
+      .poll(() => field.evaluate((el) => (el as HTMLElement).style.touchAction))
+      .toContain("pan-x");
+    const touchAction = await field.evaluate((el) => (el as HTMLElement).style.touchAction);
+    expect(touchAction, "form text field should allow horizontal panning when inactive").toContain(
+      "pan-x",
+    );
+    expect(touchAction, "form text field should allow vertical panning when inactive").toContain(
+      "pan-y",
+    );
+  });
+
   test("DevTools-style ctrl+wheel pinch zooms the document surface", async () => {
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();
