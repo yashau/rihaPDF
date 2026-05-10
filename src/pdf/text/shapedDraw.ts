@@ -123,9 +123,53 @@ export async function buildShapedTextOps(
   return { ops, width: widthPt, shape };
 }
 
+/** Build a shaped text operator block in HarfBuzz's visual glyph order.
+ *  This is for appearance streams whose only job is to paint pixels
+ *  (not provide searchable text). The page-content emitter above writes
+ *  RTL glyphs in logical stream order so pdf.js extraction behaves; in
+ *  AcroForm /AP streams, some PDF viewers display that extraction-
+ *  friendly ordering as an exactly reversed Thaana field. Keeping the
+ *  HB visual buffer order here mirrors the browser/source rendering and
+ *  preserves edge clusters such as a final base+vowel mark. */
+export async function buildVisualShapedTextOps(
+  opts: ShapedTextOptions & { fontKey: PDFName | string },
+): Promise<{ ops: PDFOperator[]; width: number; shape: ShapeResult }> {
+  const shape = await shapeText(opts.text, opts.fontBytes, opts.dir);
+  const widthPt = shapedAdvancePt(shape, opts.size);
+  const ops = buildVisualShapedTextOpsFromShape(shape, opts.fontKey, {
+    x: opts.x,
+    y: opts.y,
+    size: opts.size,
+    color: opts.color,
+  });
+  return { ops, width: widthPt, shape };
+}
+
 export function shapedAdvancePt(shape: ShapeResult, sizePt: number): number {
   const upem = shape.unitsPerEm || 1000;
   return shape.totalAdvance * (sizePt / upem);
+}
+
+function makeTextOpsPrefix(
+  fontKey: PDFName | string,
+  geom: { size: number; color?: [number, number, number] },
+): PDFOperator[] {
+  const ops: PDFOperator[] = [];
+  if (geom.color) {
+    ops.push(pushGraphicsState());
+    ops.push(setFillingRgbColor(geom.color[0], geom.color[1], geom.color[2]));
+  }
+  ops.push(beginText(), setFontAndSize(fontKey, geom.size));
+  return ops;
+}
+
+function finishTextOps(
+  ops: PDFOperator[],
+  geom: { color?: [number, number, number] },
+): PDFOperator[] {
+  ops.push(endText());
+  if (geom.color) ops.push(popGraphicsState());
+  return ops;
 }
 
 /** Build the BT/Tf/Tm.../Tj.../ET operator block for a *pre-computed*
@@ -145,12 +189,7 @@ export function buildShapedTextOpsFromShape(
   // explicit color was passed. With no color, fall through to whatever
   // fill state the page already has — same byte output as before color
   // support, so existing PDFs keep saving byte-identically.
-  const ops: PDFOperator[] = [];
-  if (geom.color) {
-    ops.push(pushGraphicsState());
-    ops.push(setFillingRgbColor(geom.color[0], geom.color[1], geom.color[2]));
-  }
-  ops.push(beginText(), setFontAndSize(fontKey, geom.size));
+  const ops = makeTextOpsPrefix(fontKey, geom);
   if (shape.direction === "rtl") {
     // HarfBuzz emits RTL output in *visual* order with cluster IDs
     // decreasing across glyphs. Within each cluster the buffer is in
@@ -215,9 +254,27 @@ export function buildShapedTextOpsFromShape(
       cursor += g.xAdvance;
     }
   }
-  ops.push(endText());
-  if (geom.color) ops.push(popGraphicsState());
-  return ops;
+  return finishTextOps(ops, geom);
+}
+
+export function buildVisualShapedTextOpsFromShape(
+  shape: ShapeResult,
+  fontKey: PDFName | string,
+  geom: { x: number; y: number; size: number; color?: [number, number, number] },
+): PDFOperator[] {
+  const upem = shape.unitsPerEm || 1000;
+  const scale = geom.size / upem;
+  const ops = makeTextOpsPrefix(fontKey, geom);
+  let cursor = 0;
+  for (const g of shape.glyphs) {
+    const glyphX = geom.x + (cursor + g.xOffset) * scale;
+    const glyphY = geom.y + g.yOffset * scale;
+    ops.push(setTextMatrix(1, 0, 0, 1, glyphX, glyphY));
+    const hex = g.glyphId.toString(16).padStart(4, "0");
+    ops.push(showText(PDFHexString.of(hex)));
+    cursor += g.xAdvance;
+  }
+  return finishTextOps(ops, geom);
 }
 
 /** Measure the width of `text` rendered with `fontBytes` at `size` via

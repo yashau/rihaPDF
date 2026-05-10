@@ -16,6 +16,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
+import { PDFJS_ANNOTATION_MODE_ENABLE_FORMS } from "@/pdf/render/pdfjs";
 import type { RenderedPage } from "@/pdf/render/pdf";
 import {
   parseContentStream,
@@ -168,7 +169,15 @@ export async function renderPagePreviewCanvas(
     canvas.width = budget.width;
     canvas.height = budget.height;
     const ctx = canvas.getContext("2d")!;
-    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      canvas,
+      // Match the main render path: form widgets are editable DOM
+      // overlays in rihaPDF, so their saved /AP streams must not be
+      // painted into the preview canvas underneath the live overlay.
+      annotationMode: PDFJS_ANNOTATION_MODE_ENABLE_FORMS,
+    }).promise;
     return canvas;
   } finally {
     void doc.destroy();

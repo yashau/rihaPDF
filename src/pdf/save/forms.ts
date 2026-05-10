@@ -56,7 +56,7 @@ import {
   makeAcroFormFontSetup,
   type EmbeddedFontFactory,
 } from "@/pdf/forms/pdfAcroForm";
-import { buildShapedTextOps, measureShapedWidth } from "@/pdf/text/shapedDraw";
+import { buildVisualShapedTextOps, measureShapedWidth } from "@/pdf/text/shapedDraw";
 
 /** Flat fill record passed into the save pipeline — the App's
  *  formValues Map<sourceKey, Map<fullName, FormValue>> is flattened to
@@ -285,7 +285,7 @@ async function buildTextWidgetAppearance(
     if (!faruma) return null;
     const textWidth = await measureShapedWidth(value, faruma.fontBytes, size, "rtl");
     const x = q === 2 ? Math.max(padding, rect.pdfWidth - padding - textWidth) : padding;
-    const shaped = await buildShapedTextOps({
+    const shaped = await buildVisualShapedTextOps({
       text: value,
       font: faruma.pdfFont,
       fontBytes: faruma.fontBytes,

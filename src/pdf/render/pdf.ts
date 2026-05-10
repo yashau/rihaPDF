@@ -1,7 +1,7 @@
 import { applyShowDecodes } from "@/pdf/text/textDecodeRecovery";
 import { buildTextRuns } from "@/pdf/text/textRunBuilder";
 import type { GlyphMap } from "@/pdf/source/glyphMap";
-import { loadPdf } from "@/pdf/render/pdfjs";
+import { PDFJS_ANNOTATION_MODE_ENABLE_FORMS, loadPdf } from "@/pdf/render/pdfjs";
 import { itemBoundsInViewport, multiplyTransforms } from "@/pdf/geometry/pdfTransform";
 import type { PdfPage, RenderedPage, TextItem } from "@/pdf/render/pdfTypes";
 import type { FontShow } from "@/pdf/source/sourceFonts";
@@ -52,7 +52,17 @@ export async function renderPage(
   canvas.width = budget.width;
   canvas.height = budget.height;
   const ctx = canvas.getContext("2d")!;
-  await page.render({ canvasContext: ctx, viewport: renderViewport, canvas }).promise;
+  await page.render({
+    canvasContext: ctx,
+    viewport: renderViewport,
+    canvas,
+    // rihaPDF renders AcroForm widgets as editable DOM overlays. If
+    // pdf.js also paints widget /AP streams into the canvas (the
+    // default AnnotationMode.ENABLE), re-opened saved forms show stale
+    // rasterized text underneath the live input. Keep non-form
+    // annotations visible, but suppress form-widget appearances here.
+    annotationMode: PDFJS_ANNOTATION_MODE_ENABLE_FORMS,
+  }).promise;
 
   // disableCombineTextItems keeps each Tj/TJ as its own item — pdf.js's
   // default consolidation merges adjacent items and inserts U+0020 to
