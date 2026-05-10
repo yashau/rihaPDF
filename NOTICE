@@ -20,6 +20,11 @@ Known attributions:
   - Faruma — Mustafa Muhammad (calligraphy & design), Ibrahim Yasir
     (technical), Ahmed Aasif (refinement); 2002, commissioned by the
     Office of the President of the Maldives.
+  - Faruma Arabic — sourced from https://github.com/muhammedjailam/FarumaArabic;
+    upstream says it combines Faruma Font, Traditional Arabic, and AGA
+    Arabesque Regular. Font metadata states: Version 1.0 Official release;
+    Modified & Compiled by Mohamed Jailam; no separate license metadata
+    is present.
   - ModFaruma — font metadata states: Version 2.0 Official release;
     created by Ibrahim Yasir, calligraphy by Musthafa Mohamed,
     assisted by Ahmed Asif; The President's Office 2002; all rights
@@ -263,6 +268,9 @@ See public/fonts/dhivehi/README.md for the full inventory.
   mvlhohi-bold.ttf                           | Mv lhohi bold                      | via raajjefonts.github.io / dhivehifont.com
   mvlhohi.ttf                                | Mv lhohi                           | via raajjefonts.github.io / dhivehifont.com
   thiki.ttf                                  | THIKI                              | via raajjefonts.github.io / dhivehifont.com
+
+-- Additional sourced fonts --
+  faruma-arabic.ttf                          | Faruma Arabic                      | Sourced from https://github.com/muhammedjailam/FarumaArabic. Upstream README says it combines Faruma Font, Traditional Arabic, and AGA Arabesque Regular. Font metadata: Version 1.0 Official release. Modified & Compiled by Mohamed Jailam. No separate license metadata is present.
 
 -- Pre-bundled in rihaPDF (no upstream catalogue entry) --
   aa-randhoo.ttf                             | MV Aa Randhoo                      | Unknown — bundled with Maldivian Windows installations, freely redistributed.

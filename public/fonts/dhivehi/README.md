@@ -1,6 +1,6 @@
 # Bundled Dhivehi (Thaana) fonts
 
-This directory bundles 231 Thaana fonts so that rihaPDF works on machines
+This directory bundles 232 Thaana fonts so that rihaPDF works on machines
 without Maldivian fonts installed. The browser is told to prefer the locally
 installed copy via CSS `local()` first; the bundled file is only fetched as
 a fallback.
@@ -31,11 +31,18 @@ installations and has no formally documented author or license.
 | Family           | Attribution                                                                                                                         |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Faruma           | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement) — 2002, Office of the President        |
+| Faruma Arabic    | See Faruma Arabic notes below                                                                                                       |
 | ModFaruma        | See ModFaruma notes below                                                                                                           |
 | MV Boli          | Thomas Rickner & Kamal Mansour (Monotype) for Microsoft — bundled with Windows since XP                                             |
 | MV Reethi        | Calligraphy by Abdul Sattar, Abdulla Waheed, Mustafa Muhammad; built by Ibrahim Yasir & Ahmed Aasif — 2002, Office of the President |
 | MV Waheed        | Calligraphy by Abdulla Waheed (1995); regular by Hassan Hameed; bold released 1996 with Accent Express                              |
 | Noto Sans Thaana | Google LLC — SIL Open Font License 1.1                                                                                              |
+
+### Faruma Arabic notes
+
+`faruma-arabic.ttf` was sourced from <https://github.com/muhammedjailam/FarumaArabic>. The upstream README says the font combines Faruma Font, Traditional Arabic, and AGA Arabesque Regular for Arabic-character and symbol support.
+
+Font metadata says: family `Faruma Arabic`; full name `Faruma Arabic`; PostScript name `FarumaArabic`; Version 1.0 Official release; copyright `Modified & Compiled by Mohamed Jailam`; description: `The english letters used in font Faruma is Times New Roman Trademark of The Monotype Corporation plc registered in the US Pat & TM Off. and elsewhere.` No separate license metadata is present.
 
 ### ModFaruma notes
 
@@ -97,6 +104,7 @@ After adding a font, also add a row to the inventory below.
 | `elaaf-normal.ttf`            | MV Elaaf                | [catalogue page](https://www.dhivehi.mv/fonts/data/df/Mv_Elaaf_Normal.otf)                                              |
 | `faiy-light.otf`              | Faiy Light              | [catalogue page](https://www.dhivehi.mv/fonts/data/ef/Faiy_Light.otf)                                                   |
 | `faruma.ttf`                  | Faruma                  | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement) — 2002                     |
+| `faruma-arabic.ttf`           | Faruma Arabic           | See Faruma Arabic notes below                                                                                           |
 | `modfaruma.ttf`               | ModFaruma               | See ModFaruma notes below                                                                                               |
 | `faseyha.otf`                 | A Faseyha               | [catalogue page](https://www.dhivehi.mv/fonts/data/et/faseyha.otf)                                                      |
 | `faseyha.ttf`                 | MV Faseyha              | [catalogue page](https://www.dhivehi.mv/fonts/data/df/MV_Faseyha.otf)                                                   |

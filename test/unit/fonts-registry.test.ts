@@ -10,8 +10,8 @@ describe("Dhivehi font registry", () => {
     const bundledThaanaFonts = FONTS.filter((font) => font.script === "thaana" && font.url);
     const fontFiles = readdirSync(dhivehiFontsDir).filter((name) => name !== "README.md");
 
-    expect(bundledThaanaFonts).toHaveLength(231);
-    expect(fontFiles).toHaveLength(231);
+    expect(bundledThaanaFonts).toHaveLength(232);
+    expect(fontFiles).toHaveLength(232);
 
     for (const font of bundledThaanaFonts) {
       const relativePath = font.url!.replace(/^\//, "").replace(/^fonts\/dhivehi\//, "");
@@ -22,7 +22,15 @@ describe("Dhivehi font registry", () => {
     }
   });
 
-  it("keeps ModFaruma attribution and public counts visible", () => {
+  it("keeps Faruma Arabic and ModFaruma attribution and public counts visible", () => {
+    expect(FONTS).toContainEqual(
+      expect.objectContaining({
+        family: "Faruma Arabic",
+        localAliases: ["Faruma Arabic", "FarumaArabic"],
+        url: "/fonts/dhivehi/faruma-arabic.ttf",
+        script: "thaana",
+      }),
+    );
     expect(FONTS).toContainEqual(
       expect.objectContaining({
         family: "ModFaruma",
@@ -36,11 +44,18 @@ describe("Dhivehi font registry", () => {
     const fontReadme = readFileSync(join(dhivehiFontsDir, "README.md"), "utf8");
     const notice = readFileSync(join(process.cwd(), "NOTICE"), "utf8");
 
-    expect(rootReadme).toContain("231 bundled Thaana fonts");
-    expect(fontReadme).toContain("This directory bundles 231 Thaana fonts");
+    expect(rootReadme).toContain("232 bundled Thaana fonts");
+    expect(fontReadme).toContain("This directory bundles 232 Thaana fonts");
+    expect(fontReadme).toContain("faruma-arabic.ttf");
+    expect(fontReadme).toContain("Modified & Compiled by Mohamed Jailam");
+    expect(fontReadme).toContain(
+      "combines Faruma Font, Traditional Arabic, and AGA Arabesque Regular",
+    );
     expect(fontReadme).toContain("modfaruma.ttf");
     expect(fontReadme).toContain("modified for rufiyaa symbol by Kudanai, 2023");
     expect(fontReadme).toContain("U+0024 DOLLAR SIGN (`$`)");
+    expect(notice).toContain("Faruma Arabic");
+    expect(notice).toContain("Modified & Compiled by Mohamed Jailam");
     expect(notice).toContain("ModFaruma");
     expect(notice).toContain("No separate license metadata is present");
   });

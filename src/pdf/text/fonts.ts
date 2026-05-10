@@ -486,6 +486,13 @@ export const FONTS: DhivehiFont[] = [
     script: "thaana",
   },
   {
+    family: "Faruma Arabic",
+    label: "Faruma Arabic",
+    localAliases: ["Faruma Arabic", "FarumaArabic"],
+    url: "/fonts/dhivehi/faruma-arabic.ttf",
+    script: "thaana",
+  },
+  {
     family: "ModFaruma",
     label: "ModFaruma",
     localAliases: ["ModFaruma"],
