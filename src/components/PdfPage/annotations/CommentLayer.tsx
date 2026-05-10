@@ -317,7 +317,10 @@ export function CommentLayer({
               // pointerdown initiates a drag-to-move (and a clean
               // click-without-drag still falls through to edit mode).
               cursor: isEditing ? "text" : "move",
-              touchAction: "pan-y pinch-zoom",
+              // Quick one-finger swipes over a comment should pan the
+              // document horizontally or vertically; touch-hold still
+              // promotes to drag outside edit mode.
+              touchAction: "pan-x pan-y pinch-zoom",
               // Hide the in-place comment once the user has actually
               // moved — the body-portal clone takes over so the
               // comment can cross page boundaries (which the page

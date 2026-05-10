@@ -48,7 +48,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 40 files / 123 e2e tests.
+The suite currently has 40 files / 128 e2e tests.
 
 | File                                          | What it covers                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -73,8 +73,8 @@ The suite currently has 40 files / 123 e2e tests.
 | `insert.test.ts`                              | drop text + image -> both persist                                                |
 | `italic-save.test.ts`                         | italic toggle emits the shear `cm`; OFF run has none                             |
 | `mixed-script.test.ts`                        | bidi-segmented insert (Latin + Thaana) round-trips every codepoint               |
-| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag and resize               |
-| `mobile-layout.test.ts`                       | 390x844 viewport: no horizontal overflow, drawer closed, app-owned pinch zoom    |
+| `mobile-edit.test.ts`                         | tap-to-edit, fixed-bottom toolbar, synthetic touch drag/resize, overlay touch pan |
+| `mobile-layout.test.ts`                       | 390x844 viewport: no horizontal overflow, drawer closed, app-owned pinch zoom over page/overlays |
 | `mobile-positioning.test.ts`                  | mobile insert/drag positions persist in PDF coordinates                          |
 | `move-edit-maldivian2.test.ts`                | move/edit flow against the second Maldivian fixture                              |
 | `move-edit.test.ts`                           | move-only / edit-only / move+edit on the Maldivian PDF                           |

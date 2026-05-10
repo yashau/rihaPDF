@@ -351,6 +351,82 @@ describe("mobile interaction (390×844, hasTouch)", () => {
     ).not.toContain(desiredFont);
   });
 
+  test("interactive overlays allow native horizontal and vertical touch panning", async () => {
+    const expectPanXY = async (selector: string, label: string) => {
+      const locator = h.page.locator(selector).first();
+      await locator.waitFor({ state: "visible" });
+      const touchAction = await locator.evaluate((el) => (el as HTMLElement).style.touchAction);
+      expect(touchAction, `${label} should allow horizontal panning`).toContain("pan-x");
+      expect(touchAction, `${label} should allow vertical panning`).toContain("pan-y");
+    };
+
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    await expectPanXY("[data-run-id]", "source text overlay");
+
+    const wideRun = await findWideRun();
+    expect(wideRun, "expected a wide source run for annotation tools").not.toBeNull();
+
+    await h.page.locator('button[aria-label="Highlight"]').click();
+    await h.page.touchscreen.tap(wideRun!.cx, wideRun!.cy);
+    await h.page.waitForTimeout(150);
+    await expectPanXY("[data-highlight-id]", "highlight overlay");
+
+    await h.page.locator('button[aria-label="Redact"]').click();
+    await h.page.touchscreen.tap(wideRun!.cx, wideRun!.cy);
+    await h.page.waitForTimeout(150);
+    await expectPanXY("[data-redaction-id]", "redaction overlay");
+
+    const pageBoxForAnnotations = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBoxForAnnotations).not.toBeNull();
+    await h.page.locator('button[aria-label="Comment"]').click();
+    await h.page.touchscreen.tap(
+      pageBoxForAnnotations!.x + pageBoxForAnnotations!.width * 0.62,
+      pageBoxForAnnotations!.y + pageBoxForAnnotations!.height * 0.32,
+    );
+    await h.page.waitForTimeout(150);
+    await expectPanXY("[data-annotation-id]", "comment overlay");
+
+    await loadFixture(h.page, FIXTURE.withImages);
+    await h.page.locator("[data-page-index='0']").scrollIntoViewIfNeeded();
+    await h.page.waitForTimeout(200);
+    await expectPanXY("[data-image-id]", "source image overlay");
+
+    const shapeCount = await h.page.locator("[data-shape-id]").count();
+    if (shapeCount > 0) {
+      await expectPanXY("[data-shape-id]", "source shape overlay");
+    }
+
+    await h.page.locator('button[aria-label="Add text"]').click();
+    const pageBox = await h.page.locator('[data-page-index="0"]').boundingBox();
+    expect(pageBox).not.toBeNull();
+    await h.page.touchscreen.tap(
+      pageBox!.x + pageBox!.width * 0.35,
+      pageBox!.y + pageBox!.height * 0.45,
+    );
+
+    const input = h.page.locator('[data-editor][contenteditable="true"]').first();
+    await input.waitFor({ state: "visible" });
+    await input.fill("mobile pan test");
+    await h.page.touchscreen.tap(pageBox!.x + 5, pageBox!.y + 5);
+    await input.waitFor({ state: "detached" });
+    await expectPanXY("[data-text-insert-id]", "inserted text overlay");
+
+    await seedSignatureStorage();
+    await h.page.getByRole("button", { name: "Signature" }).click();
+    const savedSignature = h.page.locator('button[aria-label="Place saved signature"]').first();
+    await savedSignature.waitFor({ state: "visible", timeout: 12_000 });
+    await savedSignature.click();
+    await h.page.getByRole("heading", { name: "Add Signature" }).waitFor({ state: "hidden" });
+    await h.page.touchscreen.tap(
+      pageBox!.x + pageBox!.width * 0.58,
+      pageBox!.y + pageBox!.height * 0.58,
+    );
+    await h.page.waitForTimeout(150);
+    await expectPanXY("[data-image-insert-id]", "inserted image overlay");
+  });
+
   test("DV toggle maps inserted-text Latin keystrokes to Thaana, then allows raw EN", async () => {
     await loadFixture(h.page, FIXTURE.withImages);
     await h.page.locator('button[aria-label="Add text"]').click();

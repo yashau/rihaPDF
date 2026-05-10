@@ -282,7 +282,7 @@ function InkOverlay({
           zIndex: 15,
           pointerEvents: tool === "select" ? "auto" : "none",
           cursor: dragLive?.moved ? "grabbing" : "grab",
-          touchAction: "pan-y pinch-zoom",
+          touchAction: "pan-x pan-y pinch-zoom",
           visibility: dragLive?.moved ? "hidden" : "visible",
         }}
         onPointerDown={(e) => {

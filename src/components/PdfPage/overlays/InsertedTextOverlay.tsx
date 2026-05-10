@@ -286,10 +286,10 @@ export function InsertedTextOverlay({
           // hidden span and skip the editor handoff.
           visibility: dragLive?.moved ? "hidden" : "visible",
           // Allow native gestures while editing; in drag-affordance
-          // state, `pan-y pinch-zoom` lets the page scroll on a quick
-          // swipe — the 400ms touch-hold gate in useDragGesture
-          // promotes the gesture to a drag.
-          touchAction: isEditing ? "auto" : "pan-y pinch-zoom",
+          // state, one-finger pans in either axis scroll the document
+          // on a quick swipe — the 400ms touch-hold gate in
+          // useDragGesture promotes the gesture to a drag.
+          touchAction: isEditing ? "auto" : "pan-x pan-y pinch-zoom",
         }}
         onPointerDown={startDrag}
         onDoubleClick={(e) => {

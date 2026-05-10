@@ -161,7 +161,10 @@ export function InsertedImageOverlay({
           // hidden overlay and skip the select handoff (the click
           // would dispatch on whatever sits underneath).
           visibility: dragLive?.moved ? "hidden" : "visible",
-          touchAction: "pan-y pinch-zoom",
+          // Quick one-finger swipes over inserted images should pan
+          // the document horizontally or vertically; touch-hold still
+          // promotes to drag via useDragGesture.
+          touchAction: "pan-x pan-y pinch-zoom",
         }}
         title={`Inserted image (drag corners to resize, click to select then Del to delete)`}
         onPointerDown={startDrag}

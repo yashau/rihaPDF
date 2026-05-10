@@ -104,7 +104,9 @@ export function RedactionOverlay({
         cursor: "grab",
         pointerEvents: "auto",
         zIndex: 55,
-        touchAction: "pan-y pinch-zoom",
+        // Quick swipes over redactions should scroll/pan the document
+        // in either axis; touch-hold still promotes to drag.
+        touchAction: "pan-x pan-y pinch-zoom",
       }}
       title="Redaction (drag corners to resize, click to select then Del to delete)"
       onPointerDown={startDrag}

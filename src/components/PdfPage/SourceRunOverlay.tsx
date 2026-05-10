@@ -333,12 +333,11 @@ export function SourceRunOverlay({
           // and a no-motion click would otherwise hit a hidden span
           // and skip the editor handoff.
           visibility: isDragging && drag?.moved ? "hidden" : "visible",
-          // `pan-y pinch-zoom` lets the browser scroll the page (and
-          // pinch-zoom) on a quick finger swipe; useDragGesture's
-          // touch-hold gate means a single-finger drag only claims
-          // the run after a 400ms hold, so casual taps and scrolls
-          // aren't hijacked.
-          touchAction: "pan-y pinch-zoom",
+          // Let native one-finger pans scroll the document in either
+          // axis on a quick swipe; useDragGesture's touch-hold gate
+          // means a single-finger drag only claims the run after a
+          // 400ms hold, so casual taps and scrolls aren't hijacked.
+          touchAction: "pan-x pan-y pinch-zoom",
           userSelect: "none",
           WebkitUserSelect: "none",
         }}
@@ -441,10 +440,10 @@ export function SourceRunOverlay({
         // the span visible so a no-motion click reaches it.
         visibility: isDragging && drag?.moved ? "hidden" : "visible",
         cursor: isDragging ? "grabbing" : "text",
-        // `pan-y pinch-zoom` so the page scrolls on a quick finger
+        // Allow native one-finger pans in either axis on a quick
         // swipe; the run is only claimed after the 400ms touch-hold
         // gate in useDragGesture.
-        touchAction: "pan-y pinch-zoom",
+        touchAction: "pan-x pan-y pinch-zoom",
         WebkitUserSelect: "none",
       }}
       title={overlayText}

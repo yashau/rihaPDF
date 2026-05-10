@@ -87,7 +87,7 @@ export function CrossPageTextArrivalOverlay({
           // Hide the in-place version once the user actually moves —
           // the body-portal clone is what they see across pages.
           visibility: dragLive?.moved ? "hidden" : "visible",
-          touchAction: "pan-y pinch-zoom",
+          touchAction: "pan-x pan-y pinch-zoom",
         }}
         onPointerDown={(e) =>
           beginDrag(e, { startTargetPdfX: arr.targetPdfX, startTargetPdfY: arr.targetPdfY })
@@ -221,7 +221,7 @@ export function CrossPageImageArrivalOverlay({
           pointerEvents: "auto",
           zIndex: 15,
           visibility: dragLive?.moved ? "hidden" : "visible",
-          touchAction: "pan-y pinch-zoom",
+          touchAction: "pan-x pan-y pinch-zoom",
         }}
         onPointerDown={(e) => beginDrag(e, {})}
       />

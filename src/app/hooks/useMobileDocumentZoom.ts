@@ -52,11 +52,22 @@ function midpoint(a: TouchPoint, b: TouchPoint): TouchPoint {
   };
 }
 
+function isDocumentOverlayTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return !!target.closest("[data-run-id], [data-text-insert-id]");
+}
+
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return !!target.closest(
-    'button, input, textarea, select, [contenteditable="true"], [role="button"], [data-edit-toolbar]',
-  );
+  if (target.closest('input, textarea, select, [contenteditable="true"], [data-edit-toolbar]')) {
+    return true;
+  }
+  // Source/inserted text overlays are intentionally button-like for
+  // tap-to-edit and keyboard access. Do not treat those document-page
+  // overlays as UI chrome: a two-finger gesture that starts over text
+  // should still become document zoom.
+  if (isDocumentOverlayTarget(target)) return false;
+  return !!target.closest('button, [role="button"]');
 }
 
 /** Owns mobile pinch-zoom for the document scroll surface.

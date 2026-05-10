@@ -142,7 +142,9 @@ export function HighlightOverlay({
         cursor: "grab",
         pointerEvents: "auto",
         zIndex: 15,
-        touchAction: "pan-y pinch-zoom",
+        // Quick swipes over highlights should scroll/pan the document
+        // in either axis; touch-hold still promotes to drag.
+        touchAction: "pan-x pan-y pinch-zoom",
       }}
       title="Highlight (click to select, drag corners to resize, Del to delete)"
       onPointerDown={startDrag}

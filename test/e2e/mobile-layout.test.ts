@@ -181,6 +181,46 @@ describe("mobile layout (390×844)", () => {
     expect(scrollState.bodyW).toBeLessThanOrEqual(scrollState.viewportW + 1);
   });
 
+  test("two-finger pinch zooms when the gesture starts on a text overlay", async () => {
+    await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
+    const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();
+    expect(beforeRect, "page slot 0 should be in DOM").not.toBeNull();
+
+    await h.page.evaluate(() => {
+      const run = document.querySelector<HTMLElement>('[data-page-index="0"] [data-run-id]');
+      if (!run) throw new Error("missing source text overlay");
+      const rect = run.getBoundingClientRect();
+      const y = rect.top + rect.height / 2;
+      const fire = (type: string, pointerId: number, clientX: number) => {
+        run.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId,
+            pointerType: "touch",
+            isPrimary: pointerId === 1,
+            clientX,
+            clientY: y,
+          }),
+        );
+      };
+      const centerX = rect.left + rect.width / 2;
+      fire("pointerdown", 1, centerX - 20);
+      fire("pointerdown", 2, centerX + 20);
+      fire("pointermove", 1, centerX - 80);
+      fire("pointermove", 2, centerX + 80);
+      fire("pointerup", 1, centerX - 80);
+      fire("pointerup", 2, centerX + 80);
+    });
+
+    await expect
+      .poll(async () => {
+        const rect = await h.page.locator("[data-page-index='0']").boundingBox();
+        return rect?.width ?? 0;
+      })
+      .toBeGreaterThan(beforeRect!.width * 1.5);
+  });
+
   test("DevTools-style ctrl+wheel pinch zooms the document surface", async () => {
     await loadFixture(h.page, FIXTURE.maldivian, { expectedPages: 2 });
     const beforeRect = await h.page.locator("[data-page-index='0']").boundingBox();

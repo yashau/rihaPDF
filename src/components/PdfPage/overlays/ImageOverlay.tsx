@@ -134,11 +134,11 @@ export function ImageOverlay({
         // would otherwise be clipped by the page wrapper's
         // overflow:hidden the moment the cursor crosses pages.
         visibility: hideInPlace ? "hidden" : "visible",
-        // Movable images: `pan-y pinch-zoom` lets the page scroll on
-        // a quick finger swipe; the 400ms touch-hold gate in
-        // useDragGesture is what actually claims the image as a drag.
-        // Un-movable images keep default behaviour.
-        touchAction: movable ? "pan-y pinch-zoom" : undefined,
+        // Movable images: allow native one-finger pans in either axis
+        // on a quick swipe; the 400ms touch-hold gate in useDragGesture
+        // is what actually claims the image as a drag. Un-movable
+        // images keep default behaviour.
+        touchAction: movable ? "pan-x pan-y pinch-zoom" : undefined,
       }}
       title={
         movable

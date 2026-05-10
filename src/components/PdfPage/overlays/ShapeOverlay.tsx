@@ -52,9 +52,9 @@ export function ShapeOverlay({
         outlineOffset: isSelected ? "1px" : undefined,
         cursor: "pointer",
         pointerEvents: "auto",
-        // Same as image overlays: one-finger drag still pans the page,
-        // a tap selects.
-        touchAction: "pinch-zoom",
+        // Same as image overlays: one-finger swipes still pan the page
+        // in either axis, while a tap selects.
+        touchAction: "pan-x pan-y pinch-zoom",
       }}
       onClick={(e) => {
         e.stopPropagation();
