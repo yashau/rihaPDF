@@ -8,7 +8,7 @@
 # rihaPDF
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yashau/rihaPDF/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/yashau/rihaPDF/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-130%20e2e%20%2B%2075%20unit-2ea44f?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-131%20e2e%20%2B%2075%20unit-2ea44f?style=for-the-badge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=111111)](https://react.dev/)
 [![HeroUI](https://img.shields.io/badge/HeroUI-3-000000?style=for-the-badge)](https://www.heroui.com/)
@@ -38,6 +38,7 @@ Browser-based PDF editor for Dhivehi / Thaana documents. Click any text run, edi
 - **Resize and delete objects.** Resize source/inserted images and remove selected text, images, comments, and inserted items.
 - **Undo / redo.** Keyboard undo/redo with typing and drag coalescing.
 - **Page sidebar.** Reorder, delete, insert blank pages, or import pages from another PDF.
+- **Browser print.** Use the browser's Print command (Ctrl/Cmd+P or menu) to print just the document pages with current visual edits, forms, annotations, and redactions; app chrome is excluded.
 - **232 bundled Thaana fonts.** Local-first `@font-face` loading and embedded saved output. Credits live in [NOTICE](NOTICE) and [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 - **Annotations.** Highlight, resizable comments, and freehand drawing saved as native PDF annotations.
 - **Redaction.** Add resizable black redaction boxes; saved PDFs remove supported underlying text, image, vector, annotation, and form-widget content under the redaction area. See [docs/redaction-pipeline.md](docs/redaction-pipeline.md).

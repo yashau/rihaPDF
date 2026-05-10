@@ -48,7 +48,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 40 files / 130 e2e tests.
+The suite currently has 41 files / 132 e2e tests.
 
 | File                                          | What it covers                                                                                   |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -81,6 +81,7 @@ The suite currently has 40 files / 130 e2e tests.
 | `preview-strip-paragraph-maldivian2.test.ts`  | paragraph-strip coverage on maldivian2                                                           |
 | `preview-strip-paragraph.test.ts`             | every line under agenda item 6 strips cleanly                                                    |
 | `preview-strip.test.ts`                       | original image pixels removed from live canvas during drag                                       |
+| `print-layout.test.ts`                        | browser print media hides app chrome and lays out document pages with page breaks                |
 | `redact-maldivian2.test.ts`                   | partial rect preserves outside glyphs; full redaction removes text/bytes                         |
 | `save-redactions.test.ts`                     | image/vector/annotation/form content under redactions is sanitized                               |
 | `signature.test.ts`                           | visual signature draw/import -> local library, cleanup, insert, save                             |

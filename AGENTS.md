@@ -78,12 +78,13 @@ Run the narrowest meaningful verification while working. For commits, the requir
 - E2E tests are the main user-workflow regression net and start/stop their own strict-port Vite server.
 - If generated PDF fixture bytes change unexpectedly, inspect metadata, object ordering, compression, or dependency changes before committing.
 - Update `README.md` for user-facing features, limitations, commands, architecture notes, or test coverage changes.
-- If tests are added/removed/renamed/split, update the root test badge plus `test/unit/README.md` or `test/e2e/README.md` as needed. Count tests with `pnpm exec vitest list`, not regexes.
+- If tests are added/removed/renamed/split, update the root test badge plus `test/unit/README.md` or `test/e2e/README.md` before committing. Count tests with `pnpm exec vitest list`, not regexes.
 
 ## Git Handoff Checklist
 
 Before committing:
 
+- Update README test counts first if tests were added/removed/renamed/split; do not leave count fixes as follow-up commits.
 - Run `pnpm check` before every commit. This is the repo gate, including docs-only commits, unless Yashau explicitly approves skipping it.
 - Add narrower or broader tests as appropriate for the change, and do not commit known gate failures unless Yashau explicitly approves the exception.
 
