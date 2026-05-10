@@ -60,6 +60,7 @@ export function PageList({
       className={`flex flex-col gap-6 w-full ${
         documentZoom > 1.001 ? "items-start" : "items-center"
       }`}
+      data-print-page-list
     >
       {slots.map((slot, idx) => {
         // Resolve the page object + sourceKey we'll hand to

@@ -48,7 +48,7 @@ Generated fixtures are intended to be deterministic. If regeneration changes tra
 
 ## Coverage
 
-The suite currently has 41 files / 132 e2e tests.
+The suite currently has 41 files / 131 e2e tests.
 
 | File                                          | What it covers                                                                                   |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |

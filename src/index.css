@@ -53,3 +53,83 @@ body {
 
 /* `.thaana-stack`'s font-family is set inline from THAANA_FONT_STACK in
    fonts.ts, so it stays in sync with the registry automatically. */
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body,
+  #root,
+  [data-print-app],
+  [data-print-workspace],
+  [data-print-document-surface],
+  [data-print-document],
+  [data-print-page-list] {
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  header,
+  aside,
+  [role="dialog"][aria-label="Pages"],
+  [data-edit-toolbar],
+  [data-print-page-label],
+  input[type="file"] {
+    display: none !important;
+  }
+
+  [data-print-app],
+  [data-print-workspace],
+  [data-print-document-surface],
+  [data-print-document],
+  [data-print-page-list],
+  [data-print-page-wrapper] {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    box-shadow: none !important;
+  }
+
+  [data-print-page-wrapper] {
+    break-after: page;
+    page-break-after: always;
+    width: auto !important;
+    scroll-margin: 0 !important;
+  }
+
+  [data-print-page-wrapper]:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  [data-print-page] {
+    width: var(--pdf-page-width-pt) !important;
+    height: var(--pdf-page-height-pt) !important;
+    overflow: hidden !important;
+    position: relative !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    background: white !important;
+  }
+
+  [data-print-page-inner] {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    transform: scale(var(--pdf-page-print-scale)) !important;
+    transform-origin: top left !important;
+  }
+}

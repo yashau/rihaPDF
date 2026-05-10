@@ -149,6 +149,7 @@ export default function App() {
       className="flex flex-col h-screen bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100"
       data-loaded-file-key={loadedFileKey}
       data-loaded-filename={primaryFilename ?? ""}
+      data-print-app
     >
       {/* The hidden file inputs are rendered ONCE outside both header
           subtrees so the desktop / mobile layouts can target the same
@@ -220,7 +221,7 @@ export default function App() {
       ) : tool === "comment" ? (
         <CommentToolbar color={commentColor} onColorChange={setCommentColor} />
       ) : null}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden" data-print-workspace>
         {/* Sidebar is a static left rail on desktop and an overlay
             drawer on mobile. We keep a single PageSidebar instance and
             swap the wrapper styling so the thumbnail cache survives
@@ -267,6 +268,7 @@ export default function App() {
           ))}
         <main
           className="flex-1 overflow-auto px-2 py-3 sm:px-6 sm:py-6"
+          data-print-document-surface
           // Mobile header is `position: fixed` (out of flow), so push
           // page content down by its measured height. `mobileHeaderH`
           // is 0 on desktop, where the header is back in the flex flow.
@@ -298,7 +300,7 @@ export default function App() {
               Open a PDF to begin.
             </div>
           ) : (
-            <div ref={documentZoomTargetRef} className="w-full">
+            <div ref={documentZoomTargetRef} className="w-full" data-print-document>
               <PageList
                 document={{
                   slots,

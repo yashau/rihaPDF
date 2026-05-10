@@ -15,8 +15,9 @@ export function PageWithToolbar({
       className={`flex flex-col gap-2 scroll-mt-6 w-full ${
         documentZoom > 1.001 ? "items-start" : "items-center"
       }`}
+      data-print-page-wrapper
     >
-      <div className="flex gap-2 items-center text-sm">
+      <div className="flex gap-2 items-center text-sm" data-print-page-label>
         <span className="text-zinc-500 dark:text-zinc-400">Page {pageIndex + 1}</span>
       </div>
       <PdfPage model={model} controller={controller} />

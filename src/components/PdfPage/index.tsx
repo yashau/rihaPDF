@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PageController, PageReadModel } from "../pageViewModels";
 import {
   ImageOverlay,
@@ -139,12 +139,18 @@ export function PdfPage({ model, controller }: Props) {
       // clip the page would extend horizontally past its displayed
       // width and produce a phantom right-pan area).
       className="shadow-md"
-      style={{
-        width: page.viewWidth * displayScale,
-        height: page.viewHeight * displayScale,
-        position: "relative",
-        overflow: "hidden",
-      }}
+      data-print-page
+      style={
+        {
+          width: page.viewWidth * displayScale,
+          height: page.viewHeight * displayScale,
+          position: "relative",
+          overflow: "hidden",
+          "--pdf-page-width-pt": `${page.pdfWidth}pt`,
+          "--pdf-page-height-pt": `${page.pdfHeight}pt`,
+          "--pdf-page-print-scale": 96 / 72 / page.scale,
+        } as CSSProperties
+      }
     >
       <div
         ref={containerRef}
@@ -167,6 +173,7 @@ export function PdfPage({ model, controller }: Props) {
         data-page-scale={page.scale}
         data-view-width={page.viewWidth}
         data-view-height={page.viewHeight}
+        data-print-page-inner
       >
         <CanvasSlot page={page} previewCanvas={previewCanvas} />
         <PlacementCaptureLayer
