@@ -650,6 +650,7 @@ export const FONTS: DhivehiFont[] = [
     family: "MV Aa Randhoo",
     label: "MV Aa Randhoo",
     localAliases: ["Aa Randhoo"],
+    compatAliases: ["A Randhoo Aa", "A_Randhoo-Aa"],
     url: "/fonts/dhivehi/aa-randhoo.ttf",
     script: "thaana",
   },
@@ -1779,14 +1780,26 @@ export function loadFontBytes(family: string): Promise<Uint8Array> {
   return p;
 }
 
+/**
+ * Legacy/non-Unicode Thaana PDFs sometimes embed Type0 Identity-H fonts
+ * with Latin-looking ToUnicode maps. The extracted text is ASCII-ish, but
+ * the glyph program is visually Thaana. Do not route these through Arial:
+ * editing Unicode replacements with a Thaana font is less wrong, and it
+ * keeps the run visibly classified as Thaana-like instead of Latin.
+ */
+const SUSPICIOUS_LEGACY_THAANA_BASE_FONT_KEYWORDS: Array<{ pattern: RegExp; family: string }> = [
+  { pattern: /vogue(?:ps)?(?:mt)?/i, family: DEFAULT_FONT_FAMILY },
+  { pattern: /a[_\s-]?randhoo[_\s-]?aa|randhoo/i, family: "MV Aa Randhoo" },
+];
+
 /** Common BaseFont substrings that indicate a Latin font even when the
  *  exact family isn't in our registry. Used by resolveFamilyFromHint to
- *  route Word's "VoguePSMT" / "TimesNewRomanPSMT" etc. to the closest
- *  Latin family we know how to render. */
+ *  route Word's "TimesNewRomanPSMT" etc. to the closest Latin family we
+ *  know how to render. */
 const LATIN_BASE_FONT_KEYWORDS: Array<{ pattern: RegExp; family: string }> = [
   { pattern: /timesnewroman|times-?roman/i, family: "Times New Roman" },
   { pattern: /courier/i, family: "Courier New" },
-  { pattern: /helvetica|arial|liberation\s*sans|nimbus\s*sans|vogue|calibri/i, family: "Arial" },
+  { pattern: /helvetica|arial|liberation\s*sans|nimbus\s*sans|calibri/i, family: "Arial" },
 ];
 
 /** Best-effort: given a font name reported by pdf.js / a PDF's BaseFont,
@@ -1811,6 +1824,12 @@ export function resolveFamilyFromHint(
       const aNorm = a.toLowerCase().replace(/[-_,+\s]/g, "");
       if (aNorm === normalized || normalized.includes(aNorm)) return f.family;
     }
+  }
+  // Suspicious legacy Thaana fonts must win before Latin fallback because
+  // their ToUnicode maps often spell ASCII while the embedded glyphs are
+  // visually Thaana.
+  for (const { pattern, family } of SUSPICIOUS_LEGACY_THAANA_BASE_FONT_KEYWORDS) {
+    if (pattern.test(stripped)) return family;
   }
   // Latin keyword fallback for fonts we don't bundle by name (e.g.
   // "BCDEEE+TimesNewRomanPSMT" → "Times New Roman").

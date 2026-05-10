@@ -1,4 +1,5 @@
 import { FONTS, resolveFamilyFromHint } from "@/pdf/text/fonts";
+import { decodeLegacyThaanaText, shouldDecodeLegacyThaanaText } from "@/pdf/text/legacyThaana";
 import { scriptOf } from "@/pdf/text/pdfTextScript";
 import type { TextItem, TextRun } from "@/pdf/render/pdfTypes";
 import type { FontShow } from "@/pdf/source/sourceFonts";
@@ -334,13 +335,22 @@ export function buildTextRuns(
     }
     const caret = buildCaretPositionsFromPieces(caretPieces);
     text = caret.text;
+    let caretPositions = caret.caretPositions;
+    if (shouldDecodeLegacyThaanaText(baseName, text)) {
+      const oldLength = [...text].length;
+      text = decodeLegacyThaanaText(text);
+      caretPositions = caretPositions.map((pos) => ({
+        offset: oldLength - pos.offset,
+        x: pos.x,
+      }));
+    }
 
     runs.push({
       id: `p${pageNumber}-r${runIndex++}`,
       sourceIndices,
       contentStreamOpIndices: Array.from(opIndexSet).sort((a, b) => a - b),
       text,
-      caretPositions: caret.caretPositions,
+      caretPositions,
       bounds: {
         left: minLeft,
         top,

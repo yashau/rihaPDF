@@ -6,8 +6,14 @@ import {
   serializeContentStream,
   type ContentOp,
 } from "@/pdf/content/contentStream";
+import {
+  computeTextShowBoundsByOp,
+  matchTextShowToTarget,
+  type TextStripTargetBox,
+} from "@/pdf/content/textShowBounds";
 import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
 import { DEFAULT_FONT_FAMILY } from "@/pdf/text/fonts";
+import { isLegacyThaanaFontHint } from "@/pdf/text/legacyThaana";
 import { buildSourceTextBlocks, type SourceTextBlock } from "@/pdf/text/textBlocks";
 import { rectsOverlap, type Redaction } from "@/domain/redactions";
 import { planRedactionStrip } from "./redactions/glyphs";
@@ -166,6 +172,8 @@ export async function applyStreamSurgeryForSource(
     const originalContent = getPageContentBytes(doc.context, page.node);
     const ops = parseContentStream(originalContent);
     const shows = findTextShows(ops);
+    const showBoundsByOp = computeTextShowBoundsByOp(ops, page.node.Resources(), doc.context);
+    const opOwnerCount = countTextRunOpOwners(rendered.textRuns);
 
     const pageHeight = page.getHeight();
     const scale = rendered.scale;
@@ -195,16 +203,53 @@ export async function applyStreamSurgeryForSource(
 
       const editOpIndices = new Set(sourceRuns.flatMap((r) => r.contentStreamOpIndices));
       let matched = shows.filter((s) => editOpIndices.has(s.index));
-      type TargetBox = { y: number; xMin: number; xMax: number };
-      const targetBoxes: TargetBox[] = sourceRuns.map((sourceRun) => ({
-        y: Math.round(pageHeight - sourceRun.baselineY / scale),
-        xMin: sourceRun.bounds.left / scale,
-        xMax: (sourceRun.bounds.left + sourceRun.bounds.width) / scale,
-      }));
-      if (matched.length === 0) {
+      const targetBoxes: Array<TextStripTargetBox & { allowBroadFallback: boolean }> =
+        sourceRuns.map((sourceRun) => ({
+          rect: {
+            pdfX: sourceRun.bounds.left / scale,
+            pdfY: pageHeight - (sourceRun.bounds.top + sourceRun.bounds.height) / scale,
+            pdfWidth: sourceRun.bounds.width / scale,
+            pdfHeight: sourceRun.bounds.height / scale,
+          },
+          baselineY: Math.round(pageHeight - sourceRun.baselineY / scale),
+          h: sourceRun.height / scale,
+          allowBroadFallback:
+            sourceRun.contentStreamOpIndices.length === 0 ||
+            isLegacyThaanaFontHint(sourceRun.fontBaseName),
+        }));
+
+      const selectedOwnerCount = countSelectedOpOwners(sourceRuns);
+      const matchedIndexes = new Set<number>();
+      matched = matched.filter((s) => {
+        const bounds = showBoundsByOp.get(s.index);
+        if (!bounds?.fromMetrics) {
+          const keep = (opOwnerCount.get(s.index) ?? 0) <= (selectedOwnerCount.get(s.index) ?? 0);
+          if (keep) matchedIndexes.add(s.index);
+          return keep;
+        }
+        const keep = targetBoxes.some((box) => matchTextShowToTarget(bounds, box).stripWholeOp);
+        if (keep) matchedIndexes.add(s.index);
+        return keep;
+      });
+      for (const s of shows) {
+        if (matchedIndexes.has(s.index)) continue;
+        const bounds = showBoundsByOp.get(s.index);
+        if (!bounds?.fromMetrics) continue;
+        for (const box of targetBoxes) {
+          if (!matchTextShowToTarget(bounds, box).stripWholeOp) continue;
+          matched.push(s);
+          matchedIndexes.add(s.index);
+          break;
+        }
+      }
+
+      if (matched.length === 0 && targetBoxes.some((box) => box.allowBroadFallback)) {
         const tolY = Math.max(2, runPdfHeight * 0.4);
         const tolX = Math.max(2, runPdfHeight * 0.3);
         matched = shows.filter((s) => {
+          if (matchedIndexes.has(s.index)) return true;
+          const bounds = showBoundsByOp.get(s.index);
+          if (bounds?.fromMetrics) return false;
           const ex = s.textMatrix[4];
           const ey = s.textMatrix[5];
           if (Math.abs(ey - runPdfY) > tolY) return false;
@@ -212,16 +257,21 @@ export async function applyStreamSurgeryForSource(
           if (ex > runPdfX + runPdfWidth + tolX) return false;
           return true;
         });
+        for (const s of matched) matchedIndexes.add(s.index);
       }
-      const matchedIndexes = new Set(matched.map((s) => s.index));
-      const xSlackPdf = Math.max(8, runPdfHeight);
+
       for (const s of shows) {
         if (matchedIndexes.has(s.index)) continue;
+        const bounds = showBoundsByOp.get(s.index);
+        if (bounds?.fromMetrics) continue;
         const ey = Math.round(s.textMatrix[5]);
         const ex = s.textMatrix[4];
         for (const box of targetBoxes) {
-          if (Math.abs(ey - box.y) > 1) continue;
-          if (ex < box.xMin - xSlackPdf || ex > box.xMax + xSlackPdf) continue;
+          if (!box.allowBroadFallback) continue;
+          const xSlackPdf = Math.max(1, Math.min(4, box.h * 0.25));
+          if (Math.abs(ey - box.baselineY) > 1) continue;
+          if (ex < box.rect.pdfX - xSlackPdf) continue;
+          if (ex > box.rect.pdfX + box.rect.pdfWidth + xSlackPdf) continue;
           matched.push(s);
           matchedIndexes.add(s.index);
           break;
@@ -616,6 +666,20 @@ function resolveEditRun(
   const direct = runs.find((r) => r.id === edit.runId);
   if (direct) return direct;
   return buildSourceTextBlocks(runs, pageNumber).find((b) => b.id === edit.runId);
+}
+
+function countTextRunOpOwners(runs: TextRun[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const run of runs) {
+    for (const opIndex of new Set(run.contentStreamOpIndices)) {
+      counts.set(opIndex, (counts.get(opIndex) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function countSelectedOpOwners(runs: TextRun[]): Map<number, number> {
+  return countTextRunOpOwners(runs);
 }
 
 function sourceRunsForEdit(runs: TextRun[], run: TextRun | SourceTextBlock, edit: Edit): TextRun[] {

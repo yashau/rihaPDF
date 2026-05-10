@@ -23,8 +23,14 @@ import {
   serializeContentStream,
   findTextShows,
 } from "@/pdf/content/contentStream";
+import {
+  computeTextShowBoundsByOp,
+  matchTextShowToTarget,
+  type TextStripTargetBox,
+} from "@/pdf/content/textShowBounds";
 import { getPageContentBytes, setPageContentBytes } from "@/pdf/content/pageContent";
 import { browserDevicePixelRatio, chooseCanvasRenderBudget } from "@/pdf/render/guardrails";
+import { isLegacyThaanaFontHint } from "@/pdf/text/legacyThaana";
 
 export type PageStripSpec = {
   /** Page index within the source's doc. */
@@ -60,6 +66,8 @@ export async function buildPreviewBytes(
     const content = getPageContentBytes(doc.context, page.node);
     const ops = parseContentStream(content);
     const shows = findTextShows(ops);
+    const showBoundsByOp = computeTextShowBoundsByOp(ops, page.node.Resources(), doc.context);
+    const opOwnerCount = countTextRunOpOwners(rendered.textRuns);
 
     const indicesToRemove = new Set<number>();
     const pageHeight = page.getHeight();
@@ -71,10 +79,34 @@ export async function buildPreviewBytes(
     // strikethrough q…Q blocks ride alongside on `decorationOpRanges`
     // so the preview also sheds them — otherwise the old line stays
     // visible while the HTML overlay redraws the text on top of it.
+    const targetBoxesByRunId = new Map<
+      string,
+      TextStripTargetBox & { allowBroadFallback: boolean }
+    >();
     for (const runId of spec.runIds) {
       const run = rendered.textRuns.find((r) => r.id === runId);
       if (!run) continue;
-      for (const i of run.contentStreamOpIndices) indicesToRemove.add(i);
+      const targetBox = {
+        rect: {
+          pdfX: run.bounds.left / scale,
+          pdfY: pageHeight - (run.bounds.top + run.bounds.height) / scale,
+          pdfWidth: run.bounds.width / scale,
+          pdfHeight: run.bounds.height / scale,
+        },
+        baselineY: Math.round(pageHeight - run.baselineY / scale),
+        h: run.height / scale,
+        allowBroadFallback:
+          run.contentStreamOpIndices.length === 0 || isLegacyThaanaFontHint(run.fontBaseName),
+      };
+      targetBoxesByRunId.set(runId, targetBox);
+      for (const i of run.contentStreamOpIndices) {
+        const bounds = showBoundsByOp.get(i);
+        if (bounds?.fromMetrics) {
+          if (matchTextShowToTarget(bounds, targetBox).stripWholeOp) indicesToRemove.add(i);
+        } else if ((opOwnerCount.get(i) ?? 0) <= 1) {
+          indicesToRemove.add(i);
+        }
+      }
       for (const range of run.decorationOpRanges ?? []) {
         for (let i = range.qOpIndex; i <= range.QOpIndex; i++) {
           indicesToRemove.add(i);
@@ -88,28 +120,35 @@ export async function buildPreviewBytes(
     // run's x-extent keeps unrelated runs on the same baseline (e.g. a
     // "ޖަލްސާ:" label sitting outside the value run's box) from being
     // collateral-stripped.
-    type TargetBox = { y: number; xMin: number; xMax: number };
-    const targetBoxes: TargetBox[] = [];
-    for (const runId of spec.runIds) {
-      const run = rendered.textRuns.find((r) => r.id === runId);
-      if (!run) continue;
-      targetBoxes.push({
-        y: Math.round(pageHeight - run.baselineY / scale),
-        xMin: run.bounds.left / scale,
-        xMax: (run.bounds.left + run.bounds.width) / scale,
-      });
-    }
-    // Slack on the x-extent: a few PDF units to forgive boundary
-    // glyphs whose Tj-baseline x sits a hair outside the run's bounding
-    // box (e.g. when the run was built from items with width=0).
-    const xSlackPdf = Math.max(8, ...targetBoxes.map((box) => (box.xMax - box.xMin) * 0.03));
+    const targetBoxes = Array.from(targetBoxesByRunId.values());
+    // Prefer actual Tj/TJ glyph envelopes, derived from the show op's
+    // text matrix, font size/widths, and TJ adjustments. This keeps a
+    // same-baseline label outside the edited run's visual bounds from
+    // being stripped. The old baseline/x-slack heuristic is now a last
+    // resort for legacy/empty-index runs only.
     for (const s of shows) {
       if (indicesToRemove.has(s.index)) continue;
-      const ey = Math.round(s.textMatrix[5]);
-      const ex = s.textMatrix[4];
+      const bounds = showBoundsByOp.get(s.index);
+      if (!bounds?.fromMetrics) continue;
       for (const box of targetBoxes) {
-        if (Math.abs(ey - box.y) > 1) continue;
-        if (ex < box.xMin - xSlackPdf || ex > box.xMax + xSlackPdf) continue;
+        if (!matchTextShowToTarget(bounds, box).stripWholeOp) continue;
+        indicesToRemove.add(s.index);
+        break;
+      }
+    }
+
+    for (const s of shows) {
+      if (indicesToRemove.has(s.index)) continue;
+      const bounds = showBoundsByOp.get(s.index);
+      if (bounds?.fromMetrics) continue;
+      for (const box of targetBoxes) {
+        if (!box.allowBroadFallback) continue;
+        const ey = Math.round(s.textMatrix[5]);
+        const ex = s.textMatrix[4];
+        const xSlackPdf = Math.max(1, Math.min(4, box.h * 0.25));
+        if (Math.abs(ey - box.baselineY) > 1) continue;
+        if (ex < box.rect.pdfX - xSlackPdf) continue;
+        if (ex > box.rect.pdfX + box.rect.pdfWidth + xSlackPdf) continue;
         indicesToRemove.add(s.index);
         break;
       }
@@ -144,6 +183,16 @@ export async function buildPreviewBytes(
  *  Used to refresh just the affected pages after a preview rebuild
  *  without re-extracting fonts / glyph maps / images (those are stable
  *  for the original PDF). */
+function countTextRunOpOwners(runs: RenderedPage["textRuns"]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const run of runs) {
+    for (const opIndex of new Set(run.contentStreamOpIndices)) {
+      counts.set(opIndex, (counts.get(opIndex) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export async function renderPagePreviewCanvas(
   pdfBytes: Uint8Array,
   pageIndex: number,

@@ -10,6 +10,7 @@ import {
   loadFontBytes,
   resolveFamilyFromHint,
 } from "@/pdf/text/fonts";
+import { decodeLegacyThaanaText, shouldDecodeLegacyThaanaText } from "@/pdf/text/legacyThaana";
 
 const dhivehiFontsDir = join(process.cwd(), "public", "fonts", "dhivehi");
 
@@ -56,6 +57,20 @@ describe("Dhivehi font registry", () => {
     expect(resolveFamilyFromHint("ABCDEE+AFaruma", "ދިވެހި")).toBe("Faruma");
     expect(resolveFamilyFromHint("ModFaruma", "ދިވެހި")).toBe("Faruma");
     expect(canonicalFontFamily("ModFaruma")).toBe("Faruma");
+  });
+
+  it("does not treat suspicious legacy Thaana-looking source fonts as Arial", () => {
+    expect(resolveFamilyFromHint("EEZQGN+VoguePSMT", "DhiAeEe")).toBe("Faruma");
+    expect(resolveFamilyFromHint("KFIISE+VoguePSMT", null)).toBe("Faruma");
+    expect(resolveFamilyFromHint("PQUZOT+A_Randhoo-Aa", "DhiAeEe")).toBe("MV Aa Randhoo");
+    expect(canonicalFontFamily("A_Randhoo-Aa")).toBe("MV Aa Randhoo");
+  });
+
+  it("decodes Vogue/Randhoo legacy ASCII text to logical Unicode Thaana", () => {
+    expect(shouldDecodeLegacyThaanaText("EEZQGN+VoguePSMT", "unWHitcmia")).toBe(true);
+    expect(decodeLegacyThaanaText("unWHitcmia cTekifcTes clUkcs IrwDcnwkes")).toBe(
+      "ސެކަންޑަރީ ސްކޫލް ސެޓްފިކެޓް އިމްތިހާނު",
+    );
   });
 
   it("injects Faruma and ModFaruma CSS families from bundled modfaruma.ttf only", () => {
