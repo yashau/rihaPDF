@@ -1,6 +1,6 @@
 # Bundled Dhivehi (Thaana) fonts
 
-This directory bundles 230 Thaana fonts so that rihaPDF works on machines
+This directory bundles 231 Thaana fonts so that rihaPDF works on machines
 without Maldivian fonts installed. The browser is told to prefer the locally
 installed copy via CSS `local()` first; the bundled file is only fetched as
 a fallback.
@@ -31,10 +31,17 @@ installations and has no formally documented author or license.
 | Family           | Attribution                                                                                                                         |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Faruma           | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement) — 2002, Office of the President        |
+| ModFaruma        | See ModFaruma notes below                                                                                                           |
 | MV Boli          | Thomas Rickner & Kamal Mansour (Monotype) for Microsoft — bundled with Windows since XP                                             |
 | MV Reethi        | Calligraphy by Abdul Sattar, Abdulla Waheed, Mustafa Muhammad; built by Ibrahim Yasir & Ahmed Aasif — 2002, Office of the President |
 | MV Waheed        | Calligraphy by Abdulla Waheed (1995); regular by Hassan Hameed; bold released 1996 with Accent Express                              |
 | Noto Sans Thaana | Google LLC — SIL Open Font License 1.1                                                                                              |
+
+### ModFaruma notes
+
+Font metadata for `modfaruma.ttf` says: Version 2.0 Official release; created by Ibrahim Yasir, calligraphy by Musthafa Mohamed, assisted by Ahmed Asif; President's Office 2002; all rights reserved; modified for rufiyaa symbol by Kudanai, 2023. No separate license metadata is present.
+
+The modified rufiyaa symbol is mapped to U+0024 DOLLAR SIGN (`$`), so keyboard Shift+4 selects glyph `dollar` in this font.
 
 ## If you are a rights holder
 
@@ -90,6 +97,7 @@ After adding a font, also add a row to the inventory below.
 | `elaaf-normal.ttf`            | MV Elaaf                | [catalogue page](https://www.dhivehi.mv/fonts/data/df/Mv_Elaaf_Normal.otf)                                              |
 | `faiy-light.otf`              | Faiy Light              | [catalogue page](https://www.dhivehi.mv/fonts/data/ef/Faiy_Light.otf)                                                   |
 | `faruma.ttf`                  | Faruma                  | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement) — 2002                     |
+| `modfaruma.ttf`               | ModFaruma               | See ModFaruma notes below                                                                                               |
 | `faseyha.otf`                 | A Faseyha               | [catalogue page](https://www.dhivehi.mv/fonts/data/et/faseyha.otf)                                                      |
 | `faseyha.ttf`                 | MV Faseyha              | [catalogue page](https://www.dhivehi.mv/fonts/data/df/MV_Faseyha.otf)                                                   |
 | `iyyu-formal.ttf`             | MV Iyyu Formal          | [catalogue page](https://www.dhivehi.mv/fonts/data/df/Mv_Iyyu_Formal.otf)                                               |

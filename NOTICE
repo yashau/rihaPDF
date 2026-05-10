@@ -20,6 +20,11 @@ Known attributions:
   - Faruma — Mustafa Muhammad (calligraphy & design), Ibrahim Yasir
     (technical), Ahmed Aasif (refinement); 2002, commissioned by the
     Office of the President of the Maldives.
+  - ModFaruma — font metadata states: Version 2.0 Official release;
+    created by Ibrahim Yasir, calligraphy by Musthafa Mohamed,
+    assisted by Ahmed Asif; The President's Office 2002; all rights
+    reserved; modified for rufiyaa symbol by Kudanai, 2023. No
+    separate license metadata is present.
   - MV Boli — Thomas Rickner & Kamal Mansour (Monotype) for Microsoft;
     bundled with Microsoft Windows since XP.
   - MV Reethi — calligraphy by Abdul Sattar, Abdulla Waheed, Mustafa
@@ -72,6 +77,7 @@ See public/fonts/dhivehi/README.md for the full inventory.
   elaaf-normal.ttf                           | MV Elaaf                           | via raajjefonts.github.io / www.dhivehi.mv
   faiy-light.otf                             | Faiy Light                         | via raajjefonts.github.io / www.dhivehi.mv
   faruma.ttf                                 | Faruma                             | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement). 2002. Commissioned by the President's Office of the Maldives. De-facto government standard.
+  modfaruma.ttf                              | ModFaruma                          | Font metadata: Version 2.0 Official release. Created by Ibrahim Yasir, calligraphy by Musthafa Mohamed, assisted by Ahmed Asif. The President's Office 2002. All rights reserved. Modified for rufiyaa symbol by Kudanai, 2023. No separate license metadata is present.
   faseyha.otf                                | A Faseyha                          | via raajjefonts.github.io / www.dhivehi.mv
   faseyha.ttf                                | MV Faseyha                         | via raajjefonts.github.io / www.dhivehi.mv
   iyyu-formal.ttf                            | MV Iyyu Formal                     | via raajjefonts.github.io / www.dhivehi.mv
