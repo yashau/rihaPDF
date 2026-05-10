@@ -82,6 +82,11 @@ Run the narrowest meaningful verification. For shared/high-risk code, prefer `pn
 
 ## Git Handoff Checklist
 
+Before committing:
+
+- Check the relevant gates first. Run the narrowest meaningful tests/checks for the change, and do not commit known gate failures unless Yashau explicitly approves the exception.
+- At minimum, run `git diff --check`; for docs touched by formatters, run the relevant formatter/check too.
+
 Before finishing:
 
 - Check `git status` before and after edits.
