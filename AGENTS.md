@@ -60,7 +60,7 @@ pnpm cf:dev          # Cloudflare local preview
 pnpm cf:deploy       # build + deploy; only when explicitly asked
 ```
 
-Run the narrowest meaningful verification. For shared/high-risk code, prefer `pnpm check` and `pnpm build`; add `pnpm test` or targeted tests as appropriate. E2E runs can take file/name fragments after `--`, for example `pnpm test:e2e -- save-redactions`. Set `APP_URL` only when testing against a non-default local URL.
+Run the narrowest meaningful verification while working. For commits, the required rihaPDF gate is `pnpm check`; add `pnpm build`, `pnpm test`, or targeted E2E tests when the change warrants it. E2E runs can take file/name fragments after `--`, for example `pnpm test:e2e -- save-redactions`. Set `APP_URL` only when testing against a non-default local URL.
 
 ## UI and Implementation Expectations
 
@@ -84,8 +84,8 @@ Run the narrowest meaningful verification. For shared/high-risk code, prefer `pn
 
 Before committing:
 
-- Check the relevant gates first. Run the narrowest meaningful tests/checks for the change, and do not commit known gate failures unless Yashau explicitly approves the exception.
-- At minimum, run `git diff --check`; for docs touched by formatters, run the relevant formatter/check too.
+- Run `pnpm check` before every commit. This is the repo gate, including docs-only commits, unless Yashau explicitly approves skipping it.
+- Add narrower or broader tests as appropriate for the change, and do not commit known gate failures unless Yashau explicitly approves the exception.
 
 Before finishing:
 
@@ -94,4 +94,3 @@ Before finishing:
 - Do not edit lockfiles unless dependency changes require it.
 - Clean untracked generated artifacts/logs unless intentionally part of the task.
 - Report files changed, verification run and pass/fail status, skipped verification with reason, and remaining risk.
-- For docs-only changes, `pnpm check` is usually optional unless formatting/lint rules cover the touched files.
