@@ -23,7 +23,8 @@ itself a community aggregation of five upstreams:
 - **[dhivehifont.com](https://dhivehifont.com/)** — a more recent indie
   foundry (Mv Izyan family, Mv Karudhas, Mv Nerumagu, MV Edhuru, …).
 
-A smaller set is pre-bundled in rihaPDF from older Maldivian Windows
+`faruma-arabic.ttf` is sourced separately from the FarumaArabic project on
+GitHub. A smaller set is pre-bundled in rihaPDF from older Maldivian Windows
 installations and has no formally documented author or license.
 
 ## Known attributions
@@ -104,7 +105,6 @@ After adding a font, also add a row to the inventory below.
 | `elaaf-normal.ttf`            | MV Elaaf                | [catalogue page](https://www.dhivehi.mv/fonts/data/df/Mv_Elaaf_Normal.otf)                                              |
 | `faiy-light.otf`              | Faiy Light              | [catalogue page](https://www.dhivehi.mv/fonts/data/ef/Faiy_Light.otf)                                                   |
 | `faruma.ttf`                  | Faruma                  | Mustafa Muhammad (calligraphy & design), Ibrahim Yasir (technical), Ahmed Aasif (refinement) — 2002                     |
-| `faruma-arabic.ttf`           | Faruma Arabic           | See Faruma Arabic notes below                                                                                           |
 | `modfaruma.ttf`               | ModFaruma               | See ModFaruma notes below                                                                                               |
 | `faseyha.otf`                 | A Faseyha               | [catalogue page](https://www.dhivehi.mv/fonts/data/et/faseyha.otf)                                                      |
 | `faseyha.ttf`                 | MV Faseyha              | [catalogue page](https://www.dhivehi.mv/fonts/data/df/MV_Faseyha.otf)                                                   |
@@ -303,6 +303,12 @@ After adding a font, also add a row to the inventory below.
 | `mvlhohi-bold.ttf`             | Mv lhohi bold              | [catalogue page](https://dhivehifont.com/2022/10/27/%de%87%de%ac%de%89%de%b0%de%88%de%a9-%de%85%de%ae%de%80%de%a8-%de%84%de%af%de%8d%de%b0%de%91%de%b0/)                                                                                        |
 | `mvlhohi.ttf`                  | Mv lhohi                   | [catalogue page](https://dhivehifont.com/2022/10/27/%de%87%de%ac%de%89%de%b0%de%88%de%a9-%de%85%de%ae%de%80%de%a8-%de%84%de%af%de%8d%de%b0%de%91%de%b0/)                                                                                        |
 | `thiki.ttf`                    | THIKI                      | [catalogue page](https://dhivehifont.com/2022/05/08/%de%87%de%ac%de%89%de%b0%de%88%de%a9-%de%8c%de%a8%de%86%de%a8-%de%87%de%a6%de%86%de%aa%de%83%de%aa/)                                                                                        |
+
+### Additional sourced fonts
+
+| File                | Family        | Attribution / Source          |
+| ------------------- | ------------- | ----------------------------- |
+| `faruma-arabic.ttf` | Faruma Arabic | See Faruma Arabic notes above |
 
 ### Pre-bundled (no upstream catalogue entry)
 
