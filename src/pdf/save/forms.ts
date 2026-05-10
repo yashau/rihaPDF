@@ -22,8 +22,11 @@
 // interactive in the saved file.
 
 import {
+  beginText,
+  endText,
   PDFArray,
   PDFBool,
+  PDFContentStream,
   PDFContext,
   PDFDict,
   PDFFont,
@@ -32,6 +35,11 @@ import {
   PDFNumber,
   PDFRef,
   PDFString,
+  setFillingRgbColor,
+  setFontAndSize,
+  setTextMatrix,
+  showText,
+  type PDFOperator,
 } from "pdf-lib";
 import type { FormValue } from "@/domain/formFields";
 import { isRtlScript } from "@/pdf/text/fonts";
@@ -41,12 +49,14 @@ import {
   inheritedOwner,
   isFieldKid,
   partialFieldName,
+  readPdfRect,
 } from "@/pdf/forms/pdfFormTree";
 import {
   encodePdfTextString,
   makeAcroFormFontSetup,
   type EmbeddedFontFactory,
 } from "@/pdf/forms/pdfAcroForm";
+import { buildShapedTextOps, measureShapedWidth } from "@/pdf/text/shapedDraw";
 
 /** Flat fill record passed into the save pipeline — the App's
  *  formValues Map<sourceKey, Map<fullName, FormValue>> is flattened to
@@ -133,11 +143,18 @@ function setNeedAppearances(catalog: PDFDict): void {
 
 type ResolvedThaanaFont = {
   pdfFont: PDFFont;
+  fontBytes: Uint8Array;
+  alias: string;
+};
+
+type ResolvedLatinFont = {
+  pdfFont: PDFFont;
   alias: string;
 };
 
 type AcroFormSetup = {
   ensureThaanaFont(): Promise<ResolvedThaanaFont | null>;
+  ensureLatinFont(): Promise<ResolvedLatinFont>;
 };
 
 function makeAcroFormSetup(
@@ -149,7 +166,13 @@ function makeAcroFormSetup(
   return {
     async ensureThaanaFont() {
       const font = await setup.ensureFont();
-      return font ? { pdfFont: font.pdfFont, alias: font.alias } : null;
+      return font?.fontBytes
+        ? { pdfFont: font.pdfFont, fontBytes: font.fontBytes, alias: font.alias }
+        : null;
+    },
+    async ensureLatinFont() {
+      const font = await getFont("Arial");
+      return { pdfFont: font.pdfFont, alias: "RihaHelv" };
     },
   };
 }
@@ -173,6 +196,130 @@ function readDa(field: PDFDict): string | null {
   const da = owner?.lookup(PDFName.of("DA"));
   if (da instanceof PDFString || da instanceof PDFHexString) return da.decodeText();
   return null;
+}
+
+function readDaFontSize(field: PDFDict, fallbackSize = 10): number {
+  const da = readDa(field);
+  if (!da) return fallbackSize;
+  const match = da.match(/\/[^\s]+\s+(\d+(?:\.\d+)?)\s+Tf/);
+  const parsed = match ? Number.parseFloat(match[1]) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackSize;
+}
+
+function readQ(field: PDFDict): number {
+  const q = inheritedOwner(field, PDFName.of("Q"))?.lookup(PDFName.of("Q"));
+  return q instanceof PDFNumber ? q.asNumber() : 0;
+}
+
+function makeFontResources(ctx: PDFContext, alias: string, font: PDFFont): PDFDict {
+  const fontSubdict = PDFDict.withContext(ctx);
+  fontSubdict.set(PDFName.of(alias), font.ref);
+  const resources = PDFDict.withContext(ctx);
+  resources.set(PDFName.of("Font"), fontSubdict);
+  return resources;
+}
+
+function makeAppearanceStream(
+  ctx: PDFContext,
+  width: number,
+  height: number,
+  resources: PDFDict,
+  ops: PDFOperator[],
+): PDFRef {
+  const bbox = ctx.obj([
+    PDFNumber.of(0),
+    PDFNumber.of(0),
+    PDFNumber.of(width),
+    PDFNumber.of(height),
+  ]);
+  const formStream: PDFContentStream = ctx.formXObject(ops, {
+    BBox: bbox,
+    Resources: resources,
+  });
+  return ctx.register(formStream);
+}
+
+function attachNormalAppearance(widget: PDFDict, apRef: PDFRef): void {
+  const ap = PDFDict.withContext(widget.context);
+  ap.set(PDFName.of("N"), apRef);
+  widget.set(PDFName.of("AP"), ap);
+  widget.delete(PDFName.of("AS"));
+}
+
+function latinTextOps(
+  text: string,
+  font: PDFFont,
+  alias: string,
+  x: number,
+  y: number,
+  size: number,
+): PDFOperator[] {
+  return [
+    setFillingRgbColor(0, 0, 0),
+    beginText(),
+    setFontAndSize(alias, size),
+    setTextMatrix(1, 0, 0, 1, x, y),
+    showText(font.encodeText(text)),
+    endText(),
+  ];
+}
+
+async function buildTextWidgetAppearance(
+  widget: PDFDict,
+  field: PDFDict,
+  value: string,
+  acroFormSetup: AcroFormSetup,
+): Promise<PDFRef | null> {
+  const rect = readPdfRect(widget);
+  if (!rect) return null;
+  const padding = 2;
+  const fieldSize = readDaFontSize(field, 10);
+  const size = Math.max(4, Math.min(fieldSize, Math.max(4, rect.pdfHeight - padding * 2)));
+  const baselineY = Math.max(padding, (rect.pdfHeight - size) / 2);
+  const widthLimit = Math.max(0, rect.pdfWidth - padding * 2);
+  const rtl = isRtlScript(value);
+  const q = rtl ? 2 : readQ(field);
+
+  if (rtl) {
+    const faruma = await acroFormSetup.ensureThaanaFont();
+    if (!faruma) return null;
+    const textWidth = await measureShapedWidth(value, faruma.fontBytes, size, "rtl");
+    const x = q === 2 ? Math.max(padding, rect.pdfWidth - padding - textWidth) : padding;
+    const shaped = await buildShapedTextOps({
+      text: value,
+      font: faruma.pdfFont,
+      fontBytes: faruma.fontBytes,
+      fontKey: faruma.alias,
+      x,
+      y: baselineY,
+      size,
+      dir: "rtl",
+      color: [0, 0, 0],
+    });
+    return makeAppearanceStream(
+      widget.context,
+      rect.pdfWidth,
+      rect.pdfHeight,
+      makeFontResources(widget.context, faruma.alias, faruma.pdfFont),
+      shaped.ops,
+    );
+  }
+
+  const helv = await acroFormSetup.ensureLatinFont();
+  const textWidth = helv.pdfFont.widthOfTextAtSize(value, size);
+  const x =
+    q === 2
+      ? Math.max(padding, rect.pdfWidth - padding - textWidth)
+      : q === 1
+        ? Math.max(padding, padding + (widthLimit - textWidth) / 2)
+        : padding;
+  return makeAppearanceStream(
+    widget.context,
+    rect.pdfWidth,
+    rect.pdfHeight,
+    makeFontResources(widget.context, helv.alias, helv.pdfFont),
+    latinTextOps(value, helv.pdfFont, helv.alias, x, baselineY, size),
+  );
 }
 
 /** Strip a widget's pre-baked /AP. Once we've replaced /V the previous
@@ -202,13 +349,14 @@ async function writeTextField(
       field.set(PDFName.of("DA"), PDFString.of(newDa));
     }
   }
-  // Drop stale /AP on every widget — /NeedAppearances will rebuild.
-  // For Tx fields the field dict itself can be the widget (merged),
-  // in which case it's already in the widgets list above.
-  for (const widget of widgets) stripWidgetAppearance(widget);
-  // When the field IS the widget but no kids were collected (single-
-  // widget Tx), strip on the field too. collectWidgetDicts already
-  // returns [field] in that case, so the loop covers it.
+  // Replace stale widget appearances with fresh /AP /N streams. Many
+  // external readers ignore /NeedAppearances and render only /AP; if we
+  // merely write /V and strip /AP the value is present but visually blank.
+  for (const widget of widgets) {
+    const apRef = await buildTextWidgetAppearance(widget, field, value, acroFormSetup);
+    if (apRef) attachNormalAppearance(widget, apRef);
+    else stripWidgetAppearance(widget);
+  }
 }
 
 function writeCheckboxField(field: PDFDict, checked: boolean, onState: string): void {

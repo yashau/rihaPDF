@@ -1,13 +1,8 @@
 // AcroForm fill round-trip. Loads the MNU job-application form,
 // types Latin + Thaana into two text fields, saves, and asserts the
-// saved PDF has the expected /V values reachable from /AcroForm/Fields.
-//
-// We assert on the AcroForm tree's structure (/V on each filled
-// field, /NeedAppearances true on the AcroForm dict, top-level
-// /Fields populated) rather than on rendering — viewers regenerate
-// appearances from /DA + /V once /NeedAppearances is set, and /V
-// being present + correctly addressed is what guarantees the saved
-// PDF is a valid filled form for any reader.
+// saved PDF has the expected /V values reachable from /AcroForm/Fields
+// plus fresh widget /AP streams. External readers commonly ignore
+// /NeedAppearances, so /V alone is not enough for the value to render.
 
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import fs from "fs";
@@ -49,6 +44,34 @@ function decodeText(obj: PDFObject | undefined): string | null {
 
 function partialName(d: PDFDict): string | null {
   return decodeText(d.lookup(PDFName.of("T")));
+}
+
+function widgetDicts(field: PDFDict): PDFDict[] {
+  const subtype = field.lookup(PDFName.of("Subtype"));
+  if (subtype instanceof PDFName && subtype.asString() === "/Widget") return [field];
+  const kids = field.lookup(PDFName.of("Kids"));
+  if (!(kids instanceof PDFArray)) return [];
+  const out: PDFDict[] = [];
+  for (let i = 0; i < kids.size(); i++) {
+    const kid = kids.lookup(i);
+    if (!(kid instanceof PDFDict)) continue;
+    const kidSubtype = kid.lookup(PDFName.of("Subtype"));
+    if (kidSubtype instanceof PDFName && kidSubtype.asString() === "/Widget") out.push(kid);
+  }
+  return out;
+}
+
+function expectFreshNormalAppearance(field: PDFDict): void {
+  const widgets = widgetDicts(field);
+  expect(widgets.length).toBeGreaterThan(0);
+  for (const widget of widgets) {
+    const ap = widget.lookup(PDFName.of("AP"));
+    expect(ap, "filled text widget must carry a fresh /AP dictionary").toBeInstanceOf(PDFDict);
+    expect(
+      (ap as PDFDict).get(PDFName.of("N")),
+      "normal appearance stream ref missing",
+    ).toBeTruthy();
+  }
 }
 
 /** Walk /AcroForm/Fields to find a terminal field by fully-qualified
@@ -131,10 +154,12 @@ describe("AcroForm fills (MNU job-application)", () => {
     const latinField = findFieldByName(doc.catalog, LATIN_FIELD);
     expect(latinField, `${LATIN_FIELD} missing from saved /AcroForm`).not.toBeNull();
     expect(decodeText(latinField!.lookup(PDFName.of("V")))).toBe(LATIN_VALUE);
+    expectFreshNormalAppearance(latinField!);
 
     const thaanaField = findFieldByName(doc.catalog, THAANA_FIELD);
     expect(thaanaField, `${THAANA_FIELD} missing from saved /AcroForm`).not.toBeNull();
     expect(decodeText(thaanaField!.lookup(PDFName.of("V")))).toBe(THAANA_VALUE);
+    expectFreshNormalAppearance(thaanaField!);
 
     fs.unlinkSync(tmpOut);
   });
