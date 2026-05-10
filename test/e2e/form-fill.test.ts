@@ -148,8 +148,10 @@ describe("AcroForm fills (MNU job-application)", () => {
     expect((fields as PDFArray).size()).toBeGreaterThan(0);
 
     const need = (acroForm as PDFDict).lookup(PDFName.of("NeedAppearances"));
-    // PDFBool.True stringifies to "true"; either way we want truthy.
-    expect(need?.toString()).toBe("true");
+    // We ship fresh shaped widget /AP streams. Leaving NeedAppearances
+    // true makes Acrobat/Preview regenerate them with a non-shaping
+    // form engine, reversing Thaana and dropping edge marks.
+    expect(need?.toString()).toBe("false");
 
     const latinField = findFieldByName(doc.catalog, LATIN_FIELD);
     expect(latinField, `${LATIN_FIELD} missing from saved /AcroForm`).not.toBeNull();

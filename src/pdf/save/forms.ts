@@ -8,8 +8,10 @@
 // Thaana /V handling:
 //   - /V is encoded UTF-16BE-with-BOM via `encodeUtf16BE` (the same
 //     encoding the comment annotation path uses for /Contents).
-//   - /NeedAppearances true is set on /AcroForm so any viewer that
-//     ignores our /AP regenerates from /DA + /V.
+//   - We write fresh widget /AP streams and keep /NeedAppearances false.
+//     Setting it true causes Acrobat/Preview to discard the shaped /AP and
+//     regenerate with their non-shaping form engine, which reverses/drops
+//     Thaana marks.
 //   - For Tx fields whose value contains Thaana / RTL codepoints, we
 //     embed Faruma into /AcroForm/DR/Font and rewrite /DA to
 //     reference it, so /DA-based regen produces the right glyphs
@@ -129,16 +131,15 @@ function findFieldByName(catalog: PDFDict, fullName: string): PDFDict | null {
   return null;
 }
 
-/** Set /NeedAppearances true on the AcroForm dict so viewers regenerate
- *  /AP from /DA + /V whenever they don't trust an embedded /AP. We do
- *  this once per save (idempotent set + already-true is a no-op). */
-function setNeedAppearances(catalog: PDFDict): void {
+/** Keep `/NeedAppearances` off when we provide explicit appearances.
+ *  Acrobat/Preview treat a true value as permission to regenerate widget
+ *  appearances from `/DA + /V`; their form text engine does not perform
+ *  HarfBuzz shaping, so Thaana text appears reversed and can lose edge
+ *  vowel marks even when our fresh shaped `/AP` is present. */
+function clearNeedAppearances(catalog: PDFDict): void {
   const acroForm = catalog.lookup(PDFName.of("AcroForm"));
   if (!(acroForm instanceof PDFDict)) return;
-  acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-  // Strip any pre-existing /AP /N on widgets we touch — see the per-
-  // widget logic in writeTextField. Done at the dict level so the
-  // viewer can't fall back to a stale appearance for the OLD /V.
+  acroForm.set(PDFName.of("NeedAppearances"), PDFBool.False);
 }
 
 type ResolvedThaanaFont = {
@@ -428,10 +429,9 @@ function writeChoiceField(field: PDFDict, chosen: string[]): void {
  *  orphaned in the output and viewers don't recognise them as
  *  interactive form fields, dropping our /V writes on reload.
  *
- *  Also sets `/NeedAppearances true` so any viewer that ignores the
- *  widgets' (now-stripped) `/AP` falls back to regenerating an
- *  appearance from `/DA + /V` — covers Thaana fields visually until
- *  the option-2 HarfBuzz `/AP` path lands. */
+ *  Also keeps `/NeedAppearances false`: the save pipeline now writes
+ *  fresh appearances for filled text widgets, and asking viewers to
+ *  regenerate them makes Thaana render incorrectly. */
 export function rebuildOutputAcroForm(doc: {
   context: PDFContext;
   catalog: PDFDict;
@@ -507,11 +507,11 @@ export function rebuildOutputAcroForm(doc: {
   const fieldsArr = doc.context.obj([] as PDFRef[]);
   for (const ref of topFieldRefs) fieldsArr.push(ref);
   (acroForm as PDFDict).set(PDFName.of("Fields"), fieldsArr);
-  (acroForm as PDFDict).set(PDFName.of("NeedAppearances"), PDFBool.True);
+  (acroForm as PDFDict).set(PDFName.of("NeedAppearances"), PDFBool.False);
 }
 
 /** Apply each fill in `fills` to its named field on `doc`. The
- *  AcroForm dict gets `/NeedAppearances true`; per-field encoding
+ *  AcroForm dict keeps `/NeedAppearances false`; per-field encoding
  *  matches the field's /FT. Fills targeting fields that aren't on
  *  this doc (e.g. cross-source mismatches) are silently dropped —
  *  same forgiving stance as the annotation save path. */
@@ -521,7 +521,7 @@ export async function applyFormFillsToDoc(
   opts: FormFillSaveOptions,
 ): Promise<void> {
   if (fills.length === 0) return;
-  setNeedAppearances(doc.catalog);
+  clearNeedAppearances(doc.catalog);
   const acroFormSetup = makeAcroFormSetup(doc.context, doc.catalog, opts.getFont);
   for (const fill of fills) {
     const field = findFieldByName(doc.catalog, fill.fullName);
