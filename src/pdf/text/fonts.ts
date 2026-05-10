@@ -16,6 +16,9 @@ export type DhivehiFont = {
   /** OS-installed names to try via `local(...)` first. The browser will
    *  prefer those over the bundled file when present. */
   localAliases: string[];
+  /** Historic / alternate family names accepted by source PDFs and saved
+   *  rihaPDF payloads. These are not shown as separate picker entries. */
+  compatAliases?: string[];
   /** Path under `public/`. Optional — when omitted, the browser only has
    *  the OS copy via `local()` to fall back on (used for Latin/system
    *  fonts we don't bundle). */
@@ -480,9 +483,13 @@ export const FONTS: DhivehiFont[] = [
   },
   {
     family: "Faruma",
-    label: "Faruma",
-    localAliases: ["Faruma"],
-    url: "/fonts/dhivehi/faruma.ttf",
+    label: "Faruma (ModFaruma)",
+    // Deliberately do not include local("Faruma"): old OS Faruma
+    // installs lack the newer ModFaruma glyph coverage and would otherwise
+    // override the bundled, Faruma-compatible default.
+    localAliases: ["ModFaruma"],
+    compatAliases: ["ModFaruma"],
+    url: "/fonts/dhivehi/modfaruma.ttf",
     script: "thaana",
   },
   {
@@ -490,13 +497,6 @@ export const FONTS: DhivehiFont[] = [
     label: "Faruma Arabic",
     localAliases: ["Faruma Arabic", "FarumaArabic"],
     url: "/fonts/dhivehi/faruma-arabic.ttf",
-    script: "thaana",
-  },
-  {
-    family: "ModFaruma",
-    label: "ModFaruma",
-    localAliases: ["ModFaruma"],
-    url: "/fonts/dhivehi/modfaruma.ttf",
     script: "thaana",
   },
   {
@@ -1683,6 +1683,20 @@ export const FONTS: DhivehiFont[] = [
 export const DEFAULT_FONT_FAMILY = "Faruma";
 export const DEFAULT_LATIN_FONT_FAMILY = "Arial";
 
+export function canonicalFontFamily(family: string): string {
+  const normalized = family.toLowerCase().replace(/[-_,+\s]/g, "");
+  const found = FONTS.find((f) => {
+    const names = [f.family, ...(f.compatAliases ?? [])];
+    return names.some((name) => name.toLowerCase().replace(/[-_,+\s]/g, "") === normalized);
+  });
+  return found?.family ?? family;
+}
+
+export function fontDefinitionForFamily(family: string): DhivehiFont | undefined {
+  const canonical = canonicalFontFamily(family);
+  return FONTS.find((f) => f.family === canonical);
+}
+
 /** CSS font-family chain we use for Thaana (only Thaana entries — never
  *  fall through to Latin fonts that lack Thaana glyphs). */
 export const THAANA_FONT_STACK = [
@@ -1731,7 +1745,9 @@ export function injectFontFaces(): void {
       ...(f.url ? [`url("${f.url}") format("truetype")`] : []),
     ].join(", ");
     if (!sources) continue;
-    css += `@font-face { font-family: "${f.family}"; src: ${sources}; font-display: swap; }\n`;
+    for (const family of [f.family, ...(f.compatAliases ?? [])]) {
+      css += `@font-face { font-family: "${family}"; src: ${sources}; font-display: swap; }\n`;
+    }
   }
   // Also drive the .thaana-stack utility class so component code can stay
   // declarative (`<span className="thaana-stack">`) without re-importing
@@ -1749,7 +1765,7 @@ const bytesCache = new Map<string, Promise<Uint8Array>>();
 export function loadFontBytes(family: string): Promise<Uint8Array> {
   const cached = bytesCache.get(family);
   if (cached) return cached;
-  const def = FONTS.find((f) => f.family === family);
+  const def = fontDefinitionForFamily(family);
   if (!def) throw new Error(`Unknown font: ${family}`);
   if (!def.url) {
     throw new Error(`Font "${family}" has no bundled .ttf — use StandardFont path`);
@@ -1790,7 +1806,7 @@ export function resolveFamilyFromHint(
 
   // Exact / substring match against a registered family or alias.
   for (const f of FONTS) {
-    const aliases = [f.family, ...f.localAliases];
+    const aliases = [f.family, ...f.localAliases, ...(f.compatAliases ?? [])];
     for (const a of aliases) {
       const aNorm = a.toLowerCase().replace(/[-_,+\s]/g, "");
       if (aNorm === normalized || normalized.includes(aNorm)) return f.family;

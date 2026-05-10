@@ -1,9 +1,12 @@
 # Bundled Dhivehi (Thaana) fonts
 
 This directory bundles 232 Thaana fonts so that rihaPDF works on machines
-without Maldivian fonts installed. The browser is told to prefer the locally
-installed copy via CSS `local()` first; the bundled file is only fetched as
-a fallback.
+without Maldivian fonts installed. The browser is usually told to prefer the
+locally installed copy via CSS `local()` first; the bundled file is only
+fetched as a fallback. Faruma is intentionally different in the app registry:
+the visible `Faruma (ModFaruma)` entry uses bundled `modfaruma.ttf` and does
+not include `local("Faruma")`, so older OS Faruma installs cannot override the
+Faruma-compatible default.
 
 ## Sourcing
 

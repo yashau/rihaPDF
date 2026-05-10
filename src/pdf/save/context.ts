@@ -1,6 +1,6 @@
 import { PDFDocument, PDFFont, StandardFonts } from "pdf-lib";
 import type { LoadedSource } from "@/pdf/source/loadSource";
-import { FONTS, loadFontBytes } from "@/pdf/text/fonts";
+import { fontDefinitionForFamily, loadFontBytes } from "@/pdf/text/fonts";
 
 export type EmbeddedFontFactory = (
   family: string,
@@ -18,7 +18,7 @@ export type LoadedSourceContext = {
 };
 
 const standardFontVariants: Record<
-  NonNullable<(typeof FONTS)[number]["standardFont"]>,
+  "Helvetica" | "TimesRoman" | "Courier",
   Record<"regular" | "bold" | "italic" | "boldItalic", StandardFonts>
 > = {
   Helvetica: {
@@ -53,7 +53,7 @@ export const ITALIC_SHEAR = 0.21;
  *  needed. For everything else (every bundled Dhivehi TTF) we synthesize
  *  italic via a Tm-equivalent shear `cm`. */
 export function fontHasNativeItalic(family: string): boolean {
-  const def = FONTS.find((f) => f.family === family);
+  const def = fontDefinitionForFamily(family);
   return !!def?.standardFont;
 }
 
@@ -80,7 +80,7 @@ export function makeFontFactory(doc: PDFDocument) {
     const cacheKey = `${family}|${bold ? "b" : ""}${italic ? "i" : ""}`;
     const cached = cache.get(cacheKey);
     if (cached) return cached;
-    const def = FONTS.find((f) => f.family === family);
+    const def = fontDefinitionForFamily(family);
     let entry: EmbeddedFont;
     if (def?.standardFont) {
       const variant = standardFontVariants[def.standardFont][variantKey(bold, italic)];

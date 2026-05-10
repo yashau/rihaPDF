@@ -131,7 +131,7 @@ Architecture and maintenance notes live in [docs/](docs/):
 
 The `@font-face` rule, picker, and save pipeline all read from this list.
 
-The bundled MV-prefix fonts are included as a fallback - `@font-face` lists `local()` first, so an OS-installed copy always wins. Font origins, attributions, and a contact path for rights-holder removal requests are documented in [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
+The bundled MV-prefix fonts are included as a fallback - `@font-face` usually lists `local()` first, so an OS-installed copy wins. Faruma is the exception: rihaPDF labels the picker entry as `Faruma (ModFaruma)` and points it at bundled `modfaruma.ttf` without `local("Faruma")`, so older OS Faruma installs do not override the Faruma-compatible default. Font origins, attributions, and a contact path for rights-holder removal requests are documented in [public/fonts/dhivehi/README.md](public/fonts/dhivehi/README.md).
 
 ## Known limitations
 
