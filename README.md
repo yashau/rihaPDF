@@ -91,7 +91,7 @@ save → for each edited run:
           bidi-js segmentation first (shapedBidi.ts)
 ```
 
-See [docs/thaana-text-pipeline.md](docs/thaana-text-pipeline.md) for the detailed shaped text save path, including font embedding, HarfBuzz operator emission, mixed-script bidi segmentation, annotations, and AcroForm fallbacks.
+See [docs/thaana-text-pipeline.md](docs/thaana-text-pipeline.md) for the detailed shaped text save path, including font embedding, HarfBuzz operator emission, mixed-script bidi segmentation, annotations, and AcroForm widget appearances.
 
 Underline / strikethrough are paired to runs at load time ([runDecorations.ts](src/pdf/text/runDecorations.ts)) so toggling them off on re-edit strips the original line. Italic for fonts without an oblique variant is a shear-about-baseline `cm`. Bold without a bold variant is a double-pass with x-offset.
 

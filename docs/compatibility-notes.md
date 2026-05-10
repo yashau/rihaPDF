@@ -57,8 +57,9 @@ Key files/tests: `src/pdf/content/contentStream.ts`, `src/pdf/content/pageConten
 Key files/tests: `src/pdf/source/sourceImages.ts`, `src/pdf/save/sourceImageMoves.ts`, `src/pdf/save/forms.ts`, `src/pdf/save/annotations.ts`, `src/pdf/save/redactions/*`, `test/e2e/image-move.test.ts`, `test/e2e/save-redactions.test.ts`, `test/unit/redaction-*.test.ts`.
 
 - Image moves are based on `q cm Do Q` structure. The safe move path inserts or adjusts a translation around the owning image block while preserving scale/rotation. Form XObjects need `/BBox` + `/Matrix` to get real grab boxes.
-- AcroForm fills must keep `/V`, widget `/AS`, `/NeedAppearances`, `/DA`, and `/DR/Font` consistent. Thaana fields embed Faruma and rely on viewer regeneration; they do not yet get deterministic HarfBuzz-shaped widget appearances.
-- FreeText comments with Thaana do get custom HarfBuzz-shaped `/AP /N` appearances. Highlight and Ink annotations mostly rely on native viewer rendering.
+- AcroForm fills must keep `/V`, widget `/AS`, `/NeedAppearances`, `/DA`, `/DR/Font`, and text-widget `/AP /N` consistent. Filled text widgets get fresh appearances; Thaana appearances are HarfBuzz-shaped in visual glyph order so Acrobat/Preview/pdf.js paint the same pixels while `/V` remains the semantic value. Keep `/NeedAppearances false` when these explicit appearances exist, because Acrobat/Preview regeneration can reverse or drop Thaana marks.
+- rihaPDF's editor canvas suppresses pdf.js form-widget appearance painting and renders widgets as DOM overlays instead. Otherwise re-opened filled forms can show rasterized `/AP` text underneath the editable input.
+- FreeText comments with Thaana also get custom HarfBuzz-shaped `/AP /N` appearances. Highlight and Ink annotations mostly rely on native viewer rendering.
 - Redaction is destructive save-time cleanup, not black overlay security. Text, images, vectors, annotations, widgets, appearance streams, and resource objects all need cleanup where supported.
 - Redaction fallbacks prefer over-stripping. Unsupported image encodings/masks, Form XObjects, unsupported fonts, and complex vector blocks are removed more broadly rather than risking hidden recoverable content.
 

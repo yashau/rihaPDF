@@ -1,6 +1,6 @@
 # Thaana text pipeline
 
-This document explains how rihaPDF turns editable Dhivehi / Thaana text into saved PDF content that renders correctly and remains real selectable/searchable text. It covers source text edits, inserted rich text, FreeText annotation appearances, and AcroForm text-field fallback setup.
+This document explains how rihaPDF turns editable Dhivehi / Thaana text into saved PDF content that renders correctly and remains real selectable/searchable text. It covers source text edits, inserted rich text, FreeText annotation appearances, and AcroForm text-field appearance setup.
 
 ## Design goal
 
@@ -163,9 +163,11 @@ Thaana FreeText comments get a custom `/AP /N` Form XObject. The appearance stre
 
 ### AcroForm text fields
 
-`src/pdf/save/forms.ts` writes field values into `/V` and sets `/NeedAppearances true`. For RTL/Thaana text fields it embeds Faruma into `/AcroForm/DR/Font`, rewrites `/DA` to reference that font, sets `/Q 2` for right alignment, and strips stale widget appearances so viewers regenerate from the updated value and default appearance.
+`src/pdf/save/forms.ts` writes field values into `/V`, embeds the needed font resources, and attaches fresh widget `/AP /N` appearance streams for filled text fields. For RTL/Thaana text fields it embeds Faruma into `/AcroForm/DR/Font`, rewrites `/DA` to reference that font, sets `/Q 2` for right alignment, and draws the appearance with HarfBuzz-shaped glyph IDs.
 
-The current form path does not ship HarfBuzz-shaped widget appearances; it uses the embedded font + viewer regeneration fallback.
+AcroForm appearances intentionally use `buildVisualShapedTextOps`, not the page-content logical-order emitter. A widget `/AP` stream is visual compatibility data rather than the searchable source of truth, and several readers display the extraction-friendly RTL order backwards inside form appearances. `/V` remains the semantic field value for reload/extraction.
+
+`/NeedAppearances` is kept false when these explicit appearances exist. Acrobat and Preview treat a true value as permission to regenerate from `/DA + /V`, and their form engines can reverse Thaana or drop edge vowel marks even when rihaPDF's shaped `/AP` is present.
 
 ## Known caveat: mixed-script extraction
 

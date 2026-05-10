@@ -35,11 +35,11 @@ Mobile Thaana input uses the same phonetic keyboard infrastructure as text editi
 
 ## Save behavior
 
-For text fields, rihaPDF writes `/V`, removes stale widget appearances, sets alignment (`/Q`) based on script direction, and marks the form with `/NeedAppearances true` so viewers regenerate the field appearance.
+For text fields, rihaPDF writes `/V`, replaces stale widget appearances with fresh `/AP /N` Form XObjects, sets alignment (`/Q`) based on script direction, and keeps `/NeedAppearances false` so external readers use the explicit appearances instead of regenerating them.
 
-For Thaana text fields, the save path embeds Faruma into `/AcroForm/DR/Font` and updates `/DA` to reference it. This is a pragmatic fallback: unlike FreeText comments, form widgets currently do not get a fully HarfBuzz-shaped custom appearance stream. The app relies on viewers regenerating from `/V` + `/DA`.
+For Thaana text fields, the save path embeds Faruma into `/AcroForm/DR/Font`, updates `/DA` to reference it, and builds a HarfBuzz-shaped widget appearance stream. The appearance stream uses visual glyph order because its job is to paint field pixels consistently in Acrobat, Preview, Chrome, and pdf.js; `/V` remains the semantic field value. Setting `/NeedAppearances true` is intentionally avoided because Acrobat/Preview can regenerate from `/DA + /V` with non-shaping form engines that reverse or drop Thaana marks.
 
-Checkboxes/radios update both field value and widget `/AS` appearance states. Choice fields update `/V` and, where needed, selected indices.
+Checkboxes/radios update both field value and widget `/AS` appearance states. Choice fields update `/V` and, where needed, selected indices; their stale widget appearances are stripped so viewers rebuild choice visuals from state.
 
 ## Redaction interaction
 
@@ -47,13 +47,13 @@ Overlapped form widgets are removed rather than partially edited. A field dictio
 
 ## Known risks
 
-- Viewer-generated Thaana appearances vary. Most modern PDF viewers handle embedded Faruma reasonably, but this is not as deterministic as rihaPDF's HarfBuzz-shaped page text path.
+- Text-field `/AP` streams are visual-only compatibility data. Keep `/V` authoritative for extraction/reload and keep `/DA`/`/DR/Font` coherent as a fallback, but do not ask viewers to regenerate filled text appearances unless the custom `/AP` path is removed.
 - Complex hierarchical forms can hide values in parents/kids; cleanup must walk both.
-- Widget appearances can carry sensitive content independent of `/V`; stale `/AP` streams must be cleared when values change.
+- Widget appearances can carry sensitive content independent of `/V`; stale `/AP` streams must be replaced or cleared when values change.
 
 ## Change rules
 
 - Preserve `/V`/`/AS` consistency for buttons.
-- Remove stale appearances when values change.
-- Keep `/NeedAppearances` behavior unless replacing it with deterministic custom appearances.
+- Replace stale text-widget appearances when values change; clear appearances only when a fresh `/AP` cannot be built or for non-text widgets that rely on viewer state.
+- Keep `/NeedAppearances false` while deterministic text-widget appearances exist; do not flip it true without testing Acrobat/Preview Thaana rendering.
 - Treat redaction overlap as whole-widget removal unless a future design proves partial cleanup cannot leak.

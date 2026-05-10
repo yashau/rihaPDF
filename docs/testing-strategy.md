@@ -54,7 +54,7 @@ When a ministry/user reports a PDF-specific bug:
 
 - **Source text editing:** visual replacement, old glyph removal, copy/search output, punctuation/date editing.
 - **Thaana text:** visual fili placement, selectable text, mixed Latin/Thaana extraction caveats.
-- **Forms:** `/V`, `/AS`, stale appearances, right alignment, Thaana default font.
+- **Forms:** `/V`, `/AS`, fresh text-widget `/AP /N`, `/NeedAppearances false` with explicit appearances, right alignment, Thaana default font, and reopen behavior without double-painted widget text.
 - **Redaction:** no recoverable underlying text/images/annotations/forms, not just black pixels.
 - **Coordinates:** drag/resize on desktop and mobile, cross-page movement, saved position.
 - **Browser guardrails:** large files/pages fail clearly instead of crashing.

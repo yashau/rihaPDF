@@ -53,7 +53,7 @@ After source cleanup, drawing operations are applied in a stable order so previe
 2. inserted text boxes,
 3. inserted/moved images and visual signatures,
 4. annotations,
-5. form value updates,
+5. form value updates, including AcroForm `/V`/`/AS` updates and fresh text-widget `/AP /N` appearances,
 6. redaction cover rectangles.
 
 Redaction cover rectangles are drawn after underlying content removal so the visual black box is present in the saved PDF, but security does not depend on the cover alone.
@@ -71,6 +71,12 @@ Measurements and drawing must use the same engine. Otherwise right-aligned RTL, 
 ## Page operations
 
 The UI stores page order as slots: source pages, inserted blank pages, and imported pages from other PDFs. The save pipeline walks slots in display order and copies/emits the corresponding page into the output. Cross-page moves update the target slot/page metadata rather than mutating original source identity.
+
+## AcroForm output
+
+Copied pages can retain widget annotations while losing a valid catalog `/AcroForm`, so the output save step rebuilds `/AcroForm/Fields` from surviving widgets. When text fields are filled, `src/pdf/save/forms.ts` writes semantic `/V`, updates alignment/default-appearance resources, and attaches explicit normal appearances. `/NeedAppearances` is kept false in both source-doc fill application and output AcroForm rebuilds so Acrobat and Preview do not discard rihaPDF's shaped Thaana appearances and regenerate broken ones.
+
+The app preview has a matching compatibility rule: pdf.js form-widget appearances are suppressed on the page canvas because rihaPDF renders forms as editable DOM overlays. This avoids double-painting saved `/AP` text under live inputs when a saved form is reopened.
 
 ## Resource cleanup
 
