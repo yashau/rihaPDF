@@ -20,7 +20,7 @@ pnpm test -- -t "normalizes RTL display"
 
 ## Coverage
 
-The suite currently has 75 unit tests.
+The suite currently has 77 unit tests.
 
 | File                               | What it covers                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------- |
